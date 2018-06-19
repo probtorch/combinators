@@ -1,6 +1,8 @@
 import probtorch.model as pm
 import probtorch.distributions as pd
 
+import combinators
+
 # class EnsembleHMM(pd.Model):
 #     """A HMM with shared parameters for multiple time series"""
 
@@ -10,18 +12,17 @@ import probtorch.distributions as pd
 #         hmm = self.init_hmm(dataset)
 #         return pm.Map(hmm)
 
-
-class HmmInit(probtorch.Model):
+class HmmInit(combinators.Model):
     pass
 
-class HmmTrans(probtorch.Model):
+class HmmTrans(combinators.Model):
     pass
 
-class HmmLikelihood(probtorch.model):
+class HmmLikelihood(combinators.Conditionable):
     pass
 
 
-class HmmGlobals(probtorch.Model):
+class HmmGlobals(combinators.Model):
     def _init__(self, num_states):
         ...
 
@@ -30,7 +31,7 @@ class HmmGlobals(probtorch.Model):
         return data, likelihood, state_init, state_trans
 
 
-class HmmStates(probtorch.Model):
+class HmmStates(combinators.Model):
     def __init__(self, num_states):
         ...
 
