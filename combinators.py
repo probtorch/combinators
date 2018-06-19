@@ -1,11 +1,18 @@
+import inspect
+
 import probtorch
 import torch
 import torch.nn as nn
 
+import utils
+
 class Model(nn.Module):
-    def __init__(self, f, params_namespace='params'):
+    def __init__(self, f, params_namespace='', phi={}, theta={}):
         super(Model, self).__init__()
         self._function = f
+        self._params_namespace = params_namespace
+        self.register_args(phi, True)
+        self.register_args(theta, False)
 
     @classmethod
     def _bind(cls, outer, inner):
@@ -30,8 +37,33 @@ class Model(nn.Module):
 
         return result
 
+    def register_args(self, args, trainable=True):
+        for k, v in utils.vardict(args).items():
+            if self._params_namespace is not None:
+                k = self._params_namespace + '__' + k
+            if trainable:
+                self.register_parameter(k, nn.Parameter(v))
+            else:
+                self.register_buffer(k, v)
+
+    def args_vardict(self, keep_vars=False):
+        result = self.state_dict(keep_vars=keep_vars)
+        if self._params_namespace is not None:
+            prefix = self._params_namespace + '__'
+            result = {k[len(prefix):]: v for (k, v) in result.items()
+                      if k.startswith(prefix)}
+        return utils.vardict(result)
+
+    def kwargs_dict(self):
+        members = dict(self.__dict__, **self.state_dict(keep_vars=True))
+        return {k: v for k, v in members.items()
+                if k in inspect.signature(self._function).parameters.keys()}
+
     def forward(self, *args, trace=probtorch.Trace(), **kwargs):
-        return self._function(*args, trace=trace, **kwargs)
+        kwparams = {**self.kwargs_dict(), **kwargs}
+        if self._params_namespace is not None:
+            kwparams[self._params_namespace] = self.args_vardict(keep_vars=True)
+        return self._function(*args, trace=trace, **kwparams)
 
 class Conditionable(Model):
     def __init__(self, f, params_namespace='params'):
