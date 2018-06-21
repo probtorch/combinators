@@ -9,6 +9,11 @@ import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def particle_index(tensor, indices):
+    indexed_tensors = [t[indices[particle]] for particle, t in
+                       enumerate(torch.unbind(tensor, 0))]
+    return torch.stack(indexed_tensors, dim=0)
+
 def map_tensors(f, *args):
     for arg in args:
         if isinstance(arg, torch.Tensor):
