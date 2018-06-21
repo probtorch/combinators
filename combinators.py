@@ -89,10 +89,14 @@ class Conditionable(Model):
 class Inference(Conditionable):
     @classmethod
     def _bind(cls, outer, inner):
-        def result(*args, trace={}, conditions=utils.EMPTY_TRACE, **kwargs):
-            temp, trace = inner(*args, trace=trace, conditions=conditions,
-                                **kwargs)
-            return outer(*temp, trace=trace, conditions=conditions)\
-                   if isinstance(temp, tuple)\
-                   else outer(temp, trace=trace, conditions=conditions)
+        def result(*args, **kwargs):
+            temp = inner(*args, **kwargs)
+            outer_kwargs = {'trace': temp[-1],
+                            'conditions': kwargs['conditions']}
+            return outer(*temp[:-1], **outer_kwargs)
         return result
+
+    def forward(self, *args, **kwargs):
+        trace = kwargs['trace']
+        result = self._function(*args, **kwargs)
+        return result if isinstance(result, tuple) else (result, trace)
