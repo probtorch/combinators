@@ -56,3 +56,14 @@ def likelihood_weight(trace):
     rvs = [rv for rv in trace.variables() if trace[rv].observed][-1]
     rvs = [rvs]
     return log_softmax(trace.log_joint(reparameterized=False, nodes=rvs), dim=0)
+
+def smc(step, retrace):
+    def resample(*args, **kwargs):
+        trace = kwargs['trace']
+        trace = trace.resample(likelihood_weight(trace))
+        return args + (trace,)
+    resample = combinators.Inference(resample)
+    return combinators.Inference.compose(
+        combinators.Inference.compose(retrace, resample),
+        step,
+    )
