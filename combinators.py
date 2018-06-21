@@ -83,3 +83,15 @@ class Conditionable(Model):
                 conditions=probtorch.Trace(), **kwargs):
         return self._function(*args, trace=trace, conditions=conditions,
                               **kwargs)
+
+class Inference(Conditionable):
+    @classmethod
+    def _bind(cls, outer, inner):
+        def result(*args, trace=probtorch.Trace(), conditions=probtorch.Trace(),
+                   **kwargs):
+            temp, trace = inner(*args, trace=trace, conditions=conditions,
+                                **kwargs)
+            return outer(*temp, trace=trace, conditions=conditions)\
+                   if isinstance(temp, tuple)\
+                   else outer(temp, trace=trace, conditions=conditions)
+        return result
