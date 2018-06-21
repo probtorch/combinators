@@ -18,8 +18,9 @@ class Model(nn.Module):
 
     @classmethod
     def _bind(cls, outer, inner):
-        def result(*args, trace={}, **kwargs):
-            temp = inner(*args, trace=trace, **kwargs)
+        def result(*args, **kwargs):
+            trace = kwargs['trace']
+            temp = inner(*args, **kwargs)
             return outer(*temp, trace=trace) if isinstance(temp, tuple) else\
                    outer(temp, trace=trace)
         return result
