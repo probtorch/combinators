@@ -32,3 +32,9 @@ def hmm_step(zs, pi, mu, sigma, t, trace={}, conditions=utils.EMPTY_TRACE):
                  name='X_%d' % t, value=conditions['X_%d' % t])
     return zs, pi, mu, sigma, t, trace
 
+def hmm_retrace(zs, pi, mu, sigma, t, trace={}, conditions=utils.EMPTY_TRACE):
+    for step in range(t):
+        zs[:, step] = trace['Z_%d' % step].value
+    for k in range(pi.shape[1]):
+        pi[:, k] = trace['\\Pi_%d' % k].value
+    return zs, pi, mu, sigma, t + 1, trace
