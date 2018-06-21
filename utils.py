@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
 
+import collections
 import flatdict
 
 import probtorch
 import torch
 import torch.nn as nn
+
+EMPTY_TRACE = collections.defaultdict(lambda: None)
+
+def map_tensors(f, *args):
+    for arg in args:
+        if isinstance(arg, torch.Tensor):
+            yield f(arg)
+        else:
+            yield arg
 
 def vardict(existing=None):
     vdict = flatdict.FlatDict(delimiter='__')
