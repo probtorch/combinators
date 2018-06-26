@@ -53,9 +53,10 @@ class ParticleTrace(probtorch.stochastic.Trace):
         return result
 
 def likelihood_weight(trace):
-    rvs = [rv for rv in trace.variables() if trace[rv].observed][-1]
-    rvs = [rvs]
-    return log_softmax(trace.log_joint(reparameterized=False, nodes=rvs), dim=0)
+    rvs = [rv for rv in trace.variables() if trace[rv].observed]
+    current = trace.log_joint(reparameterized=False, nodes=rvs)
+    prev = trace.log_joint(reparameterized=False, nodes=rvs[:-1])
+    return log_softmax(current - prev, dim=0)
 
 def smc(step, retrace):
     def resample(*args, **kwargs):
