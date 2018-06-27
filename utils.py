@@ -9,6 +9,10 @@ import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def marginal_log_likelihood(trace):
+    rvs = [rv for rv in trace.variables() if trace[rv].observed]
+    return trace.log_joint(reparameterized=False, nodes=rvs).mean(dim=-1)
+
 def particle_index(tensor, indices):
     indexed_tensors = [t[indices[particle]] for particle, t in
                        enumerate(torch.unbind(tensor, 0))]
