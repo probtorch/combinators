@@ -68,3 +68,11 @@ def smc(step, retrace):
         combinators.Inference.compose(retrace, resample),
         step,
     )
+
+def smc_run(smc_step, trace, conditions, T, *args):
+    args = args
+    for t in range(T):
+        results = smc_step(*args, t+1, trace=trace, conditions=conditions)
+        args = results[:-1]
+        trace = results[-1]
+    return trace
