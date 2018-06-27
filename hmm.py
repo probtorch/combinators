@@ -2,6 +2,7 @@
 
 import probtorch
 import torch
+from torch.nn.functional import softplus
 
 import combinators
 import utils
@@ -25,7 +26,7 @@ def hmm_step(zs, pi, mu, sigma, t, trace={}, conditions=utils.EMPTY_TRACE):
                               utils.particle_index(pi, zs[:, t-1]),
                               name='Z_%d' % t)
     trace.normal(utils.particle_index(mu, zs[:, t]),
-                 utils.particle_index(sigma, zs[:, t]),
+                 softplus(utils.particle_index(sigma, zs[:, t])),
                  name='X_%d' % t, value=conditions['X_%d' % t])
     return zs, pi, mu, sigma, trace
 
