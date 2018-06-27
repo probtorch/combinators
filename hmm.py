@@ -18,7 +18,7 @@ def init_hmm(num_states, T=1, trace=probtorch.Trace(), params={}):
     sigma = torch.sqrt(trace.param_normal(params, name='\\sigma')**2)
     zs = torch.ones(num_particles, T+1, dtype=torch.long) * -1
     zs[:, 0] = trace.variable(torch.distributions.Categorical, pi0, name='Z_0')
-    return pi, mu, sigma, zs
+    return zs, pi, mu, sigma
 
 def hmm_step(zs, pi, mu, sigma, t, trace={}, conditions=utils.EMPTY_TRACE):
     zs[:, t] = trace.variable(torch.distributions.Categorical,
