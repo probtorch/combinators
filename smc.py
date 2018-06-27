@@ -76,3 +76,20 @@ def smc_run(smc_step, trace, conditions, T, *args):
         args = results[:-1]
         trace = results[-1]
     return trace
+
+def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
+                    params, data, *args):
+    model_init = combinators.Model(model_init, 'params', params, {})
+    optimizer = torch.optim.Adam(list(model_init.parameters()), lr=1e-2)
+
+    for _ in range(num_iterations):
+        inference = ParticleTrace(num_particles)
+        vs = model_init(*args, T, trace=inference)
+
+        inference = smc_run(smc_step, inference, data, T, *vs)
+        elbo = utils.marginal_log_likelihood(inference)
+
+        (-elbo).backward()
+        optimizer.step()
+
+    return inference, model_init.args_vardict()
