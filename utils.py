@@ -37,7 +37,7 @@ def vardict_keys(vdict):
     return list(set(first_level))
 
 PARAM_TRANSFORMS = {
-    'sigma': nn.functional.softplus,
+    'scale': nn.functional.softplus,
 }
 
 def _parameterize_trace_methods(transforms=PARAM_TRANSFORMS):
