@@ -30,11 +30,15 @@ def hmm_step(zs, pi, mu, sigma, t, trace={}, conditions=utils.EMPTY_TRACE):
     trace.normal(utils.particle_index(mu, zs[:, t]),
                  utils.particle_index(sigma, zs[:, t]),
                  name='X_%d' % t, value=conditions['X_%d' % t])
-    return zs, pi, mu, sigma, t, trace
+    return zs, pi, mu, sigma, trace
 
-def hmm_retrace(zs, pi, mu, sigma, t, trace={}, conditions=utils.EMPTY_TRACE):
+def hmm_retrace(zs, pi, mu, sigma, trace={}, conditions=utils.EMPTY_TRACE):
+    t = 1
+    for key in trace:
+        if 'Z_' in key:
+            t = int(key[2:])
     for step in range(t):
         zs[:, step] = trace['Z_%d' % step].value
     for k in range(pi.shape[1]):
         pi[:, k] = trace['\\Pi_%d' % k].value
-    return zs, pi, mu, sigma, t + 1, trace
+    return zs, pi, mu, sigma, trace
