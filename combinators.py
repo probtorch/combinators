@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import inspect
 
 import probtorch
@@ -16,8 +18,9 @@ class Model(nn.Module):
 
     @classmethod
     def _bind(cls, outer, inner):
-        def result(*args, trace=probtorch.Trace(), **kwargs):
-            temp = inner(*args, trace=trace, **kwargs)
+        def result(*args, **kwargs):
+            trace = kwargs['trace']
+            temp = inner(*args, **kwargs)
             return outer(*temp, trace=trace) if isinstance(temp, tuple) else\
                    outer(temp, trace=trace)
         return result
@@ -59,7 +62,7 @@ class Model(nn.Module):
         return {k: v for k, v in members.items()
                 if k in inspect.signature(self._function).parameters.keys()}
 
-    def forward(self, *args, trace=probtorch.Trace(), **kwargs):
+    def forward(self, *args, trace={}, **kwargs):
         kwparams = {**self.kwargs_dict(), **kwargs}
         if self._params_namespace is not None:
             kwparams[self._params_namespace] = self.args_vardict(keep_vars=True)
@@ -71,27 +74,29 @@ class Conditionable(Model):
 
     @classmethod
     def _bind(cls, outer, inner):
-        def result(*args, trace=probtorch.Trace(), conditions=probtorch.Trace(),
-                   **kwargs):
-            temp = inner(*args, trace=trace, conditions=conditions, **kwargs)
+        def result(*args, **kwargs):
+            trace = kwargs['trace']
+            conditions = kwargs['conditions']
+            temp = inner(*args, **kwargs)
             return outer(*temp, trace=trace, conditions=conditions)\
                    if isinstance(temp, tuple)\
                    else outer(temp, trace=trace, conditions=conditions)
         return result
 
-    def forward(self, *args, trace=probtorch.Trace(),
-                conditions=probtorch.Trace(), **kwargs):
-        return self._function(*args, trace=trace, conditions=conditions,
-                              **kwargs)
+    def forward(self, *args, **kwargs):
+        return self._function(*args, **kwargs)
 
 class Inference(Conditionable):
     @classmethod
     def _bind(cls, outer, inner):
-        def result(*args, trace=probtorch.Trace(), conditions=probtorch.Trace(),
-                   **kwargs):
-            temp, trace = inner(*args, trace=trace, conditions=conditions,
-                                **kwargs)
-            return outer(*temp, trace=trace, conditions=conditions)\
-                   if isinstance(temp, tuple)\
-                   else outer(temp, trace=trace, conditions=conditions)
+        def result(*args, **kwargs):
+            temp = inner(*args, **kwargs)
+            outer_kwargs = {'trace': temp[-1],
+                            'conditions': kwargs['conditions']}
+            return outer(*temp[:-1], **outer_kwargs)
         return result
+
+    def forward(self, *args, **kwargs):
+        trace = kwargs['trace']
+        result = self._function(*args, **kwargs)
+        return result if isinstance(result, tuple) else (result, trace)

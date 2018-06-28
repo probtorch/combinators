@@ -1,10 +1,25 @@
 #!/usr/bin/env python3
 
+import collections
 import flatdict
 
 import probtorch
 import torch
 import torch.nn as nn
+
+EMPTY_TRACE = collections.defaultdict(lambda: None)
+
+def particle_index(tensor, indices):
+    indexed_tensors = [t[indices[particle]] for particle, t in
+                       enumerate(torch.unbind(tensor, 0))]
+    return torch.stack(indexed_tensors, dim=0)
+
+def map_tensors(f, *args):
+    for arg in args:
+        if isinstance(arg, torch.Tensor):
+            yield f(arg)
+        else:
+            yield arg
 
 def vardict(existing=None):
     vdict = flatdict.FlatDict(delimiter='__')
@@ -18,7 +33,7 @@ def vardict_keys(vdict):
     return list(set(first_level))
 
 PARAM_TRANSFORMS = {
-    'sigma': nn.functional.softplus,
+    'scale': nn.functional.softplus,
 }
 
 def _parameterize_trace_methods(transforms=PARAM_TRANSFORMS):
@@ -28,7 +43,8 @@ def _parameterize_trace_methods(transforms=PARAM_TRANSFORMS):
         if _inspect.isfunction(v):
             args = _inspect.signature(v).parameters.keys()
             if 'name' in args and 'value' in args:
-                def param_sample(self, params, name=None, value=None, **kwargs):
+                def param_sample(self, params, name=None, value=None, k=k,
+                                 **kwargs):
                     params = {**params[name].copy(), **kwargs}
                     for arg, val in params.items():
                         if arg in transforms:

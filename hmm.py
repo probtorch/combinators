@@ -1,49 +1,36 @@
-import probtorch.model as pm
-import probtorch.distributions as pd
+#!/usr/bin/env python3
+
+import probtorch
+import torch
+from torch.nn.functional import softplus
 
 import combinators
+import utils
 
-# class EnsembleHMM(pd.Model):
-#     """A HMM with shared parameters for multiple time series"""
+def init_hmm(num_states, T=1, trace=probtorch.Trace(), params={}):
+    num_particles = trace.num_particles if hasattr(trace, 'num_particles')\
+                    else 1
 
-#     def __init__(self, num_states):
+    mu = trace.param_normal(params, name='mu')
+    sigma = torch.sqrt(trace.param_normal(params, name='sigma')**2)
+    delta = trace.param_normal(params, name='delta')
+    zs = torch.ones(num_particles, T+1) * -1
+    zs[:, 0] = trace.normal(mu, softplus(sigma), name='Z_0')
+    return zs, mu, sigma, delta
 
-#     def forward(self):
-#         hmm = self.init_hmm(dataset)
-#         return pm.Map(hmm)
+def hmm_step(zs, mu, sigma, delta, t, trace={}, conditions=utils.EMPTY_TRACE):
+    zs[:, t] = trace.normal(zs[:, t-1] + delta, softplus(sigma),
+                            name='Z_%d' % t)
+    trace.normal(zs[:, t], torch.ones(*zs[:, t].shape), name='X_%d' % t,
+                 value=conditions['X_%d' % t])
+    return zs, mu, sigma, delta, trace
 
-class HmmInit(combinators.Model):
-    pass
-
-class HmmTrans(combinators.Model):
-    pass
-
-class HmmLikelihood(combinators.Conditionable):
-    pass
-
-
-class HmmGlobals(combinators.Model):
-    def _init__(self, num_states):
-        ...
-
-    def forward(self, data, states=None):
-        ...
-        return data, likelihood, state_init, state_trans
-
-
-class HmmStates(combinators.Model):
-    def __init__(self, num_states):
-        ...
-
-    def forward(self, data, likelihood, state_init, state_trans):
-        ...
-        return states
-
-
-hmm_globals = HmmGlobals(num_states, name='globals')
-hmm_states = HmmStates(num_states, name='states')
-hmm = pm.Chain(hmm_globals, hmm_locals, name='hmm') # ToDo: what is syntax for ensuring data is input to both globals and locals
-ensemble_hmm = pm.Map(hmm, name='ensemble')
-
-for batch in dataset:
-    (likelihood, state_init, state_trans), states = infer(ensemble_hmm, batch)
+def hmm_retrace(zs, mu, sigma, delta, trace={}, conditions=utils.EMPTY_TRACE):
+    t = 1
+    for key in trace:
+        if 'Z_' in key:
+            t = int(key[2:])
+    for step in range(t):
+        zs[:, step] = trace['Z_%d' % step].value
+    delta = trace['delta'].value
+    return zs, mu, sigma, delta, trace
