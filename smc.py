@@ -52,16 +52,20 @@ class ParticleTrace(probtorch.stochastic.Trace):
 
         return result
 
-def likelihood_weight(trace):
-    rvs = [rv for rv in trace.variables() if trace[rv].observed]
-    current = trace.log_joint(reparameterized=False, nodes=rvs)
-    prev = trace.log_joint(reparameterized=False, nodes=rvs[:-1])
-    return log_softmax(current - prev, dim=0)
+def importance_weight(trace, conditions):
+    observations = [rv for rv in trace.variables() if trace[rv].observed]
+    latents = [rv for rv in trace.variables() if not trace[rv].observed]
+    log_likelihood = trace.log_joint(nodes=observations[-1:])
+    log_proposal = trace.log_joint(nodes=latents[-1:])
+    log_generative = conditions.log_joint(nodes=latents[-1:])
+
+    return log_softmax(log_likelihood + log_generative - log_proposal, dim=0)
 
 def smc(step, retrace):
     def resample(*args, **kwargs):
         trace = kwargs['trace']
-        trace = trace.resample(likelihood_weight(trace))
+        conditions = kwargs['conditions']
+        trace = trace.resample(importance_weight(trace, conditions))
         return args + (trace,)
     resample = combinators.Inference(resample)
     return combinators.Inference.compose(
