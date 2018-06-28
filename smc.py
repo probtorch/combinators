@@ -2,6 +2,7 @@
 
 import probtorch
 from probtorch.stochastic import RandomVariable, Trace
+from probtorch.util import log_mean_exp
 import torch
 from torch.nn.functional import log_softmax
 
@@ -81,10 +82,11 @@ def smc_run(smc_step, trace, conditions, T, *args):
         trace = results[-1]
     return trace
 
-def marginal_log_likelihood(trace):
-    observables = [rv for rv in trace.variables() if trace[rv].observed]
-    log_weights = trace.log_joint(reparameterized=False, nodes=observables)
-    return torch.log(torch.exp(log_weights).mean())
+def marginal_log_likelihood(trace, conditions, T):
+    log_weights = torch.zeros(T, trace.num_particles)
+    for t in range(T):
+        log_weights[t] = importance_weight(trace, conditions, t)
+    return log_mean_exp(log_weights, dim=1).sum()
 
 def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
                     params, data, *args):
@@ -98,7 +100,7 @@ def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
         vs = model_init(*args, T, trace=inference)
 
         inference = smc_run(smc_step, inference, data, T, *vs)
-        elbo = utils.marginal_log_likelihood(inference)
+        elbo = marginal_log_likelihood(inference, data, T)
 
         (-elbo).backward()
         optimizer.step()
