@@ -81,6 +81,11 @@ def smc_run(smc_step, trace, conditions, T, *args):
         trace = results[-1]
     return trace
 
+def marginal_log_likelihood(trace):
+    observables = [rv for rv in trace.variables() if trace[rv].observed]
+    log_weights = trace.log_joint(reparameterized=False, nodes=observables)
+    return torch.log(torch.exp(log_weights).mean())
+
 def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
                     params, data, *args):
     model_init = combinators.Model(model_init, 'params', params, {})

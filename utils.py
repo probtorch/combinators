@@ -4,16 +4,10 @@ import collections
 import flatdict
 
 import probtorch
-import probtorch.util
 import torch
 import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
-
-def marginal_log_likelihood(trace):
-    observables = [rv for rv in trace.variables() if trace[rv].observed]
-    log_weights = trace.log_joint(reparameterized=False, nodes=observables)
-    return probtorch.util.log_mean_exp(log_weights)
 
 def particle_index(tensor, indices):
     indexed_tensors = [t[indices[particle]] for particle, t in
