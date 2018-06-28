@@ -52,12 +52,12 @@ class ParticleTrace(probtorch.stochastic.Trace):
 
         return result
 
-def importance_weight(trace, conditions):
+def importance_weight(trace, conditions, t=-1):
     observations = [rv for rv in trace.variables() if trace[rv].observed]
     latents = [rv for rv in trace.variables() if not trace[rv].observed]
-    log_likelihood = trace.log_joint(nodes=observations[-1:])
-    log_proposal = trace.log_joint(nodes=latents[-1:])
-    log_generative = conditions.log_joint(nodes=latents[-1:])
+    log_likelihood = trace.log_joint(nodes=observations[t:])
+    log_proposal = trace.log_joint(nodes=latents[t:])
+    log_generative = conditions.log_joint(nodes=latents[t:])
 
     return log_softmax(log_likelihood + log_generative - log_proposal, dim=0)
 
