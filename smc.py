@@ -88,6 +88,8 @@ def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
     optimizer = torch.optim.Adam(list(model_init.parameters()), lr=1e-2)
 
     for _ in range(num_iterations):
+        optimizer.zero_grad()
+
         inference = ParticleTrace(num_particles)
         vs = model_init(*args, T, trace=inference)
 
