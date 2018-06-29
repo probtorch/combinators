@@ -7,7 +7,7 @@ from torch.nn.functional import softplus
 import combinators
 import utils
 
-def init_hmm(num_states, T=1, trace=probtorch.Trace(), params={}):
+def init_ssm(num_states, T=1, trace=probtorch.Trace(), params={}):
     num_particles = trace.num_particles if hasattr(trace, 'num_particles')\
                     else 1
 
@@ -18,14 +18,14 @@ def init_hmm(num_states, T=1, trace=probtorch.Trace(), params={}):
     zs[:, 0] = trace.normal(mu, softplus(sigma), name='Z_0')
     return zs, mu, sigma, delta
 
-def hmm_step(zs, mu, sigma, delta, t, trace={}, conditions=utils.EMPTY_TRACE):
+def ssm_step(zs, mu, sigma, delta, t, trace={}, conditions=utils.EMPTY_TRACE):
     zs[:, t] = zs[:, t-1] + trace.normal(delta, softplus(sigma),
                                          name='Z_%d' % t)
     trace.normal(zs[:, t], torch.ones(*zs[:, t].shape), name='X_%d' % t,
                  value=conditions['X_%d' % t])
     return zs, mu, sigma, delta, trace
 
-def hmm_retrace(zs, mu, sigma, delta, trace={}, conditions=utils.EMPTY_TRACE):
+def ssm_retrace(zs, mu, sigma, delta, trace={}, conditions=utils.EMPTY_TRACE):
     t = 1
     for key in trace:
         if 'Z_' in key:
