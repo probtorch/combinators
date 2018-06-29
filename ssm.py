@@ -33,4 +33,6 @@ def ssm_retrace(zs, mu, sigma, delta, trace={}, conditions=utils.EMPTY_TRACE):
     for step in range(t):
         zs[:, step] = trace['Z_%d' % step].value
     delta = trace['delta'].value
+    mu = trace['mu'].value
+    sigma = trace['sigma'].value
     return zs, mu, sigma, delta, trace
