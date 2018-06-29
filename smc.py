@@ -106,3 +106,26 @@ def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
         optimizer.step()
 
     return inference, model_init.args_vardict()
+
+def particle_mh(num_particles, model_init, smc_step, num_iterations, T, params,
+                data, *args):
+    model_init = combinators.Model(model_init, 'params', params, {})
+    elbos = torch.zeros(num_iterations)
+    samples = arange(num_iterations)
+
+    for i in range(num_iterations):
+        inference = ParticleTrace(num_particles)
+        vs = model_init(*args, T, trace=inference)
+
+        inference = smc_run(smc_step, inference, data, T, *vs)
+        elbo = marginal_log_likelihood(inference, data, T)
+
+        acceptance = torch.max(torch.ones(1), torch.exp(elbo - elbos[i-1]))
+        if (torch.bernoulli(acceptance) == 1).sum() > 0:
+            elbos[i] = elbo
+            samples[i] = vs
+        else:
+            elbos[i] = elbos[i-1]
+            samples[i] = samples[i-1]
+
+    return samples, elbos, inference
