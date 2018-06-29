@@ -7,7 +7,7 @@ from torch.nn.functional import softplus
 import combinators
 import utils
 
-def init_ssm(num_states, T=1, trace=probtorch.Trace(), params={}):
+def init_ssm(T=1, trace=probtorch.Trace(), params={}):
     num_particles = trace.num_particles if hasattr(trace, 'num_particles')\
                     else 1
 
