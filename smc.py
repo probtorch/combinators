@@ -33,15 +33,15 @@ class ParticleTrace(probtorch.stochastic.Trace):
         return super(ParticleTrace, self).log_joint(*args, sample_dim=0,
                                                     **kwargs)
 
-    def resample(self, weights):
-        resampler = torch.distributions.Categorical(logits=weights)
-        particles = resampler.sample((self.num_particles,))
+    def resample(self, log_weights):
+        resampler = torch.distributions.Categorical(logits=log_weights)
+        ancestor_indices = resampler.sample((self.num_particles,))
 
         result = ParticleTrace(self.num_particles)
         for i, key in enumerate(self.variables()):
             rv = self[key]
             if not rv.observed:
-                value = rv.value.index_select(0, particles)
+                value = rv.value.index_select(0, ancestor_indices)
                 sample = RandomVariable(rv.dist, value, rv.observed, rv.mask,
                                         rv.reparameterized)
             else:
