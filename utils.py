@@ -9,6 +9,13 @@ import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def optional_to(tensor, other):
+    if isinstance(tensor, probtorch.stochastic.RandomVariable):
+        return tensor.value.to(other)
+    elif tensor is not None:
+        return tensor.to(other)
+    return tensor
+
 def particle_index(tensor, indices):
     indexed_tensors = [t[indices[particle]] for particle, t in
                        enumerate(torch.unbind(tensor, 0))]
