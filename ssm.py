@@ -19,8 +19,8 @@ def init_ssm(T=1, trace=probtorch.Trace(), params={}):
     return zs, mu, sigma, delta
 
 def ssm_step(zs, mu, sigma, delta, t, trace={}, conditions=utils.EMPTY_TRACE):
-    zs[:, t] = zs[:, t-1] + trace.normal(delta, softplus(sigma),
-                                         name='Z_%d' % t)
+    zs[:, t] = trace.normal(zs[:, t-1] + delta, softplus(sigma),
+                            name='Z_%d' % t)
     trace.normal(zs[:, t], torch.ones(*zs[:, t].shape), name='X_%d' % t,
                  value=conditions['X_%d' % t])
     return zs, mu, sigma, delta, trace
