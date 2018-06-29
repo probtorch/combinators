@@ -58,7 +58,7 @@ def importance_weight(trace, conditions, t=-1):
     latents = [rv for rv in trace.variables() if not trace[rv].observed]
     log_likelihood = trace.log_joint(nodes=observations[t:])
     log_proposal = trace.log_joint(nodes=latents[t:])
-    log_generative = conditions.log_joint(nodes=latents[t:])
+    log_generative = conditions.log_joint(nodes=latents[t:]).to(log_proposal)
 
     return log_softmax(log_likelihood + log_generative - log_proposal, dim=0)
 
@@ -93,6 +93,10 @@ def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
     model_init = combinators.Model(model_init, 'params', params, {})
     optimizer = torch.optim.Adam(list(model_init.parameters()), lr=1e-2)
 
+    if torch.cuda.is_available():
+        model_init.cuda()
+        smc_step.cuda()
+
     for _ in range(num_iterations):
         optimizer.zero_grad()
 
@@ -104,6 +108,10 @@ def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
 
         (-elbo).backward()
         optimizer.step()
+
+    if torch.cuda.is_available():
+        model_init.cpu()
+        smc_step.cpu()
 
     return inference, model_init.args_vardict()
 

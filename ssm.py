@@ -14,15 +14,16 @@ def init_ssm(T=1, trace=probtorch.Trace(), params={}):
     mu = trace.param_normal(params, name='mu')
     sigma = torch.sqrt(trace.param_normal(params, name='sigma')**2)
     delta = trace.param_normal(params, name='delta')
-    zs = torch.ones(num_particles, T+1) * -1
+    zs = torch.ones(num_particles, T+1, device=mu.device) * -1
     zs[:, 0] = trace.normal(mu, softplus(sigma), name='Z_0')
     return zs, mu, sigma, delta
 
 def ssm_step(zs, mu, sigma, delta, t, trace={}, conditions=utils.EMPTY_TRACE):
     zs[:, t] = trace.normal(zs[:, t-1] + delta, softplus(sigma),
                             name='Z_%d' % t)
-    trace.normal(zs[:, t], torch.ones(*zs[:, t].shape), name='X_%d' % t,
-                 value=conditions['X_%d' % t])
+    trace.normal(zs[:, t], torch.ones(*zs[:, t].shape, device=zs.device),
+                 name='X_%d' % t,
+                 value=utils.optional_to(conditions['X_%d' % t], zs[:, t]))
     return zs, mu, sigma, delta, trace
 
 def ssm_retrace(zs, mu, sigma, delta, trace={}, conditions=utils.EMPTY_TRACE):
