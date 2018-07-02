@@ -63,10 +63,10 @@ class Model(nn.Module):
                 if k in inspect.signature(self._function).parameters.keys()}
 
     def forward(self, *args, trace={}, **kwargs):
-        kwparams = {**self.kwargs_dict(), **kwargs}
+        kwparams = {**self.kwargs_dict(), 'trace': trace, **kwargs}
         if self._params_namespace is not None:
             kwparams[self._params_namespace] = self.args_vardict(keep_vars=True)
-        return self._function(*args, trace=trace, **kwparams)
+        return self._function(*args, **kwparams)
 
 class Conditionable(Model):
     def __init__(self, f, params_namespace='params'):
@@ -84,7 +84,7 @@ class Conditionable(Model):
         return result
 
     def forward(self, *args, **kwargs):
-        return self._function(*args, **kwargs)
+        super(Conditionable, self).forward(*args, **kwargs)
 
 class Inference(Conditionable):
     @classmethod
@@ -97,6 +97,5 @@ class Inference(Conditionable):
         return result
 
     def forward(self, *args, **kwargs):
-        trace = kwargs['trace']
-        result = self._function(*args, **kwargs)
+        result = super(Inference, self).forward(*args, **kwargs)
         return result if isinstance(result, tuple) else (result, trace)
