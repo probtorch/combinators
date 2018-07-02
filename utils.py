@@ -39,6 +39,12 @@ def vardict_keys(vdict):
     first_level = [k.rsplit('__', 1)[0] for k in vdict.keys()]
     return list(set(first_level))
 
+def walk_trie(trie, keys=[]):
+    while len(keys) > 0:
+        trie = trie[keys[0]]
+        keys = keys[1:]
+    return trie
+
 PARAM_TRANSFORMS = {
     'scale': nn.functional.softplus,
 }
