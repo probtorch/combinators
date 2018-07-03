@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import collections
 import inspect
 
 import probtorch
@@ -7,6 +8,24 @@ import torch
 import torch.nn as nn
 
 import utils
+
+class GraphingTrace(probtorch.stochastic.Trace):
+    def __init__(self):
+        super(GraphingTrace, self).__init__()
+        self._modules = collections.defaultdict(lambda: set())
+        self._stack = []
+
+    def variable(self, Dist, *args, **kwargs):
+        result = super(GraphingTrace, self).variable(Dist, *args, **kwargs)
+        if self._stack:
+            self._modules[self._stack[-1]] += [self[kwargs['name']]]
+        return result
+
+    def push(self, module):
+        self._stack.append(module)
+
+    def pop(self):
+        self._stack.pop()
 
 class Model(nn.Module):
     def __init__(self, f, params_namespace=None, phi={}, theta={}):
