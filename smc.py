@@ -71,7 +71,7 @@ def smc(step, retrace):
     resample = combinators.Inference(resample)
     return combinators.Inference.compose(
         combinators.Inference.compose(retrace, resample),
-        step,
+        combinators.Inference(step),
     )
 
 def smc_run(smc_step, trace, conditions, T, *args):
