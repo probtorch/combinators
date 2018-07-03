@@ -9,7 +9,7 @@ from torch.nn.functional import log_softmax
 import combinators
 import utils
 
-class ParticleTrace(probtorch.stochastic.Trace):
+class ParticleTrace(combinators.GraphingTrace):
     def __init__(self, num_particles=1):
         super(ParticleTrace, self).__init__()
         self._num_particles = num_particles
