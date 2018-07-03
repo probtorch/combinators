@@ -131,3 +131,13 @@ class Inference(Conditionable):
         trace = kwargs['trace']
         result = super(Inference, self).forward(*args, **kwargs)
         return result if isinstance(result, tuple) else (result, trace)
+
+def sequence(step, T, *args, trace={}, conditions={}):
+    for t in range(T):
+        results = step(*args, t, trace=trace, conditions=conditions)
+        if isinstance(results, tuple):
+            args = results[:-1]
+            trace = results[-1]
+        else:
+            args = results
+    return results
