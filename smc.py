@@ -69,18 +69,11 @@ def smc(step, retrace):
         trace = trace.resample(importance_weight(trace, conditions))
         return args + (trace,)
     resample = combinators.Inference(resample)
-    return combinators.Inference.compose(
+    stepper = combinators.Inference.compose(
         combinators.Inference.compose(retrace, resample),
         combinators.Inference(step),
     )
-
-def smc_run(smc_step, trace, conditions, T, *args):
-    args = args
-    for t in range(T):
-        results = smc_step(*args, t+1, trace=trace, conditions=conditions)
-        args = results[:-1]
-        trace = results[-1]
-    return trace
+    return combinators.Inference.partial(combinators.sequence, stepper)
 
 def marginal_log_likelihood(trace, conditions, T):
     log_weights = torch.zeros(T, trace.num_particles)
@@ -88,14 +81,14 @@ def marginal_log_likelihood(trace, conditions, T):
         log_weights[t] = importance_weight(trace, conditions, t)
     return log_mean_exp(log_weights, dim=1).sum()
 
-def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
+def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
                     params, data, *args):
     model_init = combinators.Model(model_init, 'params', params, {})
     optimizer = torch.optim.Adam(list(model_init.parameters()), lr=1e-2)
 
     if torch.cuda.is_available():
         model_init.cuda()
-        smc_step.cuda()
+        smc_run.cuda()
 
     for _ in range(num_iterations):
         optimizer.zero_grad()
@@ -103,7 +96,8 @@ def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
         inference = ParticleTrace(num_particles)
         vs = model_init(*args, T, trace=inference)
 
-        inference = smc_run(smc_step, inference, data, T, *vs)
+        results = smc_run(T, *vs, trace=inference, conditions=data)
+        inference = results[-1]
         elbo = marginal_log_likelihood(inference, data, T)
 
         (-elbo).backward()
@@ -111,7 +105,7 @@ def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
 
     if torch.cuda.is_available():
         model_init.cpu()
-        smc_step.cpu()
+        smc_run.cpu()
 
     return inference, model_init.args_vardict()
 
