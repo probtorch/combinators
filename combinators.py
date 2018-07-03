@@ -9,7 +9,7 @@ import torch.nn as nn
 import utils
 
 class Model(nn.Module):
-    def __init__(self, f, params_namespace='', phi={}, theta={}):
+    def __init__(self, f, params_namespace=None, phi={}, theta={}):
         super(Model, self).__init__()
         self._function = f
         self._params_namespace = params_namespace
@@ -69,7 +69,7 @@ class Model(nn.Module):
         return self._function(*args, **kwparams)
 
 class Conditionable(Model):
-    def __init__(self, f, params_namespace='params'):
+    def __init__(self, f, params_namespace=None):
         super(Conditionable, self).__init__(f, params_namespace)
 
     @classmethod
@@ -84,7 +84,7 @@ class Conditionable(Model):
         return result
 
     def forward(self, *args, **kwargs):
-        super(Conditionable, self).forward(*args, **kwargs)
+        return super(Conditionable, self).forward(*args, **kwargs)
 
 class Inference(Conditionable):
     @classmethod
@@ -97,5 +97,6 @@ class Inference(Conditionable):
         return result
 
     def forward(self, *args, **kwargs):
+        trace = kwargs['trace']
         result = super(Inference, self).forward(*args, **kwargs)
         return result if isinstance(result, tuple) else (result, trace)
