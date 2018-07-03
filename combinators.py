@@ -85,7 +85,12 @@ class Model(nn.Module):
         kwparams = {**self.kwargs_dict(), 'trace': trace, **kwargs}
         if self._params_namespace is not None:
             kwparams[self._params_namespace] = self.args_vardict(keep_vars=True)
-        return self._function(*args, **kwparams)
+        if isinstance(trace, GraphingTrace):
+            trace.push(self)
+        result = self._function(*args, **kwparams)
+        if isinstance(trace, GraphingTrace):
+            trace.pop()
+        return result
 
 class Conditionable(Model):
     def __init__(self, f, params_namespace=None):
