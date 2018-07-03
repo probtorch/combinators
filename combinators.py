@@ -59,6 +59,13 @@ class Model(nn.Module):
 
         return result
 
+    @classmethod
+    def partial(cls, func, *arguments, **keywords):
+        def result(*args, **kwargs):
+            kwargs = {**kwargs, **keywords}
+            return func(*arguments, *args, **kwargs)
+        return cls(result)
+
     def register_args(self, args, trainable=True):
         for k, v in utils.vardict(args).items():
             if self._params_namespace is not None:
