@@ -10,7 +10,8 @@ import torch.nn as nn
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
 def counterfactual_log_joint(p, q, rvs):
-    return sum([p[rv].dist.log_prob(q[rv].value) for rv in rvs if rv in p])
+    return sum([p[rv].dist.log_prob(q[rv].value.to(p[rv].value)) for rv in rvs
+                if rv in p])
 
 def optional_to(tensor, other):
     if isinstance(tensor, probtorch.stochastic.RandomVariable):
