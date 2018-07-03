@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 
 import collections
-from distutils.version import LooseVersion
 import flatdict
 
 import probtorch
 import torch
 import torch.nn as nn
-import torch.onnx
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
@@ -68,28 +66,3 @@ def _parameterize_trace_methods(transforms=PARAM_TRANSFORMS):
                 setattr(probtorch.Trace, 'param_' + k, param_sample)
 
 _parameterize_trace_methods()
-
-
-def graph(model, args, verbose=False):
-    with torch.onnx.set_training(model, False):
-        try:
-            trace, _ = torch.jit.get_trace_graph(model, args)
-        except RuntimeError:
-            print('Error occurs, No graph saved')
-            _ = model(args)  # don't catch, just print the error message
-            print("Checking if it's onnx problem...")
-            try:
-                import tempfile
-                torch.onnx.export(model, args, tempfile.TemporaryFile(),
-                                  verbose=True)
-            except RuntimeError:
-                print("Your model fails onnx too, please report to onnx team")
-            return None
-    if LooseVersion(torch.__version__) >= LooseVersion('0.4'):
-        torch.onnx._optimize_trace(trace, False)
-    else:
-        torch.onnx._optimize_trace(trace)
-    result = trace.graph()
-    if verbose:
-        print(result)
-    return result
