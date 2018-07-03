@@ -18,7 +18,7 @@ class GraphingTrace(probtorch.stochastic.Trace):
     def variable(self, Dist, *args, **kwargs):
         result = super(GraphingTrace, self).variable(Dist, *args, **kwargs)
         if self._stack:
-            self._modules[self._stack[-1]] += [self[kwargs['name']]]
+            self._modules[self._stack[-1]].add(self[kwargs['name']])
         return result
 
     def push(self, module):
