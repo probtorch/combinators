@@ -38,6 +38,8 @@ class ParticleTrace(combinators.GraphingTrace):
         ancestor_indices = resampler.sample((self.num_particles,))
 
         result = ParticleTrace(self.num_particles)
+        result._modules = self._modules
+        result._stack = self._stack
         for i, key in enumerate(self.variables()):
             rv = self[key]
             if not rv.observed:
