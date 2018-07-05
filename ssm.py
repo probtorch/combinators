@@ -16,24 +16,26 @@ def init_ssm(T=1, trace=probtorch.Trace(), params={}):
     delta = trace.param_normal(params, name='delta')
     zs = torch.ones(num_particles, T+1, device=mu.device) * -1
     zs[:, 0] = trace.normal(mu, softplus(sigma), name='Z_0')
-    return zs, mu, sigma, delta
+    return zs[:, 0], mu, sigma, delta
 
-def ssm_step(zs, mu, sigma, delta, t, trace={}, conditions=utils.EMPTY_TRACE):
-    zs[:, t] = trace.normal(zs[:, t-1] + delta, softplus(sigma),
-                            name='Z_%d' % t)
-    trace.normal(zs[:, t], torch.ones(*zs[:, t].shape, device=zs.device),
+def ssm_step(z_prev, mu, sigma, delta, t, trace={},
+             conditions=utils.EMPTY_TRACE):
+    t += 1
+    z_current = trace.normal(z_prev + delta, softplus(sigma), name='Z_%d' % t)
+    trace.normal(z_current, torch.ones(*z_current.shape,
+                                       device=z_current.device),
                  name='X_%d' % t,
-                 value=utils.optional_to(conditions['X_%d' % t], zs[:, t]))
-    return zs, mu, sigma, delta, trace
+                 value=utils.optional_to(conditions['X_%d' % t], z_current))
+    return z_current, mu, sigma, delta, trace
 
-def ssm_retrace(zs, mu, sigma, delta, trace={}, conditions=utils.EMPTY_TRACE):
+def ssm_retrace(z_current, mu, sigma, delta, trace={},
+                conditions=utils.EMPTY_TRACE):
     t = 1
     for key in trace:
         if 'Z_' in key:
             t = int(key[2:])
-    for step in range(t):
-        zs[:, step] = trace['Z_%d' % step].value
+    z_current = trace['Z_%d' % t].value
     delta = trace['delta'].value
     mu = trace['mu'].value
     sigma = trace['sigma'].value
-    return zs, mu, sigma, delta, trace
+    return z_current, mu, sigma, delta, trace
