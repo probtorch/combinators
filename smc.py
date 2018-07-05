@@ -71,16 +71,19 @@ def importance_weight(trace, conditions, t=-1):
 
 def smc(step, retrace):
     def resample(*args, **kwargs):
-        trace = kwargs['trace']
-        conditions = kwargs['conditions']
-        trace = trace.resample(importance_weight(trace, conditions))
-        return args + (trace,)
-    resample = combinators.Inference(resample)
-    stepper = combinators.Inference.compose(
-        combinators.Inference.compose(retrace, resample),
-        combinators.Inference(step),
+        this = kwargs['this']
+        resampled_trace = this.trace.resample(importance_weight(
+            this.trace, this.observations
+        ))
+        this.ancestor.condition(trace=resampled_trace)
+        return args
+    resample = combinators.Model(resample)
+    stepper = combinators.Model.compose(
+        combinators.Model.compose(retrace, resample),
+        combinators.Model(step),
     )
-    return combinators.Inference.partial(combinators.sequence, stepper)
+    return combinators.Model.partial(combinators.Model(combinators.sequence),
+                                     stepper)
 
 def marginal_log_likelihood(trace, conditions, T):
     log_weights = torch.zeros(T, trace.num_particles)
@@ -90,7 +93,7 @@ def marginal_log_likelihood(trace, conditions, T):
 
 def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
                     params, data, *args):
-    model_init = combinators.Model(model_init, 'params', params, {})
+    model_init = combinators.Model(model_init, params, {})
     optimizer = torch.optim.Adam(list(model_init.parameters()), lr=1e-2)
 
     if torch.cuda.is_available():
@@ -101,10 +104,11 @@ def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
         optimizer.zero_grad()
 
         inference = ParticleTrace(num_particles)
-        vs = model_init(*args, T, trace=inference)
+        model_init.condition(trace=inference, observations=data)
+        smc_run.condition(trace=inference, observations=data)
 
-        results = smc_run(T, *vs, trace=inference, conditions=data)
-        inference = results[-1]
+        smc_run(T, *model_init(*args, T))
+        inference = smc_run.trace
         elbo = marginal_log_likelihood(inference, data, T)
         logging.info('Variational SMC ELBO=%.4e at epoch %d', elbo, t)
 
@@ -117,17 +121,21 @@ def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
 
     return inference, model_init.args_vardict()
 
-def particle_mh(num_particles, model_init, smc_step, num_iterations, T, params,
+def particle_mh(num_particles, model_init, smc_run, num_iterations, T, params,
                 data, *args):
-    model_init = combinators.Model(model_init, 'params', params, {})
+    model_init = combinators.Model(model_init, params, {})
     elbos = torch.zeros(num_iterations)
     samples = arange(num_iterations)
 
     for i in range(num_iterations):
         inference = ParticleTrace(num_particles)
-        vs = model_init(*args, T, trace=inference)
+        model_init.condition(trace=inference, observations=data)
+        smc_run.condition(trace=inference, observations=data)
 
-        inference = smc_run(smc_step, inference, data, T, *vs)
+        vs = model_init(*args, T)
+
+        results = smc_run(T, *vs)
+        inference = results[-1]
         elbo = marginal_log_likelihood(inference, data, T)
 
         acceptance = torch.max(torch.ones(1), torch.exp(elbo - elbos[i-1]))
