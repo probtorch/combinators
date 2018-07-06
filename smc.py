@@ -61,10 +61,10 @@ def importance_weight(trace, conditions, t=-1):
     observations = [rv for rv in trace.variables() if trace[rv].observed]
     latents = [rv for rv in trace.variables() if not trace[rv].observed and
                rv in conditions]
-    log_likelihood = trace.log_joint(nodes=observations[t:])
-    log_proposal = trace.log_joint(nodes=latents[t:])
+    log_likelihood = trace.log_joint(nodes=[observations[t]])
+    log_proposal = trace.log_joint(nodes=[latents[t]])
     log_generative = utils.counterfactual_log_joint(conditions, trace,
-                                                    latents[t:])
+                                                    [latents[t]])
     log_generative = log_generative.to(log_proposal).mean(dim=0)
 
     return log_softmax(log_likelihood + log_generative - log_proposal, dim=0)
