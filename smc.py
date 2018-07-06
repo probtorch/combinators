@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import logging
+
 import probtorch
 from probtorch.stochastic import RandomVariable, Trace
 from probtorch.util import log_mean_exp
@@ -95,7 +97,7 @@ def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
         model_init.cuda()
         smc_run.cuda()
 
-    for _ in range(num_iterations):
+    for t in range(num_iterations):
         optimizer.zero_grad()
 
         inference = ParticleTrace(num_particles)
@@ -104,6 +106,7 @@ def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
         results = smc_run(T, *vs, trace=inference, conditions=data)
         inference = results[-1]
         elbo = marginal_log_likelihood(inference, data, T)
+        logging.info('Variational SMC ELBO=%.4e at epoch %d', elbo, t)
 
         (-elbo).backward()
         optimizer.step()
