@@ -94,7 +94,7 @@ def marginal_log_likelihood(trace, conditions, T):
 def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
                     params, data, *args):
     model_init = combinators.Model(model_init, params, {})
-    optimizer = torch.optim.Adam(list(model_init.parameters()), lr=1e-2)
+    optimizer = torch.optim.Adam(list(model_init.parameters()), lr=1e-6)
 
     if torch.cuda.is_available():
         model_init.cuda()
@@ -110,7 +110,7 @@ def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
         smc_run(T, *model_init(*args, T))
         inference = smc_run.trace
         elbo = marginal_log_likelihood(inference, data, T)
-        logging.info('Variational SMC ELBO=%.4e at epoch %d', elbo, t)
+        logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
 
         (-elbo).backward()
         optimizer.step()
