@@ -64,13 +64,15 @@ class ImportanceSampler(combinators.Model):
         super(ImportanceSampler, self).__init__(f, phi, theta)
         self.log_weights = collections.OrderedDict()
 
-    def importance_weight(self, t=-1):
+    def importance_weight(self, t=-1, reparameterized=True):
         observation = [rv for rv in self.trace.variables()
                        if self.trace[rv].observed][t]
         latent = [rv for rv in self.trace.variables()
                   if not self.trace[rv].observed and rv in self.observations][t]
-        log_likelihood = self.trace.log_joint(nodes=[observation])
-        log_proposal = self.trace.log_joint(nodes=[latent])
+        log_likelihood = self.trace.log_joint(nodes=[observation],
+                                              reparameterized=reparameterized)
+        log_proposal = self.trace.log_joint(nodes=[latent],
+                                            reparameterized=reparameterized)
         log_generative = utils.counterfactual_log_joint(self.observations,
                                                         self.trace, [latent])
         log_generative = log_generative.to(log_proposal).mean(dim=0)
@@ -86,11 +88,11 @@ class ImportanceSampler(combinators.Model):
             log_weights[t] = lw
         return log_mean_exp(log_weights, dim=1).sum()
 
-def smc(step, retrace):
+def smc(step, retrace, reparameterized=True):
     def resample(*args, **kwargs):
         this = kwargs['this']
         resampled_trace, resampled_weights = this.trace.resample(
-            this.importance_weight()
+            this.importance_weight(reparameterized=reparameterized)
         )
         this.log_weights[-1] = resampled_weights
         this.ancestor.condition(trace=resampled_trace)
