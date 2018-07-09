@@ -125,7 +125,11 @@ def particle_mh(num_particles, model_init, smc_run, num_iterations, T, params,
                 data, *args):
     model_init = combinators.Model(model_init, params, {})
     elbos = torch.zeros(num_iterations)
-    samples = arange(num_iterations)
+    samples = list(range(num_iterations))
+
+    if torch.cuda.is_available():
+        model_init.cuda()
+        smc_run.cuda()
 
     for i in range(num_iterations):
         inference = ParticleTrace(num_particles)
@@ -134,16 +138,20 @@ def particle_mh(num_particles, model_init, smc_run, num_iterations, T, params,
 
         vs = model_init(*args, T)
 
-        results = smc_run(T, *vs)
-        inference = results[-1]
+        vs = smc_run(T, *vs)
+        inference = smc_run.trace
         elbo = marginal_log_likelihood(inference, data, T)
 
-        acceptance = torch.max(torch.ones(1), torch.exp(elbo - elbos[i-1]))
-        if (torch.bernoulli(acceptance) == 1).sum() > 0:
+        acceptance = torch.min(torch.ones(1), torch.exp(elbo - elbos[i-1]))
+        if (torch.bernoulli(acceptance) == 1).sum() > 0 or i == 0:
             elbos[i] = elbo
             samples[i] = vs
         else:
             elbos[i] = elbos[i-1]
             samples[i] = samples[i-1]
+
+    if torch.cuda.is_available():
+        model_init.cpu()
+        smc_run.cpu()
 
     return samples, elbos, inference
