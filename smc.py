@@ -59,6 +59,25 @@ class ParticleTrace(combinators.GraphingTrace):
 
         return result, log_weights.index_select(0, ancestor_indices)
 
+    def squeeze(self):
+        result = combinators.GraphingTrace()
+        result._modules = self._modules
+        result._stack = self._stack
+
+        for i, key in enumerate(self.variables()):
+            if key is not None:
+                rv = self[key]
+                result[key] = RandomVariable(rv.dist, rv.value.median(dim=0)[0],
+                                             rv.observed, rv.mask,
+                                             rv.reparameterized)
+            else:
+                rv = self[i]
+                result[i] = RandomVariable(rv.dist, rv.value.median(dim=0)[0],
+                                           rv.observed, rv.mask,
+                                           rv.reparameterized)
+
+        return result
+
 class ImportanceSampler(combinators.Model):
     def __init__(self, f, phi={}, theta={}):
         super(ImportanceSampler, self).__init__(f, phi, theta)
