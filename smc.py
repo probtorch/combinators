@@ -45,7 +45,7 @@ class ParticleTrace(combinators.GraphingTrace):
         result._modules = self._modules
         result._stack = self._stack
         for i, key in enumerate(self.variables()):
-            rv = self[key]
+            rv = self[key] if key is not None else self[i]
             if not rv.observed:
                 value = rv.value.index_select(0, ancestor_indices)
                 sample = RandomVariable(rv.dist, value, rv.observed, rv.mask,
