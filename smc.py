@@ -45,7 +45,7 @@ class ParticleTrace(combinators.GraphingTrace):
         result._modules = self._modules
         result._stack = self._stack
         for i, key in enumerate(self.variables()):
-            rv = self[key]
+            rv = self[key] if key is not None else self[i]
             if not rv.observed:
                 value = rv.value.index_select(0, ancestor_indices)
                 sample = RandomVariable(rv.dist, value, rv.observed, rv.mask,
@@ -59,18 +59,39 @@ class ParticleTrace(combinators.GraphingTrace):
 
         return result, log_weights.index_select(0, ancestor_indices)
 
+    def squeeze(self):
+        result = combinators.GraphingTrace()
+        result._modules = self._modules
+        result._stack = self._stack
+
+        for i, key in enumerate(self.variables()):
+            if key is not None:
+                rv = self[key]
+                result[key] = RandomVariable(rv.dist, rv.value.median(dim=0)[0],
+                                             rv.observed, rv.mask,
+                                             rv.reparameterized)
+            else:
+                rv = self[i]
+                result[i] = RandomVariable(rv.dist, rv.value.median(dim=0)[0],
+                                           rv.observed, rv.mask,
+                                           rv.reparameterized)
+
+        return result
+
 class ImportanceSampler(combinators.Model):
     def __init__(self, f, phi={}, theta={}):
         super(ImportanceSampler, self).__init__(f, phi, theta)
         self.log_weights = collections.OrderedDict()
 
-    def importance_weight(self, t=-1):
+    def importance_weight(self, t=-1, reparameterized=True):
         observation = [rv for rv in self.trace.variables()
                        if self.trace[rv].observed][t]
         latent = [rv for rv in self.trace.variables()
                   if not self.trace[rv].observed and rv in self.observations][t]
-        log_likelihood = self.trace.log_joint(nodes=[observation])
-        log_proposal = self.trace.log_joint(nodes=[latent])
+        log_likelihood = self.trace.log_joint(nodes=[observation],
+                                              reparameterized=reparameterized)
+        log_proposal = self.trace.log_joint(nodes=[latent],
+                                            reparameterized=reparameterized)
         log_generative = utils.counterfactual_log_joint(self.observations,
                                                         self.trace, [latent])
         log_generative = log_generative.to(log_proposal).mean(dim=0)
@@ -86,11 +107,11 @@ class ImportanceSampler(combinators.Model):
             log_weights[t] = lw
         return log_mean_exp(log_weights, dim=1).sum()
 
-def smc(step, retrace):
+def smc(step, retrace, reparameterized=True):
     def resample(*args, **kwargs):
         this = kwargs['this']
         resampled_trace, resampled_weights = this.trace.resample(
-            this.importance_weight()
+            this.importance_weight(reparameterized=reparameterized)
         )
         this.log_weights[-1] = resampled_weights
         this.ancestor.condition(trace=resampled_trace)
@@ -104,11 +125,12 @@ def smc(step, retrace):
                                      stepper)
 
 def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
-                    params, data, *args):
+                    params, data, *args, use_cuda=True, marginal_model=None,
+                    lr=1e-6):
     model_init = combinators.Model(model_init, params, {})
-    optimizer = torch.optim.Adam(list(model_init.parameters()), lr=1e-6)
+    optimizer = torch.optim.Adam(list(model_init.parameters()), lr=lr)
 
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and use_cuda:
         model_init.cuda()
         smc_run.cuda()
 
@@ -121,13 +143,21 @@ def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
 
         smc_run(T, *model_init(*args, T))
         inference = smc_run.trace
-        elbo = smc_run.result.result.resample.marginal_log_likelihood()
+        if marginal_model:
+            observations = [rv for rv in inference if inference[rv].observed]
+            elbo = sum(
+                [inference.annotation(marginal_model, obs)['log_marginals']
+                 for obs in observations]
+            )
+            elbo = elbo.mean(dim=0)
+        else:
+            elbo = smc_run.result.result.resample.marginal_log_likelihood()
         logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
 
         (-elbo).backward()
         optimizer.step()
 
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and use_cuda:
         model_init.cpu()
         smc_run.cpu()
 

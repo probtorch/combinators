@@ -12,13 +12,16 @@ import utils
 class GraphingTrace(probtorch.stochastic.Trace):
     def __init__(self):
         super(GraphingTrace, self).__init__()
-        self._modules = collections.defaultdict(lambda: set())
+        self._modules = collections.defaultdict(lambda: {})
         self._stack = []
 
     def variable(self, Dist, *args, **kwargs):
         result = super(GraphingTrace, self).variable(Dist, *args, **kwargs)
         if self._stack:
-            self._modules[self._stack[-1]].add(self[kwargs['name']])
+            module_name = self._stack[-1]._function.__name__
+            self._modules[module_name][kwargs['name']] = {
+                'variable': self[kwargs['name']]
+            }
         return result
 
     def push(self, module):
@@ -26,6 +29,9 @@ class GraphingTrace(probtorch.stochastic.Trace):
 
     def pop(self):
         self._stack.pop()
+
+    def annotation(self, module, variable):
+        return self._modules[module][variable]
 
 class Model(nn.Module):
     def __init__(self, f, phi={}, theta={}):
