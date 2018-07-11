@@ -125,11 +125,11 @@ def smc(step, retrace, reparameterized=True):
                                      stepper)
 
 def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
-                    params, data, *args):
+                    params, data, *args, use_cuda=True, marginal_model=None):
     model_init = combinators.Model(model_init, params, {})
     optimizer = torch.optim.Adam(list(model_init.parameters()), lr=1e-6)
 
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and use_cuda:
         model_init.cuda()
         smc_run.cuda()
 
@@ -142,13 +142,21 @@ def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
 
         smc_run(T, *model_init(*args, T))
         inference = smc_run.trace
-        elbo = smc_run.result.result.resample.marginal_log_likelihood()
+        if marginal_model:
+            observations = [rv for rv in inference if inference[rv].observed]
+            elbo = sum(
+                [inference.annotation(marginal_model, obs)['log_marginals']
+                 for obs in observations]
+            )
+            elbo = elbo.mean(dim=0)
+        else:
+            elbo = smc_run.result.result.resample.marginal_log_likelihood()
         logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
 
         (-elbo).backward()
         optimizer.step()
 
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and use_cuda:
         model_init.cpu()
         smc_run.cpu()
 
