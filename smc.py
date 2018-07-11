@@ -125,9 +125,10 @@ def smc(step, retrace, reparameterized=True):
                                      stepper)
 
 def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
-                    params, data, *args, use_cuda=True, marginal_model=None):
+                    params, data, *args, use_cuda=True, marginal_model=None,
+                    lr=1e-6):
     model_init = combinators.Model(model_init, params, {})
-    optimizer = torch.optim.Adam(list(model_init.parameters()), lr=1e-6)
+    optimizer = torch.optim.Adam(list(model_init.parameters()), lr=lr)
 
     if torch.cuda.is_available() and use_cuda:
         model_init.cuda()
