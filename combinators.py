@@ -75,14 +75,18 @@ class Model(nn.Module):
             return func(*arguments, *args, **kwargs)
         result = cls(wrapper)
         if isinstance(func, cls):
-            result.add_module(func._function.__name__, func)
+            result.add_module(func.name, func)
         for arg in arguments:
             if isinstance(arg, cls):
-                result.add_module(arg._function.__name__, arg)
+                result.add_module(arg.name, arg)
         for k, v in keywords.items():
             if isinstance(v, cls):
                 result.add_module(k, v)
         return result
+
+    @property
+    def name(self):
+        return self._function.__name__
 
     def add_module(self, name, module):
         super(Model, self).add_module(name, module)
