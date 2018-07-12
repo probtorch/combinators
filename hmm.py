@@ -44,29 +44,7 @@ def hmm_retrace(z_current, mu, sigma, pi, this=None):
     mu = this.trace['mu'].value
     sigma = this.trace['sigma'].value
 
-    num_states = mu.shape[1]
-
     pis = [this.trace['Pi_%d' % (k+1)].value for k in range(mu.shape[1])]
     pi = torch.stack(pis, dim=1)
-
-    prev_note = this.trace.annotation('hmm_step', 'Z_%d' % (t-1)) if t > 1 else\
-                this.trace.annotation('init_hmm', 'Z_0')
-    current_note = this.trace.annotation('hmm_step', 'Z_%d' % t)
-    marginals = torch.zeros(pi.shape[0], num_states, num_states)
-    for prev in range(num_states):
-        for current in range(num_states):
-            marginals[:, current, prev] = torch.log(pi[:, prev, current]) +\
-                                          prev_note['log_marginals'][:, prev]
-    marginals = log_sum_exp(marginals, dim=-1)
-    current_note['log_marginals'] = marginals
-
-    observation_note = this.trace.annotation('hmm_step', 'X_%d' % t)
-    obs_marginal = torch.zeros(pi.shape[0], num_states)
-    for current in range(num_states):
-        counterfactual = Normal(mu[:, current], softplus(sigma[:, current]))
-        observation = this.trace['X_%d' % t].value
-        obs_marginal[:, current] = counterfactual.log_prob(observation) +\
-                                   marginals[:, current]
-    observation_note['log_marginals'] = log_sum_exp(obs_marginal, dim=-1)
 
     return z_current, mu, sigma, pi
