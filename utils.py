@@ -51,6 +51,7 @@ def walk_trie(trie, keys=[]):
 
 PARAM_TRANSFORMS = {
     'scale': nn.functional.softplus,
+    'concentration': nn.functional.softplus,
 }
 
 def _parameterize_trace_methods(transforms=PARAM_TRANSFORMS):
