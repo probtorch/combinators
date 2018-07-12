@@ -155,12 +155,12 @@ def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
     return inference, model_init.args_vardict()
 
 def particle_mh(num_particles, model_init, smc_run, num_iterations, T, params,
-                data, *args):
+                data, *args, use_cuda=True):
     model_init = combinators.Model(model_init, params, {})
     elbos = torch.zeros(num_iterations)
     samples = list(range(num_iterations))
 
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and use_cuda:
         model_init.cuda()
         smc_run.cuda()
 
@@ -183,7 +183,7 @@ def particle_mh(num_particles, model_init, smc_run, num_iterations, T, params,
             elbos[i] = elbos[i-1]
             samples[i] = samples[i-1]
 
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and use_cuda:
         model_init.cpu()
         smc_run.cpu()
 
