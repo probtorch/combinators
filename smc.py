@@ -83,15 +83,21 @@ class ImportanceSampler(combinators.Model):
         super(ImportanceSampler, self).__init__(f, phi, theta)
         self.log_weights = collections.OrderedDict()
 
-    def importance_weight(self, t=-1, reparameterized=True):
+    @property
+    def _num_particles(self):
+        if self.log_weights:
+            return list(self.log_weights.items())[0][1].shape[0]
+        return 1
+
+    def importance_weight(self, t=-1):
         observation = [rv for rv in self.trace.variables()
                        if self.trace[rv].observed][t]
         latent = [rv for rv in self.trace.variables()
                   if not self.trace[rv].observed and rv in self.observations][t]
         log_likelihood = self.trace.log_joint(nodes=[observation],
-                                              reparameterized=reparameterized)
+                                              reparameterized=False)
         log_proposal = self.trace.log_joint(nodes=[latent],
-                                            reparameterized=reparameterized)
+                                            reparameterized=False)
         log_generative = utils.counterfactual_log_joint(self.observations,
                                                         self.trace, [latent])
         log_generative = log_generative.to(log_proposal).mean(dim=0)
@@ -102,24 +108,24 @@ class ImportanceSampler(combinators.Model):
 
     def marginal_log_likelihood(self):
         log_weights = torch.zeros(len(self.log_weights),
-                                  self.trace.num_particles)
+                                  self._num_particles)
         for t, lw in enumerate(self.log_weights.values()):
             log_weights[t] = lw
         return log_mean_exp(log_weights, dim=1).sum()
 
-def smc(step, retrace, reparameterized=True):
-    def resample(*args, **kwargs):
-        this = kwargs['this']
-        resampled_trace, resampled_weights = this.trace.resample(
-            this.importance_weight(reparameterized=reparameterized)
+    def forward(self, *args, **kwargs):
+        results = super(ImportanceSampler, self).forward(*args, **kwargs)
+        resampled_trace, resampled_weights = self.trace.resample(
+            self.importance_weight()
         )
-        this.log_weights[-1] = resampled_weights
-        this.ancestor.condition(trace=resampled_trace)
-        return args
-    resample = ImportanceSampler(resample)
+        self.log_weights[-1] = resampled_weights
+        self.ancestor.condition(trace=resampled_trace)
+        return results
+
+def smc(step, retrace):
     stepper = combinators.Model.compose(
-        combinators.Model.compose(retrace, resample),
-        combinators.Model(step),
+        combinators.Model(retrace),
+        ImportanceSampler(step),
     )
     return combinators.Model.partial(combinators.Model(combinators.sequence),
                                      stepper)
@@ -142,7 +148,7 @@ def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
 
         smc_run(T, *model_init(*args, T))
         inference = smc_run.trace
-        elbo = smc_run.result.result.resample.marginal_log_likelihood()
+        elbo = list(smc_run.result.children())[0].marginal_log_likelihood()
         logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
 
         (-elbo).backward()
@@ -173,7 +179,7 @@ def particle_mh(num_particles, model_init, smc_run, num_iterations, T, params,
 
         vs = smc_run(T, *vs)
         inference = smc_run.trace
-        elbo = smc_run.result.result.resample.marginal_log_likelihood()
+        elbo = list(smc_run.result.children())[0].marginal_log_likelihood()
 
         acceptance = torch.min(torch.ones(1), torch.exp(elbo - elbos[i-1]))
         if (torch.bernoulli(acceptance) == 1).sum() > 0 or i == 0:
