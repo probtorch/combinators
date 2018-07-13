@@ -32,7 +32,11 @@ class ForwardMessenger(combinators.Model):
     def forward(self, *args, **kwargs):
         results = super(ForwardMessenger, self).forward(*args, **kwargs)
 
-        t = args[-1] + 1
+        self.forward_pass(args[-1] + 1)
+
+        return results
+
+    def forward_pass(self, t):
         num_particles = self.trace[self._latent % t].value.shape[0]
         if t == 1:
             prev_note = self.trace.annotation(self._initial_marginals[0],
