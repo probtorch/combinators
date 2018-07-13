@@ -33,6 +33,9 @@ class GraphingTrace(probtorch.stochastic.Trace):
     def annotation(self, module, variable):
         return self._modules[module][variable]
 
+    def keys(self):
+        return self._nodes.keys()
+
 class Model(nn.Module):
     def __init__(self, f, phi={}, theta={}):
         super(Model, self).__init__()
