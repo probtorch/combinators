@@ -6,24 +6,37 @@ import torch
 from torch.distributions import Categorical, Normal
 from torch.nn.functional import softplus
 
-import combinators
+import filtering
 import gmm
 import utils
 
 def init_hmm(T=1, this=None):
     num_particles = this.trace.num_particles\
-                    if hasattr(this.trace, 'num_particles') else 1
+                    if hasattr(this.trace, 'num_particles') else None
     params = this.args_vardict()
     mu, sigma, pi0 = gmm.init_gmm('Pi_0', this)
 
-    pi = torch.zeros(num_particles, pi0.shape[1], pi0.shape[1])
-    for k in range(pi0.shape[1]):
-        pi[:, k] = this.trace.param_dirichlet(params, name='Pi_%d' % (k+1))
+    if num_particles:
+        pi = torch.zeros(num_particles, pi0.shape[1], pi0.shape[1])
+        for k in range(pi0.shape[1]):
+            pi[:, k] = this.trace.param_dirichlet(params, name='Pi_%d' % (k+1))
+    else:
+        pi = torch.zeros(pi0.shape[0], pi0.shape[0])
+        for k in range(pi0.shape[0]):
+            pi[k] = this.trace.param_dirichlet(params, name='Pi_%d' % (k+1))
 
     z0, _ = gmm.gmm(mu, sigma, pi0, latent_name='Z_0', observable_name=None,
                     this=this)
-    this.trace.annotation('init_hmm', 'Z_0')['log_marginals'] = torch.log(pi0)
-    return z0, mu, sigma, pi
+    return z0, mu, sigma, pi, pi0
+
+def forward_filter_hmm(mu, sigma, pi, pi0):
+    transition = lambda prev, current: torch.log(pi[:, prev, current])
+    observation_dists = [Normal(mu[:, state], softplus(sigma[:, state]))
+                         for state in range(pi.shape[1])]
+    return filtering.ForwardMessenger(hmm_step, 'Z_%d', 'X_%d', transition,
+                                      observation_dists,
+                                      initial_marginals=('init_hmm',
+                                                         torch.log(pi0)))
 
 def hmm_step(z_prev, mu, sigma, pi, t, this=None):
     t += 1
