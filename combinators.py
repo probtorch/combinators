@@ -37,7 +37,7 @@ class Model(nn.Module):
     def __init__(self, f, phi={}, theta={}):
         super(Model, self).__init__()
         self._function = f
-        self._trace = probtorch.Trace()
+        self._trace = GraphingTrace()
         self._observations = utils.EMPTY_TRACE.copy()
         self._parent = collections.defaultdict(lambda: None)
         self.condition()
