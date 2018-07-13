@@ -10,8 +10,6 @@ import combinators
 import utils
 
 def init_gmm(pi_name='Pi', this=None):
-    num_particles = this.trace.num_particles\
-                    if hasattr(this.trace, 'num_particles') else 1
     params = this.args_vardict()
     pi = this.trace.param_dirichlet(params, name=pi_name)
     mu = this.trace.param_normal(params, name='mu')
