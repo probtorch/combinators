@@ -131,7 +131,7 @@ def particle_mh(num_particles, model_init, smc_run, num_iterations, T, params,
         model_init.condition(trace=inference, observations=data)
         smc_run.condition(trace=inference, observations=data)
 
-        vs = model_init(*args, T)
+        vs = model_init(*args, T)[:-1]
 
         vs = smc_run(T, *vs)
         inference = smc_run.trace
