@@ -77,7 +77,7 @@ class Model(nn.Module):
             kwargs = {**kwargs, **keywords}
             return func(*arguments, *args, **kwargs)
         result = cls(wrapper)
-        if isinstance(func, cls):
+        if isinstance(func, Model):
             result.add_module(func.name, func)
         for arg in arguments:
             if isinstance(arg, cls):
