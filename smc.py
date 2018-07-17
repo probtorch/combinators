@@ -79,32 +79,34 @@ class ParticleTrace(combinators.GraphingTrace):
         return result
 
 def smc(step, retrace):
-    stepper = combinators.Model.compose(
+    return combinators.Model.compose(
         combinators.Model(retrace),
         importance.ImportanceSampler(step),
     )
-    return combinators.Model.partial(combinators.Model(combinators.sequence),
-                                     stepper)
 
-def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
+def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
                     params, data, *args, use_cuda=True, lr=1e-6):
     model_init = combinators.Model(model_init, params, {})
     optimizer = torch.optim.Adam(list(model_init.parameters()), lr=lr)
 
     if torch.cuda.is_available() and use_cuda:
         model_init.cuda()
-        smc_run.cuda()
+        smc_step.cuda()
 
     for t in range(num_iterations):
         optimizer.zero_grad()
 
         inference = ParticleTrace(num_particles)
         model_init.condition(trace=inference, observations=data)
-        smc_run.condition(trace=inference, observations=data)
+        smc_step.condition(trace=inference, observations=data)
 
-        smc_run(T, *model_init(*args, T))
-        inference = smc_run.trace
-        elbo = list(smc_run.result.children())[0].marginal_log_likelihood()
+        vs = model_init(*args, T)
+        sequencer = combinators.Model.sequence(smc_step, T, *vs)
+        sequencer.condition(trace=inference, observations=data)
+        vs = sequencer()
+
+        inference = smc_step.trace
+        elbo = list(smc_step.children())[0].marginal_log_likelihood()
         logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
 
         (-elbo).backward()
@@ -112,11 +114,11 @@ def variational_smc(num_particles, model_init, smc_run, num_iterations, T,
 
     if torch.cuda.is_available() and use_cuda:
         model_init.cpu()
-        smc_run.cpu()
+        smc_step.cpu()
 
     return inference, model_init.args_vardict()
 
-def particle_mh(num_particles, model_init, smc_run, num_iterations, T, params,
+def particle_mh(num_particles, model_init, smc_step, num_iterations, T, params,
                 data, *args, use_cuda=True):
     model_init = combinators.Model(model_init, params, {})
     elbos = torch.zeros(num_iterations)
@@ -124,18 +126,21 @@ def particle_mh(num_particles, model_init, smc_run, num_iterations, T, params,
 
     if torch.cuda.is_available() and use_cuda:
         model_init.cuda()
-        smc_run.cuda()
+        smc_step.cuda()
 
     for i in range(num_iterations):
         inference = ParticleTrace(num_particles)
         model_init.condition(trace=inference, observations=data)
-        smc_run.condition(trace=inference, observations=data)
+        smc_step.condition(trace=inference, observations=data)
 
-        vs = model_init(*args, T)[:-1]
+        vs = model_init(*args, T)
 
-        vs = smc_run(T, *vs)
-        inference = smc_run.trace
-        elbo = list(smc_run.result.children())[0].marginal_log_likelihood()
+        sequencer = combinators.Model.sequence(smc_step, T, *vs)
+        sequencer.condition(trace=inference, observations=data)
+        vs = sequencer()
+
+        inference = smc_step.trace
+        elbo = list(smc_step.children())[0].marginal_log_likelihood()
 
         acceptance = torch.min(torch.ones(1), torch.exp(elbo - elbos[i-1]))
         if (torch.bernoulli(acceptance) == 1).sum() > 0 or i == 0:
@@ -147,6 +152,6 @@ def particle_mh(num_particles, model_init, smc_run, num_iterations, T, params,
 
     if torch.cuda.is_available() and use_cuda:
         model_init.cpu()
-        smc_run.cpu()
+        smc_step.cpu()
 
     return samples, elbos, inference
