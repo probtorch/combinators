@@ -146,6 +146,10 @@ class Model(nn.Module):
     def name(self):
         return self._function.__name__
 
+    @property
+    def __name__(self):
+        return self.name
+
     def add_module(self, name, module):
         super(Model, self).add_module(name, module)
         if isinstance(module, Model):
