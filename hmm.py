@@ -47,15 +47,16 @@ def forward_backward_filter_hmm(mu, sigma, pi, pi0):
         initial_marginals=('init_hmm', torch.log(pi0))
     )
 
-def hmm_step(z_prev, mu, sigma, pi, t, this=None):
+def hmm_step(theta, t, this=None):
+    z_prev, mu, sigma, pi, pi0 = theta
     t += 1
     pi_prev = utils.particle_index(pi, z_prev)
 
     z_current, _ = gmm.gmm(mu, sigma, pi_prev, latent_name='Z_%d' % t,
                            observable_name='X_%d' % t, this=this)
-    return z_current, mu, sigma, pi
+    return z_current, mu, sigma, pi, pi0
 
-def hmm_retrace(z_current, mu, sigma, pi, this=None):
+def hmm_retrace(z_current, mu, sigma, pi, pi0, this=None):
     t = 1
     for key in reversed(list(this.trace)):
         if 'Z_' in key:
@@ -69,4 +70,4 @@ def hmm_retrace(z_current, mu, sigma, pi, this=None):
     pis = [this.trace['Pi_%d' % (k+1)].value for k in range(mu.shape[1])]
     pi = torch.stack(pis, dim=1)
 
-    return z_current, mu, sigma, pi
+    return z_current, mu, sigma, pi, pi0

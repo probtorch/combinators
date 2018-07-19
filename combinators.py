@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import collections
+import functools
 import inspect
 
 import probtorch
@@ -77,7 +78,7 @@ class Model(nn.Module):
             kwargs = {**kwargs, **keywords}
             return func(*arguments, *args, **kwargs)
         result = cls(wrapper)
-        if isinstance(func, cls):
+        if isinstance(func, Model):
             result.add_module(func.name, func)
         for arg in arguments:
             if isinstance(arg, cls):
@@ -86,6 +87,23 @@ class Model(nn.Module):
             if isinstance(v, cls):
                 result.add_module(k, v)
         return result
+
+    @classmethod
+    def map_iid(cls, func, items, **kwargs):
+        return cls(lambda **kws: [func(item, **kws, **kwargs) for item in items])
+
+    @classmethod
+    def reduce(cls, func, items, initializer=None, **kwargs):
+        result = cls(lambda *args, **kws: functools.reduce(
+            functools.partial(func, *args, **kws, **kwargs), items, initializer
+            ))
+        if isinstance(func, Model):
+            result.add_module(func.name, func)
+        return result
+
+    @classmethod
+    def sequence(cls, step, T, *args, **kwargs):
+        return cls.reduce(step, range(T), initializer=args, **kwargs)
 
     @property
     def name(self):
@@ -142,8 +160,3 @@ class Model(nn.Module):
         if isinstance(self.trace, GraphingTrace):
             self.trace.pop()
         return result
-
-def sequence(step, T, *args, **kwargs):
-    for t in range(T):
-        args = step(*args, t, **kwargs)
-    return args

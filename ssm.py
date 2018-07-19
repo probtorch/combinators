@@ -19,9 +19,11 @@ def init_ssm(T=1, this=None):
     zs[:, 0] = this.trace.normal(mu, softplus(sigma), name='Z_0')
     return zs[:, 0], mu, sigma, delta
 
-def ssm_step(z_prev, mu, sigma, delta, t, this=None):
+def ssm_step(theta, t, this=None):
+    z_prev, mu, sigma, delta = theta
     t += 1
-    z_current = this.trace.normal(z_prev + delta, softplus(sigma), name='Z_%d' % t)
+    z_current = this.trace.normal(z_prev + delta, softplus(sigma),
+                                  name='Z_%d' % t)
     this.trace.normal(
         z_current, torch.ones(*z_current.shape, device=z_current.device),
         name='X_%d' % t,
