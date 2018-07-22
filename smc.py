@@ -13,10 +13,15 @@ import combinators
 import importance
 
 class ParticleTrace(combinators.GraphingTrace):
+    def __init__(self, num_particles=1):
+        super(ParticleTrace, self).__init__(num_particles=num_particles)
+        self.ancestor_indices = torch.arange(self._num_particles,
+                                             dtype=torch.long)
+
     def resample(self, log_weights):
         normalized_weights = log_softmax(log_weights, dim=0)
         resampler = torch.distributions.Categorical(logits=normalized_weights)
-        ancestor_indices = resampler.sample((self.num_particles,))
+        self.ancestor_indices = resampler.sample((self.num_particles,))
 
         result = ParticleTrace(self.num_particles)
         result._modules = self._modules
@@ -24,7 +29,7 @@ class ParticleTrace(combinators.GraphingTrace):
         for i, key in enumerate(self.variables()):
             rv = self[key] if key is not None else self[i]
             if not rv.observed:
-                value = rv.value.index_select(0, ancestor_indices)
+                value = rv.value.index_select(0, self.ancestor_indices)
                 sample = RandomVariable(rv.dist, value, rv.observed, rv.mask,
                                         rv.reparameterized)
             else:
@@ -34,7 +39,7 @@ class ParticleTrace(combinators.GraphingTrace):
             else:
                 result[i] = sample
 
-        return result, log_weights.index_select(0, ancestor_indices)
+        return result, log_weights.index_select(0, self.ancestor_indices)
 
 def smc(step, retrace):
     return combinators.Model.compose(
