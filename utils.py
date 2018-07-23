@@ -65,8 +65,9 @@ def _parameterize_trace_methods(transforms=PARAM_TRANSFORMS):
                                  **kwargs):
                     params = {**params[name].copy(), **kwargs}
                     for arg, val in params.items():
-                        if arg in transforms:
-                            params[arg] = transforms[arg](val)
+                        matches = [k for k in transforms if k in arg]
+                        if matches:
+                            params[arg] = transforms[matches[0]](val)
                     return getattr(self, k)(name=name, value=value, **params)
                 setattr(probtorch.Trace, 'param_' + k, param_sample)
 
