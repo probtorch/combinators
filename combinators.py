@@ -5,24 +5,61 @@ import functools
 import inspect
 
 import probtorch
+from probtorch.stochastic import RandomVariable
 import torch
 import torch.nn as nn
 
 import utils
 
 class GraphingTrace(probtorch.stochastic.Trace):
-    def __init__(self):
+    def __init__(self, num_particles=1):
         super(GraphingTrace, self).__init__()
         self._modules = collections.defaultdict(lambda: {})
         self._stack = []
+        self._num_particles = num_particles
+
+    @property
+    def num_particles(self):
+        return self._num_particles
+
+    def log_joint(self, *args, **kwargs):
+        return super(GraphingTrace, self).log_joint(*args, sample_dim=0,
+                                                    **kwargs)
 
     def variable(self, Dist, *args, **kwargs):
+        args = [arg.expand(self.num_particles, *arg.shape)
+                if isinstance(arg, torch.Tensor) and
+                (len(arg.shape) < 1 or arg.shape[0] != self.num_particles)
+                else arg for arg in args]
+        kwargs = {k: v.expand(self.num_particles, *v.shape)
+                     if isinstance(v, torch.Tensor) and
+                     (len(v.shape) < 1 or v.shape[0] != self.num_particles)
+                     else v for k, v in kwargs.items()}
         result = super(GraphingTrace, self).variable(Dist, *args, **kwargs)
         if self._stack:
             module_name = self._stack[-1]._function.__name__
             self._modules[module_name][kwargs['name']] = {
                 'variable': self[kwargs['name']]
             }
+        return result
+
+    def squeeze(self):
+        result = GraphingTrace()
+        result._modules = self._modules
+        result._stack = self._stack
+
+        for i, key in enumerate(self.variables()):
+            if key is not None:
+                rv = self[key]
+                result[key] = RandomVariable(rv.dist, rv.value.median(dim=0)[0],
+                                             rv.observed, rv.mask,
+                                             rv.reparameterized)
+            else:
+                rv = self[i]
+                result[i] = RandomVariable(rv.dist, rv.value.median(dim=0)[0],
+                                           rv.observed, rv.mask,
+                                           rv.reparameterized)
+
         return result
 
     def push(self, module):

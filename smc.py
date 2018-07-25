@@ -13,29 +13,6 @@ import combinators
 import importance
 
 class ParticleTrace(combinators.GraphingTrace):
-    def __init__(self, num_particles=1):
-        super(ParticleTrace, self).__init__()
-        self._num_particles = num_particles
-
-    @property
-    def num_particles(self):
-        return self._num_particles
-
-    def variable(self, Dist, *args, **kwargs):
-        args = [arg.expand(self.num_particles, *arg.shape)
-                if isinstance(arg, torch.Tensor) and
-                (len(arg.shape) < 1 or arg.shape[0] != self.num_particles)
-                else arg for arg in args]
-        kwargs = {k: v.expand(self.num_particles, *v.shape)
-                     if isinstance(v, torch.Tensor) and
-                     (len(v.shape) < 1 or v.shape[0] != self.num_particles)
-                     else v for k, v in kwargs.items()}
-        return super(ParticleTrace, self).variable(Dist, *args, **kwargs)
-
-    def log_joint(self, *args, **kwargs):
-        return super(ParticleTrace, self).log_joint(*args, sample_dim=0,
-                                                    **kwargs)
-
     def resample(self, log_weights):
         normalized_weights = log_softmax(log_weights, dim=0)
         resampler = torch.distributions.Categorical(logits=normalized_weights)
@@ -58,25 +35,6 @@ class ParticleTrace(combinators.GraphingTrace):
                 result[i] = sample
 
         return result, log_weights.index_select(0, ancestor_indices)
-
-    def squeeze(self):
-        result = combinators.GraphingTrace()
-        result._modules = self._modules
-        result._stack = self._stack
-
-        for i, key in enumerate(self.variables()):
-            if key is not None:
-                rv = self[key]
-                result[key] = RandomVariable(rv.dist, rv.value.median(dim=0)[0],
-                                             rv.observed, rv.mask,
-                                             rv.reparameterized)
-            else:
-                rv = self[i]
-                result[i] = RandomVariable(rv.dist, rv.value.median(dim=0)[0],
-                                           rv.observed, rv.mask,
-                                           rv.reparameterized)
-
-        return result
 
 def smc(step, retrace):
     return combinators.Model.compose(

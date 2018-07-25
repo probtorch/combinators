@@ -2,12 +2,14 @@
 
 import collections
 import itertools
+import logging
 
 import probtorch
 from probtorch.util import log_sum_exp
 import torch
 
 import combinators
+from combinators import GraphingTrace
 import utils
 
 EMPTY_ANNOTATION = collections.defaultdict(lambda: 0.0)
@@ -93,8 +95,46 @@ class ForwardBackwardMessenger(ForwardMessenger):
         note = self.trace.annotation(self.name, self._latent % (t+1))
         return note['forward_joint_marginals']+note['backward_joint_marginals']
 
-    def smoothed_posterior(self, t, T):
+    def smoothed_posterior(self, T):
         posteriors = torch.stack([self._posterior_step(n) for n in range(T)],
                                  dim=0)
-        denominator = log_sum_exp(posteriors, dim=0)
-        return posteriors[t] - denominator
+        posteriors = posteriors.transpose(0, 1)
+        denominators = log_sum_exp(posteriors, dim=-1)
+        return posteriors - denominators.unsqueeze(-1), denominators
+
+def variational_forward_backward(model_init, step_builder, num_iterations, T,
+                                 data, *args, use_cuda=True, lr=1e-6):
+    optimizer = torch.optim.Adam(list(model_init.parameters()), lr=lr)
+
+    if torch.cuda.is_available() and use_cuda:
+        model_init.cuda()
+
+    for t in range(num_iterations):
+        optimizer.zero_grad()
+
+        inference = GraphingTrace()
+        model_init.condition(trace=inference, observations=data)
+
+        vs = model_init(*args, T)
+        model_step = step_builder(*vs)
+        model_step.condition(trace=inference, observations=data)
+        if torch.cuda.is_available() and use_cuda:
+            model_step.cuda()
+
+        sequencer = combinators.Model.sequence(model_step, T, *vs)
+        sequencer.condition(trace=inference, observations=data)
+        vs = sequencer()
+
+        model_step.backward_pass(T)
+        _, marginals = model_step.smoothed_posterior(T)
+        elbo = marginals.sum(dim=-1)
+        logging.info('Variational forward-backward ELBO=%.8e at epoch %d',
+                     elbo, t + 1)
+        (-elbo.sum()).backward()
+        optimizer.step()
+
+    if torch.cuda.is_available() and use_cuda:
+        model_init.cpu()
+        model_step.cpu()
+
+    return inference, model_init.args_vardict()
