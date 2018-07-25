@@ -201,3 +201,13 @@ class Model(nn.Module):
         if isinstance(self.trace, GraphingTrace):
             self.trace.pop()
         return result
+
+    def simulate(self, *args, **kwargs):
+        if 'trace' in kwargs:
+            trace = kwargs.pop('trace')
+        else:
+            trace = GraphingTrace()
+        guide = kwargs.pop('guide') if 'guide' in kwargs else None
+        self.condition(trace, guide)
+        result = self.forward(*args, **kwargs)
+        return result, self.trace.log_joint()
