@@ -52,6 +52,8 @@ def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
     optimizer = torch.optim.Adam(list(model_init.parameters()) +\
                                  list(smc_step.parameters()), lr=lr)
 
+    model_init.train()
+    smc_step.train()
     if torch.cuda.is_available() and use_cuda:
         model_init.cuda()
         smc_step.cuda()
@@ -78,6 +80,8 @@ def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
     if torch.cuda.is_available() and use_cuda:
         model_init.cpu()
         smc_step.cpu()
+    model_init.eval()
+    smc_step.eval()
 
     return inference, model_init.args_vardict()
 
