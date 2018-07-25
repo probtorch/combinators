@@ -25,6 +25,26 @@ def particle_index(tensor, indices):
                        enumerate(torch.unbind(tensor, 0))]
     return torch.stack(indexed_tensors, dim=0)
 
+def relaxed_categorical(probs, name, this=None):
+    if this.training:
+        return this.trace.relaxed_one_hot_categorical(1.0, probs=probs,
+                                                      name=name)
+    return this.trace.variable(torch.distributions.Categorical, probs,
+                               name=name)
+
+def relaxed_index_select(tensor, probs, name, dim=0, this=None):
+    indices = relaxed_categorical(probs, name, this=this)
+    if this.training:
+        return indices @ tensor
+    return tensor.index_select(dim, indices)
+
+def relaxed_particle_index(tensor, indices, this=None):
+    if this.training:
+        indexed_tensors = [indices[particle] @ t for particle, t in
+                           enumerate(torch.unbind(tensor, 0))]
+        return torch.stack(indexed_tensors, dim=0)
+    return particle_index(tensor, indices)
+
 def map_tensors(f, *args):
     for arg in args:
         if isinstance(arg, torch.Tensor):
