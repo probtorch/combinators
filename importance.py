@@ -63,11 +63,60 @@ class ImportanceSampler(combinators.Model):
     def marginal_log_likelihood(self):
         return log_mean_exp(self.log_weights[str(self.latents())], dim=0)
 
+class ResamplerTrace(combinators.GraphingTrace):
+    def __init__(self, num_particles=1, ancestor_indices=None, ancestor=None):
+        super(ResamplerTrace, self).__init__(num_particles=num_particles)
+        if isinstance(ancestor_indices, torch.Tensor):
+            self._ancestor_indices = ancestor_indices
+        else:
+            self._ancestor_indices = torch.arange(self._num_particles,
+                                                  dtype=torch.long)
+        if ancestor:
+            self._modules = ancestor._modules
+            self._stack = ancestor._stack
+            for i, key in enumerate(ancestor.variables()):
+                rv = ancestor[key] if key is not None else ancestor[i]
+                if not rv.observed:
+                    value = rv.value.index_select(0, self.ancestor_indices)
+                    sample = RandomVariable(rv.dist, value, rv.observed,
+                                            rv.mask, rv.reparameterized)
+                else:
+                    sample = rv
+                if key is not None:
+                    self[key] = sample
+                else:
+                    self[i] = sample
+
+    @property
+    def ancestor_indices(self):
+        return self._ancestor_indices
+
+    def resample(self, log_weights):
+        normalized_weights = log_softmax(log_weights, dim=0)
+        resampler = torch.distributions.Categorical(logits=normalized_weights)
+
+        result = ResamplerTrace(self.num_particles,
+                                resampler.sample((self.num_particles,)),
+                                ancestor=self)
+        return result, log_weights.index_select(0, result.ancestor_indices)
+
+class ImportanceResampler(ImportanceSampler):
+    def __init__(self, f, phi={}, theta={}):
+        super(ImportanceResampler, self).__init__(f, phi, theta)
+        self._trace = ResamplerTrace()
+
     def forward(self, *args, **kwargs):
-        results = super(ImportanceSampler, self).forward(*args, **kwargs)
-        resampled_trace, resampled_weights = self.trace.resample(
+        results = super(ImportanceResampler, self).forward(*args, **kwargs)
+        resampled_trace, _ = self.trace.resample(
             self.importance_weight()
         )
-        self.log_weights[-1] = resampled_weights
         self.ancestor.condition(trace=resampled_trace)
-        return results
+
+        results = list(results)
+        for i, var in enumerate(results):
+            if isinstance(var, torch.Tensor):
+                ancestor_indices = self.trace.ancestor_indices.to(
+                    device=var.device
+                )
+                results[i] = var.index_select(0, ancestor_indices)
+        return tuple(results)
