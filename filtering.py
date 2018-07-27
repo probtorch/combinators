@@ -115,7 +115,7 @@ def variational_forward_backward(model_init, step_builder, num_iterations, T,
         inference = GraphingTrace()
         model_init.condition(trace=inference, guide=data)
 
-        vs = model_init(*args, T)
+        vs = model_init(*args)
         model_step = step_builder(*vs)
         model_step.condition(trace=inference, guide=data)
         if torch.cuda.is_available() and use_cuda:
