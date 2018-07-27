@@ -79,7 +79,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self._function = f
         self._trace = GraphingTrace()
-        self._observations = utils.EMPTY_TRACE.copy()
+        self._guide = utils.EMPTY_TRACE.copy()
         self._parent = collections.defaultdict(lambda: None)
         self.condition()
         self.register_args(phi, True)
@@ -166,22 +166,22 @@ class Model(nn.Module):
             result = result.parent
         return result
 
-    def _condition(self, trace, observations):
+    def _condition(self, trace, guide):
         if trace is not None:
             self._trace = trace
-        if observations is not None:
-            self._observations = observations
+        if guide is not None:
+            self._guide = guide
 
-    def condition(self, trace=None, observations=None):
-        self.apply(lambda m: m._condition(trace, observations))
+    def condition(self, trace=None, guide=None):
+        self.apply(lambda m: m._condition(trace, guide))
 
     @property
     def trace(self):
         return self._trace
 
     @property
-    def observations(self):
-        return self._observations
+    def guide(self):
+        return self._guide
 
     def register_args(self, args, trainable=True):
         for k, v in utils.vardict(args).items():

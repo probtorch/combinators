@@ -24,8 +24,8 @@ class ForwardMessenger(combinators.Model):
         self._initial_marginals = initial_marginals
         super(ForwardMessenger, self).__init__(f, phi=phi, theta=theta)
 
-    def _condition(self, trace=None, observations=None):
-        super(ForwardMessenger, self)._condition(trace, observations)
+    def _condition(self, trace=None, guide=None):
+        super(ForwardMessenger, self)._condition(trace, guide)
         if self._initial_marginals and (self._latent % 0 in self.trace):
             initial_note = self.trace.annotation(self._initial_marginals[0],
                                                  self._latent % 0)
@@ -113,16 +113,16 @@ def variational_forward_backward(model_init, step_builder, num_iterations, T,
         optimizer.zero_grad()
 
         inference = GraphingTrace()
-        model_init.condition(trace=inference, observations=data)
+        model_init.condition(trace=inference, guide=data)
 
         vs = model_init(*args, T)
         model_step = step_builder(*vs)
-        model_step.condition(trace=inference, observations=data)
+        model_step.condition(trace=inference, guide=data)
         if torch.cuda.is_available() and use_cuda:
             model_step.cuda()
 
         sequencer = combinators.Model.sequence(model_step, T, *vs)
-        sequencer.condition(trace=inference, observations=data)
+        sequencer.condition(trace=inference, guide=data)
         vs = sequencer()
 
         model_step.backward_pass(T)

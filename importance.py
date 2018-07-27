@@ -9,9 +9,9 @@ import torch
 import combinators
 import utils
 
-def sampled_latent(rv, trace, observations):
-    if isinstance(observations, probtorch.Trace):
-        generative = rv in observations
+def sampled_latent(rv, trace, guide):
+    if isinstance(guide, probtorch.Trace):
+        generative = rv in guide
     else:
         generative = True
     return not trace[rv].observed and generative
@@ -31,15 +31,15 @@ class ImportanceSampler(combinators.Model):
         observation = [rv for rv in self.trace.variables()
                        if self.trace[rv].observed][t]
         latent = [rv for rv in self.trace.variables()
-                  if sampled_latent(rv, self.trace, self.observations)][t]
+                  if sampled_latent(rv, self.trace, self.guide)][t]
         log_likelihood = self.trace.log_joint(nodes=[observation],
                                               reparameterized=False)
         log_proposal = self.trace.log_joint(nodes=[latent],
                                             reparameterized=False)
-        # If the observations are given by a generative model, use it, otherwise
+        # If the guide are given by a generative model, use it, otherwise
         # perform likelihood weighting
-        if isinstance(self.observations, probtorch.Trace):
-            log_generative = utils.counterfactual_log_joint(self.observations,
+        if isinstance(self.guide, probtorch.Trace):
+            log_generative = utils.counterfactual_log_joint(self.guide,
                                                             self.trace,
                                                             [latent])
         else:

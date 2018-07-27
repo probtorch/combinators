@@ -62,12 +62,12 @@ def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
         optimizer.zero_grad()
 
         inference = ParticleTrace(num_particles)
-        model_init.condition(trace=inference, observations=data)
-        smc_step.condition(trace=inference, observations=data)
+        model_init.condition(trace=inference, guide=data)
+        smc_step.condition(trace=inference, guide=data)
 
         vs = model_init(*args, T)
         sequencer = combinators.Model.sequence(smc_step, T, *vs)
-        sequencer.condition(trace=inference, observations=data)
+        sequencer.condition(trace=inference, guide=data)
         vs = sequencer()
 
         inference = smc_step.trace
@@ -96,13 +96,13 @@ def particle_mh(num_particles, model_init, smc_step, num_iterations, T, data,
 
     for i in range(num_iterations):
         inference = ParticleTrace(num_particles)
-        model_init.condition(trace=inference, observations=data)
-        smc_step.condition(trace=inference, observations=data)
+        model_init.condition(trace=inference, guide=data)
+        smc_step.condition(trace=inference, guide=data)
 
         vs = model_init(*args, T)
 
         sequencer = combinators.Model.sequence(smc_step, T, *vs)
-        sequencer.condition(trace=inference, observations=data)
+        sequencer.condition(trace=inference, guide=data)
         vs = sequencer()
 
         inference = smc_step.trace

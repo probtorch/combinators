@@ -22,7 +22,7 @@ def gmm(mu, sigma, pi, latent_name='Z', observable_name='X', this=None):
         x = this.trace.normal(
             utils.particle_index(mu, z),
             softplus(utils.particle_index(sigma, z)), name=observable_name,
-            value=utils.optional_to(this.observations[observable_name], mu)
+            value=utils.optional_to(this.guide[observable_name], mu)
         )
     else:
         x = None
