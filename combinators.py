@@ -131,9 +131,12 @@ class Model(nn.Module):
 
     @classmethod
     def reduce(cls, func, items, initializer=None, **kwargs):
-        result = cls(lambda *args, **kws: functools.reduce(
-            functools.partial(func, *args, **kws, **kwargs), items, initializer
-            ))
+        def wrapper(*args, items=items, initializer=initializer, **kws):
+            return functools.reduce(
+                functools.partial(func, *args, **kws, **kwargs), items,
+                initializer
+            )
+        result = cls(wrapper)
         if isinstance(func, Model):
             result.add_module(func.name, func)
         return result
