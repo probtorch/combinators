@@ -3,8 +3,10 @@
 import collections
 
 import probtorch
+from probtorch.stochastic import RandomVariable
 from probtorch.util import log_mean_exp
 import torch
+from torch.nn.functional import log_softmax
 
 import combinators
 import utils
@@ -27,35 +29,39 @@ class ImportanceSampler(combinators.Model):
             return list(self.log_weights.items())[0][1].shape[0]
         return 1
 
-    def importance_weight(self, t=-1):
-        observation = [rv for rv in self.trace.variables()
-                       if self.trace[rv].observed][t]
-        latent = [rv for rv in self.trace.variables()
-                  if sampled_latent(rv, self.trace, self.guide)][t]
-        log_likelihood = self.trace.log_joint(nodes=[observation],
+    def observations(self):
+        return [rv for rv in self.trace.variables() if self.trace[rv].observed\
+                and self.trace.has_annotation(self.name, rv)]
+
+    def latents(self):
+        return [rv for rv in self.trace.variables()\
+                if not self.trace[rv].observed and\
+                self.trace.has_annotation(self.name, rv)]
+
+    def importance_weight(self, observations=None, latents=None):
+        if not observations:
+            observations = self.observations()
+        if not latents:
+            latents = self.latents()
+        log_likelihood = self.trace.log_joint(nodes=observations,
                                               reparameterized=False)
-        log_proposal = self.trace.log_joint(nodes=[latent],
+        log_proposal = self.trace.log_joint(nodes=latents,
                                             reparameterized=False)
-        # If the guide are given by a generative model, use it, otherwise
+        # If the guide is given by a generative model, use it, otherwise
         # perform likelihood weighting
         if isinstance(self.guide, probtorch.Trace):
             log_generative = utils.counterfactual_log_joint(self.guide,
-                                                            self.trace,
-                                                            [latent])
+                                                            self.trace, latents)
         else:
             log_generative = log_proposal
         log_generative = log_generative.to(log_proposal).mean(dim=0)
 
-        self.log_weights[latent] = log_likelihood + log_generative -\
-                                   log_proposal
-        return self.log_weights[latent]
+        self.log_weights[str(latents)] = log_likelihood + log_generative -\
+                                         log_proposal
+        return self.log_weights[str(latents)]
 
     def marginal_log_likelihood(self):
-        log_weights = torch.zeros(len(self.log_weights),
-                                  self._num_particles)
-        for t, lw in enumerate(self.log_weights.values()):
-            log_weights[t] = lw
-        return log_mean_exp(log_weights, dim=1).sum()
+        return log_mean_exp(self.log_weights[str(self.latents())], dim=0)
 
     def forward(self, *args, **kwargs):
         results = super(ImportanceSampler, self).forward(*args, **kwargs)
