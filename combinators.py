@@ -71,6 +71,9 @@ class GraphingTrace(probtorch.stochastic.Trace):
     def annotation(self, module, variable):
         return self._modules[module][variable]
 
+    def has_annotation(self, module, variable):
+        return variable in self._modules[module]
+
     def keys(self):
         return self._nodes.keys()
 
