@@ -78,8 +78,8 @@ class Model(nn.Module):
     def __init__(self, f, phi={}, theta={}):
         super(Model, self).__init__()
         self._function = f
-        self._trace = GraphingTrace()
-        self._guide = utils.EMPTY_TRACE.copy()
+        self._trace = None
+        self._guide = None
         self._parent = collections.defaultdict(lambda: None)
         self.condition()
         self.register_args(phi, True)
@@ -176,6 +176,10 @@ class Model(nn.Module):
             self._guide = guide
 
     def condition(self, trace=None, guide=None):
+        if trace is None:
+            trace = GraphingTrace()
+        if guide is None and self._guide is None:
+            guide = utils.EMPTY_TRACE.copy()
         self.apply(lambda m: m._condition(trace, guide))
 
     @property
