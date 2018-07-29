@@ -62,6 +62,7 @@ class ResamplerTrace(combinators.ParticleTrace):
         else:
             self._ancestor_indices = torch.arange(self._num_particles,
                                                   dtype=torch.long)
+        self._fresh_variables = set()
         if ancestor:
             self._modules = ancestor._modules
             self._stack = ancestor._stack
@@ -77,6 +78,15 @@ class ResamplerTrace(combinators.ParticleTrace):
                     self[key] = sample
                 else:
                     self[i] = sample
+
+    def variable(self, Dist, *args, **kwargs):
+        if 'name' in kwargs:
+            self._fresh_variables.add(kwargs['name'])
+        return super(ResamplerTrace, self).variable(Dist, *args, **kwargs)
+
+    @property
+    def fresh_variables(self):
+        return self._fresh_variables
 
     @property
     def ancestor_indices(self):
