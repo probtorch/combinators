@@ -24,10 +24,9 @@ class StepwiseImportanceResampler(importance.ImportanceResampler):
         )
 
     def marginal_log_likelihood(self):
-        latents = self.latents()
-        log_weights = torch.zeros(len(latents), self._num_particles)
-        for t, _ in enumerate(latents):
-            log_weights[t] = self.log_weights[str(latents[t:t+1])]
+        log_weights = torch.zeros(len(self.log_weights), self._num_particles)
+        for t, latent in enumerate(self.log_weights):
+            log_weights[t] = self.log_weights[latent]
         return log_mean_exp(log_weights, dim=0).sum()
 
 class SequentialMonteCarlo(combinators.Model):
