@@ -13,14 +13,17 @@ def init_bouncing_ball(this=None):
     pi = torch.stack([this.trace.param_dirichlet(params, name='Pi_%d' % (d+1))
                       for d in range(4)], dim=-1)
     initial_speed = this.trace.param_log_normal(params, name='speed')
+    initial_angle = this.trace.param_uniform(params, name='angle')
+    initial_angle = torch.cat((torch.cos(initial_angle),
+                               torch.sin(initial_angle)), dim=1)
 
     doubt = this.trace.param_log_normal(params, name='doubt')
     noise = this.trace.param_log_normal(params, name='noise')
 
-    return initial_position, initial_speed, initial_z, doubt, noise, pi
+    return initial_position, initial_speed * initial_angle, initial_z, doubt, noise, pi
 
 def bouncing_ball_step(theta, t, this=None):
-    prev_position, speed, z_prev, doubt, noise, pi = theta
+    prev_position, velocity, z_prev, doubt, noise, pi = theta
     params = this.args_vardict()
     t += 1
 
@@ -29,7 +32,7 @@ def bouncing_ball_step(theta, t, this=None):
                                                       pi_prev,
                                                       'direction_%d' % t,
                                                       this=this)
-    velocity = speed * direction
+    velocity = velocity * direction
     position = this.trace.normal(prev_position + velocity * this.delta_t, doubt,
                                  name='position_%d' % t)
 
@@ -39,4 +42,4 @@ def bouncing_ball_step(theta, t, this=None):
         value=utils.optional_to(this.guide['displacement_%d' % t], position)
     )
 
-    return position, speed, z_current, doubt, noise, pi
+    return position, velocity, z_current, doubt, noise, pi
