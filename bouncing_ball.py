@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import torch
-from torch.nn.functional import softplus
 
 import utils
 
@@ -31,13 +30,12 @@ def bouncing_ball_step(theta, t, this=None):
                                                       'direction_%d' % t,
                                                       this=this)
     velocity = speed * direction
-    position = this.trace.normal(prev_position + velocity * this.delta_t,
-                                 softplus(doubt),
+    position = this.trace.normal(prev_position + velocity * this.delta_t, doubt,
                                  name='position_%d' % t)
 
     # Jitter observation with noise on top of doubt
     this.trace.normal(
-        position - prev_position, softplus(noise), name='displacement_%d' % t,
+        position - prev_position, noise, name='displacement_%d' % t,
         value=utils.optional_to(this.guide['displacement_%d' % t], position)
     )
 
