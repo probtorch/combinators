@@ -9,7 +9,7 @@ from probtorch.util import log_sum_exp
 import torch
 
 import combinators
-from combinators import GraphingTrace
+from combinators import ParticleTrace
 import utils
 
 EMPTY_ANNOTATION = collections.defaultdict(lambda: 0.0)
@@ -112,7 +112,7 @@ def variational_forward_backward(model_init, step_builder, num_iterations, T,
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        inference = GraphingTrace()
+        inference = ParticleTrace()
         model_init.condition(trace=inference, guide=data)
 
         vs = model_init(*args)

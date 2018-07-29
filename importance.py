@@ -63,7 +63,7 @@ class ImportanceSampler(combinators.Model):
     def marginal_log_likelihood(self):
         return log_mean_exp(self.log_weights[str(self.latents())], dim=0)
 
-class ResamplerTrace(combinators.GraphingTrace):
+class ResamplerTrace(combinators.ParticleTrace):
     def __init__(self, num_particles=1, ancestor_indices=None, ancestor=None):
         super(ResamplerTrace, self).__init__(num_particles=num_particles)
         if isinstance(ancestor_indices, torch.Tensor):

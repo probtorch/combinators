@@ -11,9 +11,9 @@ import torch.nn as nn
 
 import utils
 
-class GraphingTrace(probtorch.stochastic.Trace):
+class ParticleTrace(probtorch.stochastic.Trace):
     def __init__(self, num_particles=1):
-        super(GraphingTrace, self).__init__()
+        super(ParticleTrace, self).__init__()
         self._modules = collections.defaultdict(lambda: {})
         self._stack = []
         self._num_particles = num_particles
@@ -23,7 +23,7 @@ class GraphingTrace(probtorch.stochastic.Trace):
         return self._num_particles
 
     def log_joint(self, *args, **kwargs):
-        return super(GraphingTrace, self).log_joint(*args, sample_dim=0,
+        return super(ParticleTrace, self).log_joint(*args, sample_dim=0,
                                                     **kwargs)
 
     def variable(self, Dist, *args, **kwargs):
@@ -35,7 +35,7 @@ class GraphingTrace(probtorch.stochastic.Trace):
                      if isinstance(v, torch.Tensor) and
                      (len(v.shape) < 1 or v.shape[0] != self.num_particles)
                      else v for k, v in kwargs.items()}
-        result = super(GraphingTrace, self).variable(Dist, *args, **kwargs)
+        result = super(ParticleTrace, self).variable(Dist, *args, **kwargs)
         if self._stack:
             module_name = self._stack[-1]._function.__name__
             self._modules[module_name][kwargs['name']] = {
@@ -180,7 +180,7 @@ class Model(nn.Module):
 
     def condition(self, trace=None, guide=None):
         if trace is None:
-            trace = GraphingTrace()
+            trace = ParticleTrace()
         if guide is None and self._guide is None:
             guide = utils.EMPTY_TRACE.copy()
         self.apply(lambda m: m._condition(trace, guide))
@@ -205,10 +205,10 @@ class Model(nn.Module):
 
     def forward(self, *args, **kwargs):
         kwargs = {**kwargs, 'this': self}
-        if isinstance(self.trace, GraphingTrace):
+        if isinstance(self.trace, ParticleTrace):
             self.trace.push(self)
         result = self._function(*args, **kwargs)
-        if isinstance(self.trace, GraphingTrace):
+        if isinstance(self.trace, ParticleTrace):
             self.trace.pop()
         return result
 
@@ -216,7 +216,7 @@ class Model(nn.Module):
         if 'trace' in kwargs:
             trace = kwargs.pop('trace')
         else:
-            trace = GraphingTrace()
+            trace = ParticleTrace()
         guide = kwargs.pop('guide') if 'guide' in kwargs else None
         self.condition(trace, guide)
         result = self.forward(*args, **kwargs)
