@@ -44,7 +44,7 @@ class GraphingTrace(probtorch.stochastic.Trace):
         return result
 
     def squeeze(self):
-        result = GraphingTrace()
+        result = self.__class__()
         result._modules = self._modules
         result._stack = self._stack
 
