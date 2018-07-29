@@ -9,7 +9,7 @@ from probtorch.util import log_sum_exp
 import torch
 
 import combinators
-from combinators import GraphingTrace
+from combinators import ParticleTrace
 import utils
 
 EMPTY_ANNOTATION = collections.defaultdict(lambda: 0.0)
@@ -24,8 +24,8 @@ class ForwardMessenger(combinators.Model):
         self._initial_marginals = initial_marginals
         super(ForwardMessenger, self).__init__(f, phi=phi, theta=theta)
 
-    def _condition(self, trace=None, observations=None):
-        super(ForwardMessenger, self)._condition(trace, observations)
+    def _condition(self, trace=None, guide=None):
+        super(ForwardMessenger, self)._condition(trace, guide)
         if self._initial_marginals and (self._latent % 0 in self.trace):
             initial_note = self.trace.annotation(self._initial_marginals[0],
                                                  self._latent % 0)
@@ -112,17 +112,17 @@ def variational_forward_backward(model_init, step_builder, num_iterations, T,
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        inference = GraphingTrace()
-        model_init.condition(trace=inference, observations=data)
+        inference = ParticleTrace()
+        model_init.condition(trace=inference, guide=data)
 
-        vs = model_init(*args, T)
+        vs = model_init(*args)
         model_step = step_builder(*vs)
-        model_step.condition(trace=inference, observations=data)
+        model_step.condition(trace=inference, guide=data)
         if torch.cuda.is_available() and use_cuda:
             model_step.cuda()
 
         sequencer = combinators.Model.sequence(model_step, T, *vs)
-        sequencer.condition(trace=inference, observations=data)
+        sequencer.condition(trace=inference, guide=data)
         vs = sequencer()
 
         model_step.backward_pass(T)

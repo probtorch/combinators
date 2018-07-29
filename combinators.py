@@ -11,9 +11,9 @@ import torch.nn as nn
 
 import utils
 
-class GraphingTrace(probtorch.stochastic.Trace):
+class ParticleTrace(probtorch.stochastic.Trace):
     def __init__(self, num_particles=1):
-        super(GraphingTrace, self).__init__()
+        super(ParticleTrace, self).__init__()
         self._modules = collections.defaultdict(lambda: {})
         self._stack = []
         self._num_particles = num_particles
@@ -23,7 +23,7 @@ class GraphingTrace(probtorch.stochastic.Trace):
         return self._num_particles
 
     def log_joint(self, *args, **kwargs):
-        return super(GraphingTrace, self).log_joint(*args, sample_dim=0,
+        return super(ParticleTrace, self).log_joint(*args, sample_dim=0,
                                                     **kwargs)
 
     def variable(self, Dist, *args, **kwargs):
@@ -35,7 +35,7 @@ class GraphingTrace(probtorch.stochastic.Trace):
                      if isinstance(v, torch.Tensor) and
                      (len(v.shape) < 1 or v.shape[0] != self.num_particles)
                      else v for k, v in kwargs.items()}
-        result = super(GraphingTrace, self).variable(Dist, *args, **kwargs)
+        result = super(ParticleTrace, self).variable(Dist, *args, **kwargs)
         if self._stack:
             module_name = self._stack[-1]._function.__name__
             self._modules[module_name][kwargs['name']] = {
@@ -44,7 +44,7 @@ class GraphingTrace(probtorch.stochastic.Trace):
         return result
 
     def squeeze(self):
-        result = GraphingTrace()
+        result = self.__class__()
         result._modules = self._modules
         result._stack = self._stack
 
@@ -71,6 +71,9 @@ class GraphingTrace(probtorch.stochastic.Trace):
     def annotation(self, module, variable):
         return self._modules[module][variable]
 
+    def has_annotation(self, module, variable):
+        return variable in self._modules[module]
+
     def keys(self):
         return self._nodes.keys()
 
@@ -78,8 +81,8 @@ class Model(nn.Module):
     def __init__(self, f, phi={}, theta={}):
         super(Model, self).__init__()
         self._function = f
-        self._trace = GraphingTrace()
-        self._observations = utils.EMPTY_TRACE.copy()
+        self._trace = None
+        self._guide = None
         self._parent = collections.defaultdict(lambda: None)
         self.condition()
         self.register_args(phi, True)
@@ -131,9 +134,12 @@ class Model(nn.Module):
 
     @classmethod
     def reduce(cls, func, items, initializer=None, **kwargs):
-        result = cls(lambda *args, **kws: functools.reduce(
-            functools.partial(func, *args, **kws, **kwargs), items, initializer
-            ))
+        def wrapper(*args, items=items, initializer=initializer, **kws):
+            return functools.reduce(
+                functools.partial(func, *args, **kws, **kwargs), items,
+                initializer
+            )
+        result = cls(wrapper)
         if isinstance(func, Model):
             result.add_module(func.name, func)
         return result
@@ -145,6 +151,10 @@ class Model(nn.Module):
     @property
     def name(self):
         return self._function.__name__
+
+    @property
+    def __name__(self):
+        return self.name
 
     def add_module(self, name, module):
         super(Model, self).add_module(name, module)
@@ -162,22 +172,26 @@ class Model(nn.Module):
             result = result.parent
         return result
 
-    def _condition(self, trace, observations):
+    def _condition(self, trace, guide):
         if trace is not None:
             self._trace = trace
-        if observations is not None:
-            self._observations = observations
+        if guide is not None:
+            self._guide = guide
 
-    def condition(self, trace=None, observations=None):
-        self.apply(lambda m: m._condition(trace, observations))
+    def condition(self, trace=None, guide=None):
+        if trace is None:
+            trace = ParticleTrace()
+        if guide is None and self._guide is None:
+            guide = utils.EMPTY_TRACE.copy()
+        self.apply(lambda m: m._condition(trace, guide))
 
     @property
     def trace(self):
         return self._trace
 
     @property
-    def observations(self):
-        return self._observations
+    def guide(self):
+        return self._guide
 
     def register_args(self, args, trainable=True):
         for k, v in utils.vardict(args).items():
@@ -191,9 +205,19 @@ class Model(nn.Module):
 
     def forward(self, *args, **kwargs):
         kwargs = {**kwargs, 'this': self}
-        if isinstance(self.trace, GraphingTrace):
+        if isinstance(self.trace, ParticleTrace):
             self.trace.push(self)
         result = self._function(*args, **kwargs)
-        if isinstance(self.trace, GraphingTrace):
+        if isinstance(self.trace, ParticleTrace):
             self.trace.pop()
         return result
+
+    def simulate(self, *args, **kwargs):
+        if 'trace' in kwargs:
+            trace = kwargs.pop('trace')
+        else:
+            trace = ParticleTrace()
+        guide = kwargs.pop('guide') if 'guide' in kwargs else None
+        self.condition(trace, guide)
+        result = self.forward(*args, **kwargs)
+        return result, self.trace.log_joint()

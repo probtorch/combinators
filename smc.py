@@ -4,67 +4,58 @@ import collections
 import logging
 
 import probtorch
-from probtorch.stochastic import RandomVariable, Trace
 from probtorch.util import log_mean_exp
 import torch
-from torch.nn.functional import log_softmax
 
 import combinators
 import importance
+from importance import ResamplerTrace
 
-class ParticleTrace(combinators.GraphingTrace):
-    def resample(self, log_weights):
-        normalized_weights = log_softmax(log_weights, dim=0)
-        resampler = torch.distributions.Categorical(logits=normalized_weights)
-        ancestor_indices = resampler.sample((self.num_particles,))
+class SequentialImportanceResampler(importance.ImportanceResampler):
+    def __init__(self, f, phi={}, theta={}):
+        super(SequentialImportanceResampler, self).__init__(f, phi, theta)
 
-        result = ParticleTrace(self.num_particles)
-        result._modules = self._modules
-        result._stack = self._stack
-        for i, key in enumerate(self.variables()):
-            rv = self[key] if key is not None else self[i]
-            if not rv.observed:
-                value = rv.value.index_select(0, ancestor_indices)
-                sample = RandomVariable(rv.dist, value, rv.observed, rv.mask,
-                                        rv.reparameterized)
-            else:
-                sample = rv
-            if key is not None:
-                result[key] = sample
-            else:
-                result[i] = sample
+    def importance_weight(self):
+        observations = self.observations()[-1:]
+        latents = self.latents()[-1:]
+        return super(SequentialImportanceResampler, self).importance_weight(
+            observations, latents
+        )
 
-        return result, log_weights.index_select(0, ancestor_indices)
+    def marginal_log_likelihood(self):
+        latents = self.latents()
+        log_weights = torch.zeros(len(latents), self._num_particles)
+        for t, _ in enumerate(latents):
+            log_weights[t] = self.log_weights[str(latents[t:t+1])]
+        return log_mean_exp(log_weights, dim=0).sum()
 
-def smc(step, retrace):
-    return combinators.Model.compose(
-        combinators.Model(retrace),
-        importance.ImportanceSampler(step),
-    )
+def smc(step, T):
+    resampled_step = SequentialImportanceResampler(step)
+    return combinators.Model.sequence(resampled_step, T)
 
-def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
-                    params, data, *args, use_cuda=True, lr=1e-6):
-    model_init = combinators.Model(model_init, params, {})
-    optimizer = torch.optim.Adam(list(model_init.parameters()), lr=lr)
+def variational_smc(num_particles, model_init, smc_sequence, num_iterations,
+                    data, *args, use_cuda=True, lr=1e-6):
+    optimizer = torch.optim.Adam(list(model_init.parameters()) +\
+                                 list(smc_sequence.parameters()), lr=lr)
 
+    model_init.train()
+    smc_sequence.train()
     if torch.cuda.is_available() and use_cuda:
         model_init.cuda()
-        smc_step.cuda()
+        smc_sequence.cuda()
 
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        inference = ParticleTrace(num_particles)
-        model_init.condition(trace=inference, observations=data)
-        smc_step.condition(trace=inference, observations=data)
+        inference = ResamplerTrace(num_particles)
+        model_init.condition(trace=inference, guide=data)
+        smc_sequence.condition(trace=inference, guide=data)
 
-        vs = model_init(*args, T)
-        sequencer = combinators.Model.sequence(smc_step, T, *vs)
-        sequencer.condition(trace=inference, observations=data)
-        vs = sequencer()
+        vs = model_init(*args)
+        vs = smc_sequence(initializer=vs)
 
-        inference = smc_step.trace
-        elbo = list(smc_step.children())[0].marginal_log_likelihood()
+        inference = smc_sequence.trace
+        elbo = list(smc_sequence.children())[0].marginal_log_likelihood()
         logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
 
         (-elbo).backward()
@@ -72,33 +63,31 @@ def variational_smc(num_particles, model_init, smc_step, num_iterations, T,
 
     if torch.cuda.is_available() and use_cuda:
         model_init.cpu()
-        smc_step.cpu()
+        smc_sequence.cpu()
+    model_init.eval()
+    smc_sequence.eval()
 
     return inference, model_init.args_vardict()
 
-def particle_mh(num_particles, model_init, smc_step, num_iterations, T, params,
-                data, *args, use_cuda=True):
-    model_init = combinators.Model(model_init, params, {})
+def particle_mh(num_particles, model_init, smc_sequence, num_iterations, data,
+                *args, use_cuda=True):
     elbos = torch.zeros(num_iterations)
     samples = list(range(num_iterations))
 
     if torch.cuda.is_available() and use_cuda:
         model_init.cuda()
-        smc_step.cuda()
+        smc_sequence.cuda()
 
     for i in range(num_iterations):
-        inference = ParticleTrace(num_particles)
-        model_init.condition(trace=inference, observations=data)
-        smc_step.condition(trace=inference, observations=data)
+        inference = ResamplerTrace(num_particles)
+        model_init.condition(trace=inference, guide=data)
+        smc_sequence.condition(trace=inference, guide=data)
 
-        vs = model_init(*args, T)
+        vs = model_init(*args)
+        vs = smc_sequence(initializer=vs)
 
-        sequencer = combinators.Model.sequence(smc_step, T, *vs)
-        sequencer.condition(trace=inference, observations=data)
-        vs = sequencer()
-
-        inference = smc_step.trace
-        elbo = list(smc_step.children())[0].marginal_log_likelihood()
+        inference = smc_sequence.trace
+        elbo = list(smc_sequence.children())[0].marginal_log_likelihood()
 
         acceptance = torch.min(torch.ones(1), torch.exp(elbo - elbos[i-1]))
         if (torch.bernoulli(acceptance) == 1).sum() > 0 or i == 0:
@@ -110,6 +99,6 @@ def particle_mh(num_particles, model_init, smc_step, num_iterations, T, params,
 
     if torch.cuda.is_available() and use_cuda:
         model_init.cpu()
-        smc_step.cpu()
+        smc_sequence.cpu()
 
     return samples, elbos, inference
