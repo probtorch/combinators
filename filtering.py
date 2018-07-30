@@ -16,13 +16,14 @@ EMPTY_ANNOTATION = collections.defaultdict(lambda: 0.0)
 
 class ForwardMessenger(combinators.Model):
     def __init__(self, f, latent, observation, transition, observation_dists,
-                 initial_marginals=None, phi={}, theta={}):
+                 initial_marginals=None, trainable={}, hyper={}):
         self._latent = latent
         self._observation = observation
         self.transition = transition
         self.observation_dists = observation_dists
         self._initial_marginals = initial_marginals
-        super(ForwardMessenger, self).__init__(f, phi=phi, theta=theta)
+        super(ForwardMessenger, self).__init__(f, trainable=trainable,
+                                               hyper=hyper)
 
     def _condition(self, trace=None, guide=None):
         super(ForwardMessenger, self)._condition(trace, guide)

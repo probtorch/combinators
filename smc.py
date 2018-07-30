@@ -12,8 +12,8 @@ import importance
 from importance import ResamplerTrace
 
 class SequentialImportanceResampler(importance.ImportanceResampler):
-    def __init__(self, f, phi={}, theta={}):
-        super(SequentialImportanceResampler, self).__init__(f, phi, theta)
+    def __init__(self, f, trainable={}, hyper={}):
+        super(SequentialImportanceResampler, self).__init__(f, trainable, hyper)
 
     def importance_weight(self):
         observations = self.observations()[-1:]

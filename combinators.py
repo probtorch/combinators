@@ -78,7 +78,7 @@ class ParticleTrace(probtorch.stochastic.Trace):
         return self._nodes.keys()
 
 class Model(nn.Module):
-    def __init__(self, f, phi={}, theta={}):
+    def __init__(self, f, trainable={}, hyper={}):
         super(Model, self).__init__()
         if isinstance(f, Model):
             self.add_module('_function', f)
@@ -87,8 +87,8 @@ class Model(nn.Module):
         self._trace = None
         self._guide = None
         self._parent = collections.defaultdict(lambda: None)
-        self.register_args(phi, True)
-        self.register_args(theta, False)
+        self.register_args(trainable, True)
+        self.register_args(hyper, False)
 
     @classmethod
     def _bind(cls, outer, inner, intermediate_name=None):
