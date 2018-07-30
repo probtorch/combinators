@@ -113,17 +113,14 @@ def variational_forward_backward(model_init, step_builder, num_iterations, T,
         optimizer.zero_grad()
 
         inference = ParticleTrace()
-        model_init.condition(trace=inference, guide=data)
 
-        vs = model_init(*args)
+        vs = model_init(*args, trace=inference, guide=data)
         model_step = step_builder(*vs)
-        model_step.condition(trace=inference, guide=data)
         if torch.cuda.is_available() and use_cuda:
             model_step.cuda()
 
         sequencer = combinators.Model.sequence(model_step, T, *vs)
-        sequencer.condition(trace=inference, guide=data)
-        vs = sequencer()
+        vs = sequencer(trace=inference, guide=data)
 
         model_step.backward_pass(T)
         _, marginals = model_step.smoothed_posterior(T)

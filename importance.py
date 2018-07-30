@@ -110,7 +110,7 @@ class ImportanceResampler(ImportanceSampler):
         resampled_trace, _ = self.trace.resample(
             self.importance_weight()
         )
-        self.ancestor.condition(trace=resampled_trace)
+        self.ancestor._condition_all(trace=resampled_trace, guide=self.guide)
 
         results = list(results)
         for i, var in enumerate(results):

@@ -48,11 +48,9 @@ def variational_smc(num_particles, model_init, smc_sequence, num_iterations,
         optimizer.zero_grad()
 
         inference = ResamplerTrace(num_particles)
-        model_init.condition(trace=inference, guide=data)
-        smc_sequence.condition(trace=inference, guide=data)
 
-        vs = model_init(*args)
-        vs = smc_sequence(initializer=vs)
+        vs = model_init(*args, trace=inference, guide=data)
+        vs = smc_sequence(initializer=vs, trace=inference, guide=data)
 
         inference = smc_sequence.trace
         elbo = list(smc_sequence.children())[0].marginal_log_likelihood()
@@ -80,11 +78,9 @@ def particle_mh(num_particles, model_init, smc_sequence, num_iterations, data,
 
     for i in range(num_iterations):
         inference = ResamplerTrace(num_particles)
-        model_init.condition(trace=inference, guide=data)
-        smc_sequence.condition(trace=inference, guide=data)
 
-        vs = model_init(*args)
-        vs = smc_sequence(initializer=vs)
+        vs = model_init(*args, trace=inference, guide=data)
+        vs = smc_sequence(initializer=vs, trace=inference, guide=data)
 
         inference = smc_sequence.trace
         elbo = list(smc_sequence.children())[0].marginal_log_likelihood()
