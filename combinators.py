@@ -84,7 +84,6 @@ class Model(nn.Module):
         self._trace = None
         self._guide = None
         self._parent = collections.defaultdict(lambda: None)
-        self.condition()
         self.register_args(phi, True)
         self.register_args(theta, False)
 
@@ -178,10 +177,10 @@ class Model(nn.Module):
         if guide is not None:
             self._guide = guide
 
-    def condition(self, trace=None, guide=None):
+    def _condition_all(self, trace=None, guide=None):
         if trace is None:
             trace = ParticleTrace()
-        if guide is None and self._guide is None:
+        if guide is None:
             guide = utils.EMPTY_TRACE.copy()
         self.apply(lambda m: m._condition(trace, guide))
 
@@ -205,6 +204,9 @@ class Model(nn.Module):
 
     def forward(self, *args, **kwargs):
         kwargs = {**kwargs, 'this': self}
+        if not self.parent:
+            self._condition_all(trace=kwargs.pop('trace', None),
+                                guide=kwargs.pop('guide', None))
         if isinstance(self.trace, ParticleTrace):
             self.trace.push(self)
         result = self._function(*args, **kwargs)
