@@ -19,8 +19,8 @@ def sampled_latent(rv, trace, guide):
     return not trace[rv].observed and generative
 
 class ImportanceSampler(combinators.Model):
-    def __init__(self, f, phi={}, theta={}):
-        super(ImportanceSampler, self).__init__(f, phi, theta)
+    def __init__(self, f, trainable={}, hyper={}):
+        super(ImportanceSampler, self).__init__(f, trainable, hyper)
         self.log_weights = collections.OrderedDict()
 
     @property
@@ -101,8 +101,8 @@ class ResamplerTrace(combinators.ParticleTrace):
         return result, log_weights.index_select(0, result.ancestor_indices)
 
 class ImportanceResampler(ImportanceSampler):
-    def __init__(self, f, phi={}, theta={}):
-        super(ImportanceResampler, self).__init__(f, phi, theta)
+    def __init__(self, f, trainable={}, hyper={}):
+        super(ImportanceResampler, self).__init__(f, trainable, hyper)
         self._trace = ResamplerTrace()
 
     def forward(self, *args, **kwargs):
@@ -110,7 +110,7 @@ class ImportanceResampler(ImportanceSampler):
         resampled_trace, _ = self.trace.resample(
             self.importance_weight()
         )
-        self.ancestor.condition(trace=resampled_trace)
+        self.ancestor._condition_all(trace=resampled_trace, guide=self.guide)
 
         results = list(results)
         for i, var in enumerate(results):

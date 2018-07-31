@@ -78,28 +78,33 @@ class ParticleTrace(probtorch.stochastic.Trace):
         return self._nodes.keys()
 
 class Model(nn.Module):
-    def __init__(self, f, phi={}, theta={}):
+    def __init__(self, f, trainable={}, hyper={}):
         super(Model, self).__init__()
-        self._function = f
+        if isinstance(f, Model):
+            self.add_module('_function', f)
+        else:
+            self._function = f
         self._trace = None
         self._guide = None
         self._parent = collections.defaultdict(lambda: None)
-        self.condition()
-        self.register_args(phi, True)
-        self.register_args(theta, False)
+        self.register_args(trainable, True)
+        self.register_args(hyper, False)
 
     @classmethod
-    def _bind(cls, outer, inner):
+    def _bind(cls, outer, inner, intermediate_name=None):
         def result(*args, **kwargs):
             this = kwargs['this']
             temp = inner(*args, **kwargs)
+            if intermediate_name:
+                kws = {'this': this, intermediate_name: temp}
+                return outer(**kws)
             return outer(*temp, this=this) if isinstance(temp, tuple) else\
                    outer(temp, this=this)
         return result
 
     @classmethod
-    def compose(cls, outer, inner, name=None):
-        result = cls._bind(outer, inner)
+    def compose(cls, outer, inner, name=None, intermediate_name=None):
+        result = cls._bind(outer, inner, intermediate_name)
         if name is not None:
             result.__name__ = name
         result = cls(result)
@@ -178,10 +183,10 @@ class Model(nn.Module):
         if guide is not None:
             self._guide = guide
 
-    def condition(self, trace=None, guide=None):
+    def _condition_all(self, trace=None, guide=None):
         if trace is None:
             trace = ParticleTrace()
-        if guide is None and self._guide is None:
+        if guide is None:
             guide = utils.EMPTY_TRACE.copy()
         self.apply(lambda m: m._condition(trace, guide))
 
@@ -205,6 +210,9 @@ class Model(nn.Module):
 
     def forward(self, *args, **kwargs):
         kwargs = {**kwargs, 'this': self}
+        if not self.parent:
+            self._condition_all(trace=kwargs.pop('trace', None),
+                                guide=kwargs.pop('guide', None))
         if isinstance(self.trace, ParticleTrace):
             self.trace.push(self)
         result = self._function(*args, **kwargs)
