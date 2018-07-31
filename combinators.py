@@ -74,6 +74,9 @@ class ParticleTrace(probtorch.stochastic.Trace):
     def has_annotation(self, module, variable):
         return variable in self._modules[module]
 
+    def have_annotation(self, modules, variable):
+        return any([variable in self._modules[module] for module in modules])
+
     def keys(self):
         return self._nodes.keys()
 
