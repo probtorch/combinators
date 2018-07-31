@@ -233,11 +233,18 @@ class Model(nn.Module):
         result = self.forward(*args, **kwargs)
         return result, self.trace.log_joint()
 
+    @property
+    def all_names(self):
+        result = []
+        self.apply(lambda m: result.append(m.name) if isinstance(m, Model)\
+                   else None)
+        return result
+
     def observations(self):
         return [rv for rv in self.trace.variables() if self.trace[rv].observed\
-                and self.trace.has_annotation(self.name, rv)]
+                and self.trace.have_annotation(self.all_names, rv)]
 
     def latents(self):
         return [rv for rv in self.trace.variables()\
                 if not self.trace[rv].observed and\
-                self.trace.has_annotation(self.name, rv)]
+                self.trace.have_annotation(self.all_names, rv)]
