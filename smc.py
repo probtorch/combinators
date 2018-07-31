@@ -12,14 +12,14 @@ import combinators
 import importance
 from importance import ResamplerTrace
 
-class SequentialImportanceResampler(importance.ImportanceResampler):
+class StepwiseImportanceResampler(importance.ImportanceResampler):
     def __init__(self, f, trainable={}, hyper={}):
-        super(SequentialImportanceResampler, self).__init__(f, trainable, hyper)
+        super(StepwiseImportanceResampler, self).__init__(f, trainable, hyper)
 
     def importance_weight(self):
         observations = self.observations()[-1:]
         latents = self.latents()[-1:]
-        return super(SequentialImportanceResampler, self).importance_weight(
+        return super(StepwiseImportanceResampler, self).importance_weight(
             observations, latents
         )
 
