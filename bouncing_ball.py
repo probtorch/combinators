@@ -1,45 +1,53 @@
 #!/usr/bin/env python3
 
 import torch
+from torch.nn.functional import softplus
 
 import utils
 
 def init_bouncing_ball(this=None):
     params = this.args_vardict()
 
-    initial_position = this.trace.param_normal(params, name='position_0')
-    pi0 = this.trace.param_dirichlet(params, name='Pi_0')
-    initial_z = utils.relaxed_categorical(pi0, 'direction_0', this)
-    pi = torch.stack([this.trace.param_dirichlet(params, name='Pi_%d' % (d+1))
-                      for d in range(4)], dim=-1)
-    initial_speed = this.trace.param_log_normal(params, name='speed')
-    initial_angle = this.trace.param_uniform(params, name='angle')
-    initial_angle = torch.cat((torch.cos(initial_angle),
-                               torch.sin(initial_angle)), dim=1)
+    initial_alpha = this.trace.param_dirichlet(params, name='alpha_0')
+    transition_alpha = torch.stack([
+        this.trace.param_dirichlet(params, name='alpha_%d' % (d+1))
+        for d in range(4)
+    ], dim=-1)
+    initial_position = this.trace.param_normal(
+        params, name='position_0',
+        value=utils.optional_to(this.guide['position_0'], initial_alpha)
+    )
+    pi = this.trace.dirichlet(initial_alpha, name='Pi')
+    initial_z = utils.relaxed_categorical(pi, 'direction_0', this)
+    transition = torch.stack([
+        this.trace.dirichlet(transition_alpha[:, d], name='A_%d' % (d+1))
+        for d in range(4)
+    ], dim=-1)
+    dir_locs = this.trace.param_normal(params, name='directions__loc')
+    dir_covs = this.trace.param_normal(params, name='directions__scale')
 
-    doubt = this.trace.param_log_normal(params, name='doubt')
-    noise = this.trace.param_log_normal(params, name='noise')
-
-    return initial_position, initial_speed * initial_angle, initial_z, doubt, noise, pi
+    return initial_position, initial_z, transition, dir_locs, dir_covs
 
 def bouncing_ball_step(theta, t, this=None):
-    prev_position, velocity, z_prev, doubt, noise, pi = theta
-    params = this.args_vardict()
+    position, z_prev, transition, dir_locs, dir_covs = theta
+    directions = {
+        'loc': dir_locs,
+        'covariance_matrix': dir_covs,
+    }
     t += 1
 
-    pi_prev = utils.relaxed_particle_index(pi, z_prev, this=this)
-    direction, z_current = utils.relaxed_index_select(params['directions'],
-                                                      pi_prev,
-                                                      'direction_%d' % t,
-                                                      this=this)
-    velocity = velocity * direction
-    position = this.trace.normal(prev_position + velocity * this.delta_t, doubt,
-                                 name='position_%d' % t)
-
-    # Jitter observation with noise on top of doubt
-    this.trace.normal(
-        position - prev_position, noise, name='displacement_%d' % t,
+    transition_prev = utils.relaxed_particle_index(transition, z_prev,
+                                                   this=this)
+    direction, z_current = utils.relaxed_vardict_index_select(
+        directions, transition_prev, 'direction_%d' % t, this=this
+    )
+    direction_covariance = direction['covariance_matrix']
+    direction_covariance @= direction_covariance.transpose(1, 2)
+    velocity = this.trace.multivariate_normal(
+        direction['loc'], softplus(direction_covariance),
+        name='displacement_%d' % t,
         value=utils.optional_to(this.guide['displacement_%d' % t], position)
     )
+    position = position + velocity
 
-    return position, velocity, z_current, doubt, noise, pi
+    return position, z_current, transition, dir_locs, dir_covs
