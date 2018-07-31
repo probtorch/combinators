@@ -46,6 +46,14 @@ def relaxed_index_select(tensor, probs, name, dim=0, this=None):
         return weighted_sum(tensor, indices), indices
     return tensor.index_select(dim, indices), indices
 
+def relaxed_vardict_index_select(vdict, probs, name, dim=0, this=None):
+    indices = relaxed_categorical(probs, name, this=this)
+    result = vardict()
+    for k, v in vdict.items():
+        result[k] = weighted_sum(v, indices) if this.training\
+                    else v.index_select(dim, indices)
+    return result, indices
+
 def relaxed_particle_index(tensor, indices, this=None):
     if this.training:
         indexed_tensors = [indices[particle] @ t for particle, t in
