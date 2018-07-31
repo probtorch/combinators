@@ -32,10 +32,18 @@ def relaxed_categorical(probs, name, this=None):
     return this.trace.variable(torch.distributions.Categorical, probs,
                                name=name)
 
+def weighted_sum(tensor, indices):
+    if len(tensor.shape) == 2:
+        return indices @ tensor
+    weighted_dim = len(indices.shape) - 1
+    while len(indices.shape) < len(tensor.shape):
+        indices = indices.unsqueeze(-1)
+    return (indices * tensor).sum(dim=weighted_dim)
+
 def relaxed_index_select(tensor, probs, name, dim=0, this=None):
     indices = relaxed_categorical(probs, name, this=this)
     if this.training:
-        return indices @ tensor, indices
+        return weighted_sum(tensor, indices), indices
     return tensor.index_select(dim, indices), indices
 
 def relaxed_particle_index(tensor, indices, this=None):
