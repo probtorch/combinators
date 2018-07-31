@@ -18,7 +18,8 @@ def init_bouncing_ball(this=None):
         value=utils.optional_to(this.guide['position_0'], initial_alpha)
     )
     pi = this.trace.dirichlet(initial_alpha, name='Pi')
-    initial_z = utils.relaxed_categorical(pi, 'direction_0', this)
+    initial_z = this.trace.variable(torch.distributions.Categorical, pi,
+                                    name='direction_0')
     transition = torch.stack([
         this.trace.dirichlet(transition_alpha[:, d], name='A_%d' % (d+1))
         for d in range(4)
@@ -36,11 +37,10 @@ def bouncing_ball_step(theta, t, this=None):
     }
     t += 1
 
-    transition_prev = utils.relaxed_particle_index(transition, z_prev,
-                                                   this=this)
-    direction, z_current = utils.relaxed_vardict_index_select(
-        directions, transition_prev, 'direction_%d' % t, this=this
-    )
+    transition_prev = utils.particle_index(transition, z_prev)
+    z_current = this.trace.variable(torch.distributions.Categorical,
+                                    transition_prev, name='direction_%d' % t)
+    direction = utils.vardict_particle_index(directions, z_current)
     direction_covariance = direction['covariance_matrix']
     direction_covariance @= direction_covariance.transpose(1, 2)
     velocity = this.trace.multivariate_normal(
