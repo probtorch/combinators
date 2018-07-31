@@ -30,9 +30,15 @@ class StepwiseImportanceResampler(importance.ImportanceResampler):
             log_weights[t] = self.log_weights[str(latents[t:t+1])]
         return log_mean_exp(log_weights, dim=0).sum()
 
-def smc(step, T):
-    resampled_step = SequentialImportanceResampler(step)
-    return combinators.Model.sequence(resampled_step, T)
+class SequentialMonteCarlo(combinators.Model):
+    def __init__(self, step, T):
+        resampled_step = StepwiseImportanceResampler(step)
+        super(SequentialMonteCarlo, self).__init__(
+            combinators.Model.sequence(resampled_step, T)
+        )
+
+    def marginal_log_likelihood(self):
+        return list(self._function.children())[0].marginal_log_likelihood()
 
 def variational_smc(num_particles, model_init, smc_sequence, num_iterations,
                     data, *args, use_cuda=True, lr=1e-6):
@@ -54,7 +60,7 @@ def variational_smc(num_particles, model_init, smc_sequence, num_iterations,
         vs = smc_sequence(initializer=vs, trace=inference, guide=data)
 
         inference = smc_sequence.trace
-        elbo = list(smc_sequence.children())[0].marginal_log_likelihood()
+        elbo = smc_sequence.marginal_log_likelihood()
         logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
 
         (-elbo).backward()
@@ -80,7 +86,6 @@ class ParticleMH(combinators.Model):
     def forward(self, *args, **kwargs):
         elbos = torch.zeros(self._num_iterations)
         samples = list(range(self._num_iterations))
-        smc_sequence = list(list(self._function.children())[1].children())[0]
 
         for i in range(self._num_iterations):
             num_particles = kwargs['trace'].num_particles if 'trace' in kwargs\
@@ -89,7 +94,7 @@ class ParticleMH(combinators.Model):
 
             vs = super(ParticleMH, self).forward(*args, **kwargs)
 
-            elbo = smc_sequence.marginal_log_likelihood()
+            elbo = self._function.wrapper.marginal_log_likelihood()
             acceptance = torch.min(torch.ones(1), torch.exp(elbo - elbos[i-1]))
             if torch.bernoulli(acceptance) == 1 or i == 0:
                 elbos[i] = elbo
