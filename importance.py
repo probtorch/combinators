@@ -29,15 +29,6 @@ class ImportanceSampler(combinators.Model):
             return list(self.log_weights.items())[0][1].shape[0]
         return 1
 
-    def observations(self):
-        return [rv for rv in self.trace.variables() if self.trace[rv].observed\
-                and self.trace.has_annotation(self.name, rv)]
-
-    def latents(self):
-        return [rv for rv in self.trace.variables()\
-                if not self.trace[rv].observed and\
-                self.trace.has_annotation(self.name, rv)]
-
     def importance_weight(self, observations=None, latents=None):
         if not observations:
             observations = self.observations()

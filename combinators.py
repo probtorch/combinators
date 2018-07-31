@@ -229,3 +229,12 @@ class Model(nn.Module):
         self.condition(trace, guide)
         result = self.forward(*args, **kwargs)
         return result, self.trace.log_joint()
+
+    def observations(self):
+        return [rv for rv in self.trace.variables() if self.trace[rv].observed\
+                and self.trace.has_annotation(self.name, rv)]
+
+    def latents(self):
+        return [rv for rv in self.trace.variables()\
+                if not self.trace[rv].observed and\
+                self.trace.has_annotation(self.name, rv)]
