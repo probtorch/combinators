@@ -9,6 +9,18 @@ import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def vardict_particle_index(vdict, indices):
+    result = vardict()
+    for k, v in vdict.items():
+        result[k] = particle_index(v, indices)
+    return result
+
+def vardict_index_select(vdict, indices, dim=0):
+    result = vardict()
+    for k, v in vdict.items():
+        result[k] = v.index_select(dim, indices)
+    return result
+
 def counterfactual_log_joint(p, q, rvs):
     return sum([p[rv].dist.log_prob(q[rv].value.to(p[rv].value)) for rv in rvs
                 if rv in p])
