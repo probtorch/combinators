@@ -106,8 +106,7 @@ def plot_circle_transition(init_v, final_mus, final_covs, As_pred, As_true, K, f
         fig.savefig('baseline_results.pdf')
         fig.savefig('baseline_results.svg')
         fig.savefig('baseline_results.png', dpi=600)
-        
-        
+
 def plot_circle_transition_colorcode(init_v, final_mus, final_covs, As_pred, As_true, K, fs, vmax, width_space, height_space, cov_flag, legend_flag, save_flag):
 
     As_infer = As_pred / As_pred.sum(-1)[:, :, None]
@@ -153,13 +152,13 @@ def plot_circle_transition_colorcode(init_v, final_mus, final_covs, As_pred, As_
     ax9 = fig.add_subplot(gs3[3, 0])
     ax9.set_xticks([])
     ax9.set_yticks([])
-
+    markersize = 10.0
     colors = ['b', 'Purple', 'g', 'r']
     ## plot left one
-    ax1.scatter(init_v[:,0], init_v[:,1], color=colors[0], label='z=1')
-    ax1.scatter(init_v[:,0], -init_v[:,1], color=colors[1], label='z=2')
-    ax1.scatter(-init_v[:,0], -init_v[:,1], color=colors[2], label='z=3')
-    ax1.scatter(-init_v[:,0], init_v[:,1], color=colors[3], label='z=4')
+    ax1.scatter(init_v[:,0], init_v[:,1], s=markersize, color=colors[0], label='z=1')
+    ax1.scatter(init_v[:,0], -init_v[:,1], s=markersize, color=colors[1], label='z=2')
+    ax1.scatter(-init_v[:,0], -init_v[:,1], s=markersize, color=colors[2], label='z=3')
+    ax1.scatter(-init_v[:,0], init_v[:,1], s=markersize, color=colors[3], label='z=4')
 
     for k in range(K):
         ax1.scatter(final_mus[:,k,0], final_mus[:,k,1], c=colors[k], marker='x')
@@ -183,4 +182,6 @@ def plot_circle_transition_colorcode(init_v, final_mus, final_covs, As_pred, As_
     ax9.imshow(As_true_ave[None, 3,:], cmap='Reds', vmin=0, vmax=vmax)
 
     if save_flag:
-        fig.savefig('baseline_results_v3.pdf', bbox_inches='tight')
+        fig.savefig('baseline_results_v3.pdf', dpi=600, bbox_inches='tight')
+        fig.savefig('baseline_results_v3.svg', dpi=600, bbox_inches='tight')
+        fig.savefig('baseline_results_v3.png', dpi=600, bbox_inches='tight')
