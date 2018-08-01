@@ -203,6 +203,7 @@ class Model(nn.Module):
 
     def register_args(self, args, trainable=True):
         for k, v in utils.vardict(args).items():
+            v = torch.tensor(v)
             if trainable:
                 self.register_parameter(k, nn.Parameter(v))
             else:
