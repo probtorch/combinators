@@ -23,6 +23,5 @@ def ssm_step(theta, t, this=None):
     this.trace.normal(
         z_current, torch.ones(*z_current.shape, device=z_current.device),
         name='X_%d' % t,
-        value=utils.optional_to(this.guide['X_%d' % t], z_current)
     )
     return z_current, mu, sigma, delta
