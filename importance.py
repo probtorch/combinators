@@ -29,15 +29,6 @@ class ImportanceSampler(combinators.Model):
             return list(self.log_weights.items())[0][1].shape[0]
         return 1
 
-    def observations(self):
-        return [rv for rv in self.trace.variables() if self.trace[rv].observed\
-                and self.trace.has_annotation(self.name, rv)]
-
-    def latents(self):
-        return [rv for rv in self.trace.variables()\
-                if not self.trace[rv].observed and\
-                self.trace.has_annotation(self.name, rv)]
-
     def importance_weight(self, observations=None, latents=None):
         if not observations:
             observations = self.observations()
@@ -71,6 +62,7 @@ class ResamplerTrace(combinators.ParticleTrace):
         else:
             self._ancestor_indices = torch.arange(self._num_particles,
                                                   dtype=torch.long)
+        self._fresh_variables = set()
         if ancestor:
             self._modules = ancestor._modules
             self._stack = ancestor._stack
@@ -86,6 +78,15 @@ class ResamplerTrace(combinators.ParticleTrace):
                     self[key] = sample
                 else:
                     self[i] = sample
+
+    def variable(self, Dist, *args, **kwargs):
+        if 'name' in kwargs:
+            self._fresh_variables.add(kwargs['name'])
+        return super(ResamplerTrace, self).variable(Dist, *args, **kwargs)
+
+    @property
+    def fresh_variables(self):
+        return self._fresh_variables
 
     @property
     def ancestor_indices(self):

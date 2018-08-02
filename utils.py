@@ -9,6 +9,18 @@ import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def vardict_particle_index(vdict, indices):
+    result = vardict()
+    for k, v in vdict.items():
+        result[k] = particle_index(v, indices)
+    return result
+
+def vardict_index_select(vdict, indices, dim=0):
+    result = vardict()
+    for k, v in vdict.items():
+        result[k] = v.index_select(dim, indices)
+    return result
+
 def counterfactual_log_joint(p, q, rvs):
     return sum([p[rv].dist.log_prob(q[rv].value.to(p[rv].value)) for rv in rvs
                 if rv in p])
@@ -27,16 +39,32 @@ def particle_index(tensor, indices):
 
 def relaxed_categorical(probs, name, this=None):
     if this.training:
-        return this.trace.relaxed_one_hot_categorical(1.0, probs=probs,
+        return this.trace.relaxed_one_hot_categorical(0.66, probs=probs,
                                                       name=name)
     return this.trace.variable(torch.distributions.Categorical, probs,
                                name=name)
 
+def weighted_sum(tensor, indices):
+    if len(tensor.shape) == 2:
+        return indices @ tensor
+    weighted_dim = len(indices.shape) - 1
+    while len(indices.shape) < len(tensor.shape):
+        indices = indices.unsqueeze(-1)
+    return (indices * tensor).sum(dim=weighted_dim)
+
 def relaxed_index_select(tensor, probs, name, dim=0, this=None):
     indices = relaxed_categorical(probs, name, this=this)
     if this.training:
-        return indices @ tensor
-    return tensor.index_select(dim, indices)
+        return weighted_sum(tensor, indices), indices
+    return tensor.index_select(dim, indices), indices
+
+def relaxed_vardict_index_select(vdict, probs, name, dim=0, this=None):
+    indices = relaxed_categorical(probs, name, this=this)
+    result = vardict()
+    for k, v in vdict.items():
+        result[k] = weighted_sum(v, indices) if this.training\
+                    else v.index_select(dim, indices)
+    return result, indices
 
 def relaxed_particle_index(tensor, indices, this=None):
     if this.training:

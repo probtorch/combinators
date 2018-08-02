@@ -17,17 +17,17 @@ class StepwiseImportanceResampler(importance.ImportanceResampler):
         super(StepwiseImportanceResampler, self).__init__(f, trainable, hyper)
 
     def importance_weight(self):
-        observations = self.observations()[-1:]
-        latents = self.latents()[-1:]
+        fresh = self.trace.fresh_variables
+        observations = list(fresh.intersection(self.observations()))
+        latents = list(fresh.intersection(self.latents()))
         return super(StepwiseImportanceResampler, self).importance_weight(
             observations, latents
         )
 
     def marginal_log_likelihood(self):
-        latents = self.latents()
-        log_weights = torch.zeros(len(latents), self._num_particles)
-        for t, _ in enumerate(latents):
-            log_weights[t] = self.log_weights[str(latents[t:t+1])]
+        log_weights = torch.zeros(len(self.log_weights), self._num_particles)
+        for t, latent in enumerate(self.log_weights):
+            log_weights[t] = self.log_weights[latent]
         return log_mean_exp(log_weights, dim=0).sum()
 
 class SequentialMonteCarlo(combinators.Model):
@@ -41,7 +41,7 @@ class SequentialMonteCarlo(combinators.Model):
         return list(self._function.children())[0].marginal_log_likelihood()
 
 def variational_smc(num_particles, model_init, smc_sequence, num_iterations,
-                    data, *args, use_cuda=True, lr=1e-6):
+                    data, *args, use_cuda=True, lr=1e-6, inclusive_kl=False):
     optimizer = torch.optim.Adam(list(model_init.parameters()) +\
                                  list(smc_sequence.parameters()), lr=lr)
 
@@ -60,10 +60,16 @@ def variational_smc(num_particles, model_init, smc_sequence, num_iterations,
         vs = smc_sequence(initializer=vs, trace=inference, guide=data)
 
         inference = smc_sequence.trace
-        elbo = smc_sequence.marginal_log_likelihood()
-        logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
-
-        (-elbo).backward()
+        if inclusive_kl:
+            hp_logq = -inference.log_joint(nodes=model_init.latents(),
+                                           reparameterized=False).mean(dim=0)
+            logging.info('Variational SMC H_p[log q]=%.8e at epoch %d', hp_logq,
+                         t + 1)
+            hp_logq.backward()
+        else:
+            elbo = smc_sequence.marginal_log_likelihood()
+            logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
+            (-elbo).backward()
         optimizer.step()
 
     if torch.cuda.is_available() and use_cuda:

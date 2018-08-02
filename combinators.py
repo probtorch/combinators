@@ -74,6 +74,9 @@ class ParticleTrace(probtorch.stochastic.Trace):
     def has_annotation(self, module, variable):
         return variable in self._modules[module]
 
+    def have_annotation(self, modules, variable):
+        return any([variable in self._modules[module] for module in modules])
+
     def keys(self):
         return self._nodes.keys()
 
@@ -200,6 +203,7 @@ class Model(nn.Module):
 
     def register_args(self, args, trainable=True):
         for k, v in utils.vardict(args).items():
+            v = torch.tensor(v)
             if trainable:
                 self.register_parameter(k, nn.Parameter(v))
             else:
@@ -229,3 +233,19 @@ class Model(nn.Module):
         self.condition(trace, guide)
         result = self.forward(*args, **kwargs)
         return result, self.trace.log_joint()
+
+    @property
+    def all_names(self):
+        result = []
+        self.apply(lambda m: result.append(m.name) if isinstance(m, Model)\
+                   else None)
+        return result
+
+    def observations(self):
+        return [rv for rv in self.trace.variables() if self.trace[rv].observed\
+                and self.trace.have_annotation(self.all_names, rv)]
+
+    def latents(self):
+        return [rv for rv in self.trace.variables()\
+                if not self.trace[rv].observed and\
+                self.trace.have_annotation(self.all_names, rv)]
