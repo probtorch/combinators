@@ -69,7 +69,7 @@ def variational_smc(num_particles, model_init, smc_sequence, num_iterations,
         if inclusive_kl:
             latents = model_init.latents() + smc_sequence.latents()
             hp_logq = inference.log_joint(nodes=latents, reparameterized=False)
-            hp_logq = -hp_logq.mean(dim=0)
+            hp_logq = -hp_logq.sum(dim=0)
             logging.info('Variational SMC H_p[log q]=%.8e at epoch %d', hp_logq,
                          t + 1)
             hp_logq.backward()
