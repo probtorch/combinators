@@ -27,14 +27,11 @@ class ParticleTrace(probtorch.stochastic.Trace):
                                                     **kwargs)
 
     def variable(self, Dist, *args, **kwargs):
-        args = [arg.expand(self.num_particles, *arg.shape)
-                if isinstance(arg, torch.Tensor) and
-                (len(arg.shape) < 1 or arg.shape[0] != self.num_particles)
-                else arg for arg in args]
-        kwargs = {k: v.expand(self.num_particles, *v.shape)
-                     if isinstance(v, torch.Tensor) and
-                     (len(v.shape) < 1 or v.shape[0] != self.num_particles)
-                     else v for k, v in kwargs.items()}
+        args = [utils.particlize(arg, self.num_particles)
+                if isinstance(arg, torch.Tensor) else arg for arg in args]
+        kwargs = {k: utils.particlize(v, self.num_particles)
+                     if isinstance(v, torch.Tensor) else v
+                  for k, v in kwargs.items()}
         result = super(ParticleTrace, self).variable(Dist, *args, **kwargs)
         if self._stack:
             module_name = self._stack[-1]._function.__name__
