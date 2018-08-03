@@ -9,6 +9,15 @@ import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def particlize(tensor, num_particles):
+    if len(tensor.shape) < 1:
+        return tensor.expand(num_particles, *tensor.shape)
+    elif tensor.shape[0] == 1:
+        return tensor.expand(num_particles, *tensor.shape[1:])
+    elif tensor.shape[0] != num_particles:
+        return tensor.expand(num_particles, *tensor.shape)
+    return tensor
+
 def vardict_particle_index(vdict, indices):
     result = vardict()
     for k, v in vdict.items():

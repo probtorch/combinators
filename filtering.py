@@ -9,7 +9,7 @@ from probtorch.util import log_sum_exp
 import torch
 
 import combinators
-from combinators import ParticleTrace
+from combinators import GuidedTrace
 import utils
 
 EMPTY_ANNOTATION = collections.defaultdict(lambda: 0.0)
@@ -25,8 +25,8 @@ class ForwardMessenger(combinators.Model):
         super(ForwardMessenger, self).__init__(f, trainable=trainable,
                                                hyper=hyper)
 
-    def _condition(self, trace=None, guide=None):
-        super(ForwardMessenger, self)._condition(trace, guide)
+    def _condition(self, trace=None):
+        super(ForwardMessenger, self)._condition(trace)
         if self._initial_marginals and (self._latent % 0 in self.trace):
             initial_note = self.trace.annotation(self._initial_marginals[0],
                                                  self._latent % 0)
@@ -113,22 +113,22 @@ def variational_forward_backward(model_init, step_builder, num_iterations, T,
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        inference = ParticleTrace()
+        inference = GuidedTrace(data=data)
 
-        vs = model_init(*args, trace=inference, guide=data)
+        vs = model_init(*args, trace=inference)
         model_step = step_builder(*vs)
         if torch.cuda.is_available() and use_cuda:
             model_step.cuda()
 
         sequencer = combinators.Model.sequence(model_step, T, *vs)
-        vs = sequencer(trace=inference, guide=data)
+        vs = sequencer(trace=inference)
 
         model_step.backward_pass(T)
         _, marginals = model_step.smoothed_posterior(T)
         elbo = marginals.sum(dim=-1)
         logging.info('Variational forward-backward ELBO=%.8e at epoch %d',
                      elbo, t + 1)
-        (-elbo.sum()).backward()
+        (-elbo).backward()
         optimizer.step()
 
     if torch.cuda.is_available() and use_cuda:

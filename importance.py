@@ -11,13 +11,6 @@ from torch.nn.functional import log_softmax
 import combinators
 import utils
 
-def sampled_latent(rv, trace, guide):
-    if isinstance(guide, probtorch.Trace):
-        generative = rv in guide
-    else:
-        generative = True
-    return not trace[rv].observed and generative
-
 class ImportanceSampler(combinators.Model):
     def __init__(self, f, trainable={}, hyper={}):
         super(ImportanceSampler, self).__init__(f, trainable, hyper)
@@ -36,27 +29,24 @@ class ImportanceSampler(combinators.Model):
             latents = self.latents()
         log_likelihood = self.trace.log_joint(nodes=observations,
                                               reparameterized=False)
-        log_proposal = self.trace.log_joint(nodes=latents,
-                                            reparameterized=False)
-        # If the guide is given by a generative model, use it, otherwise
-        # perform likelihood weighting
-        if isinstance(self.guide, probtorch.Trace):
-            log_generative = utils.counterfactual_log_joint(self.guide,
-                                                            self.trace, latents)
-        else:
-            log_generative = log_proposal
-        log_generative = log_generative.to(log_proposal).mean(dim=0)
+        log_prior = self.trace.log_joint(nodes=latents, normalize_guide=True,
+                                         reparameterized=False)
 
-        self.log_weights[str(latents)] = log_likelihood + log_generative -\
-                                         log_proposal
+        self.log_weights[str(latents)] = log_likelihood + log_prior
         return self.log_weights[str(latents)]
 
     def marginal_log_likelihood(self):
         return log_mean_exp(self.log_weights[str(self.latents())], dim=0)
 
-class ResamplerTrace(combinators.ParticleTrace):
-    def __init__(self, num_particles=1, ancestor_indices=None, ancestor=None):
-        super(ResamplerTrace, self).__init__(num_particles=num_particles)
+class ResamplerTrace(combinators.GuidedTrace):
+    def __init__(self, num_particles=1, guide=None, data=None,
+                 ancestor_indices=None, ancestor=None):
+        if ancestor is not None:
+            num_particles = ancestor.num_particles
+            guide = ancestor.guide
+            data = ancestor.data
+        super(ResamplerTrace, self).__init__(num_particles, guide=guide,
+                                             data=data)
         if isinstance(ancestor_indices, torch.Tensor):
             self._ancestor_indices = ancestor_indices
         else:
@@ -96,9 +86,11 @@ class ResamplerTrace(combinators.ParticleTrace):
         normalized_weights = log_softmax(log_weights, dim=0)
         resampler = torch.distributions.Categorical(logits=normalized_weights)
 
-        result = ResamplerTrace(self.num_particles,
-                                resampler.sample((self.num_particles,)),
-                                ancestor=self)
+        result = ResamplerTrace(
+            self.num_particles,
+            ancestor_indices=resampler.sample((self.num_particles,)),
+            ancestor=self
+        )
         return result, log_weights.index_select(0, result.ancestor_indices)
 
 class ImportanceResampler(ImportanceSampler):
@@ -111,7 +103,7 @@ class ImportanceResampler(ImportanceSampler):
         resampled_trace, _ = self.trace.resample(
             self.importance_weight()
         )
-        self.ancestor._condition_all(trace=resampled_trace, guide=self.guide)
+        self.ancestor._condition_all(trace=resampled_trace)
 
         results = list(results)
         for i, var in enumerate(results):

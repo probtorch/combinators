@@ -54,15 +54,16 @@ def variational_smc(num_particles, model_init, smc_sequence, num_iterations,
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        inference = ResamplerTrace(num_particles)
+        inference = ResamplerTrace(num_particles, data=data)
 
-        vs = model_init(*args, trace=inference, guide=data)
-        vs = smc_sequence(initializer=vs, trace=inference, guide=data)
+        vs = model_init(*args, trace=inference)
+        vs = smc_sequence(initializer=vs, trace=inference)
 
         inference = smc_sequence.trace
         if inclusive_kl:
-            hp_logq = -inference.log_joint(nodes=model_init.latents(),
-                                           reparameterized=False).mean(dim=0)
+            latents = model_init.latents() + smc_sequence.latents()
+            hp_logq = inference.log_joint(nodes=latents, reparameterized=False)
+            hp_logq = -hp_logq.mean(dim=0)
             logging.info('Variational SMC H_p[log q]=%.8e at epoch %d', hp_logq,
                          t + 1)
             hp_logq.backward()
@@ -92,11 +93,10 @@ class ParticleMH(combinators.Model):
     def forward(self, *args, **kwargs):
         elbos = torch.zeros(self._num_iterations)
         samples = list(range(self._num_iterations))
+        original_trace = kwargs.get('trace', None)
 
         for i in range(self._num_iterations):
-            num_particles = kwargs['trace'].num_particles if 'trace' in kwargs\
-                            else 1
-            kwargs['trace'] = ResamplerTrace(num_particles)
+            kwargs['trace'] = ResamplerTrace(ancestor=original_trace)
 
             vs = super(ParticleMH, self).forward(*args, **kwargs)
 
