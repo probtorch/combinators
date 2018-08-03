@@ -59,6 +59,18 @@ class ParticleTrace(probtorch.stochastic.Trace):
 
         return result
 
+    def unwrap(self, predicate=lambda k, rv: True):
+        result = collections.OrderedDict()
+
+        for i, key in enumerate(self.variables()):
+            if key is not None:
+                if predicate(key, self[key]):
+                    result[key] = self[key].value.median(dim=0)[0]
+            elif predicate(i, self[i]):
+                result[i] = self[i].value.median(dim=0)[0]
+
+        return result
+
     def push(self, module):
         self._stack.append(module)
 
