@@ -38,9 +38,13 @@ class SequentialMonteCarlo(combinators.Model):
         super(SequentialMonteCarlo, self).__init__(
             combinators.Model.sequence(resampled_step, T)
         )
+        self.resampled_step = resampled_step
+
+    def importance_weight(self, observations=None, latents=None):
+        return self.resampled_step.importance_weight(observations, latents)
 
     def marginal_log_likelihood(self):
-        return list(self._function.children())[0].marginal_log_likelihood()
+        return self.resampled_step.marginal_log_likelihood()
 
 def variational_smc(num_particles, model_init, smc_sequence, num_iterations,
                     data, *args, use_cuda=True, lr=1e-6, inclusive_kl=False):
