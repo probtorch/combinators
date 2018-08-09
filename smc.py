@@ -16,10 +16,12 @@ class StepwiseImportanceResampler(importance.ImportanceResampler):
     def __init__(self, f, trainable={}, hyper={}):
         super(StepwiseImportanceResampler, self).__init__(f, trainable, hyper)
 
-    def importance_weight(self):
+    def importance_weight(self, observations=None, latents=None):
         fresh = self.trace.fresh_variables
-        observations = list(fresh.intersection(self.observations()))
-        latents = list(fresh.intersection(self.latents()))
+        if not observations:
+            observations = list(fresh.intersection(self.observations()))
+        if not latents:
+            latents = list(fresh.intersection(self.latents()))
         return super(StepwiseImportanceResampler, self).importance_weight(
             observations, latents
         )
