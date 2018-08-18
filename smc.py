@@ -9,6 +9,7 @@ from probtorch.util import log_mean_exp
 import torch
 
 import combinators
+from combinators import ParticleTrace
 import importance
 from importance import ResamplerTrace
 
@@ -16,10 +17,12 @@ class StepwiseImportanceResampler(importance.ImportanceResampler):
     def __init__(self, f, trainable={}, hyper={}):
         super(StepwiseImportanceResampler, self).__init__(f, trainable, hyper)
 
-    def importance_weight(self):
+    def importance_weight(self, observations=None, latents=None):
         fresh = self.trace.fresh_variables
-        observations = list(fresh.intersection(self.observations()))
-        latents = list(fresh.intersection(self.latents()))
+        if not observations:
+            observations = list(fresh.intersection(self.observations()))
+        if not latents:
+            latents = list(fresh.intersection(self.latents()))
         return super(StepwiseImportanceResampler, self).importance_weight(
             observations, latents
         )
@@ -36,34 +39,46 @@ class SequentialMonteCarlo(combinators.Model):
         super(SequentialMonteCarlo, self).__init__(
             combinators.Model.sequence(resampled_step, T)
         )
+        self.resampled_step = resampled_step
+
+    def importance_weight(self, observations=None, latents=None):
+        return self.resampled_step.importance_weight(observations, latents)
 
     def marginal_log_likelihood(self):
-        return list(self._function.children())[0].marginal_log_likelihood()
+        return self.resampled_step.marginal_log_likelihood()
 
 def variational_smc(num_particles, model_init, smc_sequence, num_iterations,
-                    data, *args, use_cuda=True, lr=1e-6, inclusive_kl=False):
+                    data, proposal, use_cuda=True, lr=1e-6,
+                    inclusive_kl=False):
     optimizer = torch.optim.Adam(list(model_init.parameters()) +\
-                                 list(smc_sequence.parameters()), lr=lr)
+                                 list(smc_sequence.parameters()) +\
+                                 list(proposal.parameters()), lr=lr)
 
     model_init.train()
     smc_sequence.train()
+    proposal.train()
     if torch.cuda.is_available() and use_cuda:
         model_init.cuda()
         smc_sequence.cuda()
+        proposal.cuda()
 
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        inference = ResamplerTrace(num_particles, data=data)
+        proposal.simulate(trace=ParticleTrace(num_particles),
+                          reparameterized=False)
+        inference = ResamplerTrace(num_particles, guide=proposal.trace,
+                                   data=data)
 
-        vs = model_init(*args, trace=inference)
+        vs = model_init(trace=inference)
         vs = smc_sequence(initializer=vs, trace=inference)
 
         inference = smc_sequence.trace
         if inclusive_kl:
-            latents = model_init.latents() + smc_sequence.latents()
-            hp_logq = inference.log_joint(nodes=latents, reparameterized=False)
-            hp_logq = -hp_logq.mean(dim=0)
+            latents = proposal.latents()
+            hp_logq = inference.log_joint(nodes=latents, normalize_guide=True,
+                                          reparameterized=False)
+            hp_logq = -hp_logq.sum(dim=0)
             logging.info('Variational SMC H_p[log q]=%.8e at epoch %d', hp_logq,
                          t + 1)
             hp_logq.backward()
@@ -76,10 +91,12 @@ def variational_smc(num_particles, model_init, smc_sequence, num_iterations,
     if torch.cuda.is_available() and use_cuda:
         model_init.cpu()
         smc_sequence.cpu()
+        proposal.cpu()
     model_init.eval()
     smc_sequence.eval()
+    proposal.eval()
 
-    return inference, model_init.args_vardict()
+    return inference, proposal.args_vardict()
 
 class ParticleMH(combinators.Model):
     def __init__(self, model_init, smc_sequence, num_iterations=1, trainable={},
