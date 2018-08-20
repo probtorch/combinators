@@ -141,19 +141,10 @@ class GuidedTrace(ParticleTrace):
         if normalize_guide:
             kwargs['nodes'] = [node for node in kwargs['nodes']
                                if self.guided(node) is not None]
-<<<<<<< HEAD
-            guide_joint = sum([self._guide.log_joint(*args, nodes=[node])
-                               for node in kwargs['nodes']
-                               if self.guided(node) is not None])
-=======
-            guide_joint = sum([
-                self._guide.log_joint(
-                    *args, nodes=[node],
-                    reparameterized=kwargs.get('reparameterized', True)
-                )
-                for node in kwargs['nodes'] if self.guided(node) is not None
-            ])
->>>>>>> combinators.GuidedTrace, combinators.Model: from guided models to guided Traces
+            guide_joint = self._guide.log_joint(
+                *args, nodes=kwargs['nodes'],
+                reparameterized=kwargs.get('reparameterized', True)
+            )
         else:
             guide_joint = torch.zeros(self.num_particles).to(device)
 
