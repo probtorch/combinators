@@ -93,38 +93,3 @@ def variational_smc(num_particles, model, proposal, num_iterations, data,
     proposal.eval()
 
     return inference, proposal.args_vardict()
-
-class ParticleMH(combinators.Model):
-    def __init__(self, model_init, smc_sequence, num_iterations=1, trainable={},
-                 hyper={}):
-        smc_model = combinators.Model.compose(smc_sequence, model_init,
-                                              intermediate_name='initializer')
-        super(ParticleMH, self).__init__(smc_model, trainable, hyper)
-        self._num_iterations = num_iterations
-        self.add_module('_function', smc_model)
-
-    def forward(self, *args, **kwargs):
-        elbos = torch.zeros(self._num_iterations)
-        samples = list(range(self._num_iterations))
-        original_trace = kwargs.get('trace', None)
-
-        for i in range(self._num_iterations):
-            kwargs['trace'] = ResamplerTrace(ancestor=original_trace)
-
-            vs = super(ParticleMH, self).forward(*args, **kwargs)
-
-            elbo = self._function.wrapper.marginal_log_likelihood()
-            acceptance = torch.min(torch.ones(1), torch.exp(elbo - elbos[i-1]))
-            if torch.bernoulli(acceptance) == 1 or i == 0:
-                elbos[i] = elbo
-                samples[i] = vs
-            else:
-                elbos[i] = elbos[i-1]
-                samples[i] = samples[i-1]
-
-        result = []
-        for i in range(self._num_iterations):
-            particle = np.random.randint(0, self.trace.num_particles)
-            result.append([v[particle] for v in samples[i]])
-        return [torch.stack([result[i][j] for i in range(self._num_iterations)],
-                            dim=0) for j, _ in enumerate(samples[0])], elbos
