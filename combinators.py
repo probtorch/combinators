@@ -89,6 +89,14 @@ class ParticleTrace(probtorch.stochastic.Trace):
     def keys(self):
         return self._nodes.keys()
 
+    def observed(self, name):
+        if name in self._nodes and self._nodes[name].observed:
+            return self._nodes[name]
+        return None
+
+    def clamped(self, name):
+        return self.observed(name)
+
 class GuidedTrace(ParticleTrace):
     def __init__(self, num_particles=1, guide=None, data=None):
         super(GuidedTrace, self).__init__(num_particles)
