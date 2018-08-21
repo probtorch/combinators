@@ -36,8 +36,8 @@ class IndependentMH(combinators.Model):
             sample = super(IndependentMH, self).forward(*args, **kwargs)
 
             elbo = self._function.marginal_log_likelihood()
-            acceptance = torch.min(torch.ones(1), torch.exp(elbo - elbos[i-1]))
-            if torch.bernoulli(acceptance) == 1 or i == 0:
+            acceptance = torch.min(torch.zeros(1), elbo - elbos[i-1])
+            if torch.bernoulli(torch.exp(acceptance)) == 1 or i == 0:
                 elbos[i] = elbo
                 samples[i] = sample
             else:
