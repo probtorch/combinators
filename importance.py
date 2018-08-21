@@ -58,7 +58,7 @@ class ResamplerTrace(combinators.GuidedTrace):
             self._stack = ancestor._stack
             for i, key in enumerate(ancestor.variables()):
                 rv = ancestor[key] if key is not None else ancestor[i]
-                if not rv.observed:
+                if not ancestor.observed(rv):
                     value = rv.value.index_select(0, self.ancestor_indices)
                     sample = RandomVariable(rv.dist, value, rv.observed,
                                             rv.mask, rv.reparameterized)
