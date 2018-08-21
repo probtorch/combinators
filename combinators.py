@@ -313,10 +313,10 @@ class Model(nn.Module):
         return result
 
     def observations(self):
-        return [rv for rv in self.trace.variables() if self.trace[rv].observed\
+        return [rv for rv in self.trace.variables() if self.trace.observed(rv)\
                 and self.trace.have_annotation(self.all_names, rv)]
 
     def latents(self):
         return [rv for rv in self.trace.variables()\
-                if not self.trace[rv].observed and\
+                if not self.trace.observed(rv) and\
                 self.trace.have_annotation(self.all_names, rv)]
