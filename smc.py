@@ -52,53 +52,44 @@ class SequentialMonteCarlo(combinators.Model):
     def marginal_log_likelihood(self):
         return self.resampled_step.marginal_log_likelihood()
 
-def variational_smc(num_particles, model_init, smc_sequence, num_iterations,
-                    data, proposal, use_cuda=True, lr=1e-6,
-                    inclusive_kl=False):
-    optimizer = torch.optim.Adam(list(model_init.parameters()) +\
-                                 list(smc_sequence.parameters()) +\
+def variational_smc(num_particles, model, proposal, num_iterations, data,
+                    use_cuda=True, lr=1e-6, inclusive_kl=False):
+    optimizer = torch.optim.Adam(list(model.parameters()) +\
                                  list(proposal.parameters()), lr=lr)
 
-    model_init.train()
-    smc_sequence.train()
+    model.train()
     proposal.train()
     if torch.cuda.is_available() and use_cuda:
-        model_init.cuda()
-        smc_sequence.cuda()
+        model.cuda()
         proposal.cuda()
 
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        proposal.simulate(trace=ParticleTrace(num_particles),
+        proposal.simulate(trace=ResamplerTrace(num_particles, data=data),
                           reparameterized=False)
         inference = ResamplerTrace(num_particles, guide=proposal.trace,
                                    data=data)
-
-        vs = model_init(trace=inference)
-        vs = smc_sequence(initializer=vs, trace=inference)
-
-        inference = smc_sequence.trace
+        model(trace=inference)
+        inference = model.trace
         if inclusive_kl:
             latents = proposal.latents()
-            hp_logq = inference.log_joint(nodes=latents, normalize_guide=True,
-                                          reparameterized=False)
+            hp_logq = proposal.trace.log_joint(nodes=latents,
+                                               reparameterized=False)
             hp_logq = -hp_logq.sum(dim=0)
             logging.info('Variational SMC H_p[log q]=%.8e at epoch %d', hp_logq,
                          t + 1)
             hp_logq.backward()
         else:
-            elbo = smc_sequence.marginal_log_likelihood()
+            elbo = model.marginal_log_likelihood()
             logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
             (-elbo).backward()
         optimizer.step()
 
     if torch.cuda.is_available() and use_cuda:
-        model_init.cpu()
-        smc_sequence.cpu()
+        model.cpu()
         proposal.cpu()
-    model_init.eval()
-    smc_sequence.eval()
+    model.eval()
     proposal.eval()
 
     return inference, proposal.args_vardict()
