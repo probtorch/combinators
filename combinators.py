@@ -89,6 +89,9 @@ class ParticleTrace(probtorch.stochastic.Trace):
     def keys(self):
         return self._nodes.keys()
 
+    def is_observed(self, name):
+        return self.observed(name) is not None
+
     def observed(self, name):
         if name in self._nodes and self._nodes[name].observed:
             return self._nodes[name]
@@ -313,10 +316,11 @@ class Model(nn.Module):
         return result
 
     def observations(self):
-        return [rv for rv in self.trace.variables() if self.trace.observed(rv)\
+        return [rv for rv in self.trace.variables()\
+                if self.trace.is_observed(rv)\
                 and self.trace.have_annotation(self.all_names, rv)]
 
     def latents(self):
         return [rv for rv in self.trace.variables()\
-                if not self.trace.observed(rv) and\
+                if not self.trace.is_observed(rv) and\
                 self.trace.have_annotation(self.all_names, rv)]
