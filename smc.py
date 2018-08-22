@@ -54,8 +54,8 @@ class SequentialMonteCarlo(combinators.Model):
 
 def variational_smc(num_particles, model, proposal, num_iterations, data,
                     use_cuda=True, lr=1e-6, inclusive_kl=False):
-    optimizer = torch.optim.Adam(list(model.parameters()) +\
-                                 list(proposal.parameters()), lr=lr)
+    optimizer = torch.optim.Adam(list(proposal.parameters()), lr=lr)
+    parameters = proposal.args_vardict(False).keys()
 
     model.train()
     proposal.train()
@@ -73,13 +73,13 @@ def variational_smc(num_particles, model, proposal, num_iterations, data,
         model(trace=inference)
         inference = model.trace
         if inclusive_kl:
-            latents = proposal.latents()
-            hp_logq = proposal.trace.log_joint(nodes=latents,
-                                               reparameterized=False)
-            hp_logq = -hp_logq.sum(dim=0)
-            logging.info('Variational SMC H_p[log q]=%.8e at epoch %d', hp_logq,
+            latents = [latent for latent in proposal.latents()
+                       if any([latent in param for param in parameters])]
+            kl = -inference.log_joint(nodes=latents, normalize_guide=True,
+                                      reparameterized=False).mean(dim=0)
+            logging.info('Variational SMC divergence=%.8e at epoch %d', kl,
                          t + 1)
-            hp_logq.backward()
+            kl.backward()
         else:
             elbo = model.marginal_log_likelihood()
             logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
