@@ -47,6 +47,7 @@ class ResamplerTrace(combinators.GuidedTrace):
             data = ancestor.data
         super(ResamplerTrace, self).__init__(num_particles, guide=guide,
                                              data=data)
+        self._ancestor = ancestor
         if isinstance(ancestor_indices, torch.Tensor):
             self._ancestor_indices = ancestor_indices
         else:
@@ -75,6 +76,10 @@ class ResamplerTrace(combinators.GuidedTrace):
         return super(ResamplerTrace, self).variable(Dist, *args, **kwargs)
 
     @property
+    def ancestor(self):
+        return self._ancestor
+
+    @property
     def fresh_variables(self):
         return self._fresh_variables
 
@@ -92,6 +97,12 @@ class ResamplerTrace(combinators.GuidedTrace):
             ancestor=self
         )
         return result, log_weights.index_select(0, result.ancestor_indices)
+
+    def collapse(self):
+        if self.ancestor:
+            indices = self.ancestor.collapse()
+            return indices.index_select(0, self.ancestor_indices)
+        return self.ancestor_indices
 
 class ImportanceResampler(ImportanceSampler):
     def __init__(self, f, trainable={}, hyper={}):
