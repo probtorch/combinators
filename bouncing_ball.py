@@ -2,6 +2,7 @@
 
 import torch
 from torch.nn.functional import softplus
+from torch.distributions.transforms import LowerCholeskyTransform
 
 import utils
 
@@ -39,10 +40,11 @@ def bouncing_ball_step(theta, t, this=None):
                                     transition_prev, name='direction_%d' % t)
     direction = utils.vardict_particle_index(directions, z_current)
     direction_covariance = direction['covariance_matrix']
-    direction_covariance @= direction_covariance.transpose(1, 2)
-    velocity = this.trace.multivariate_normal(direction['loc'],
-                                              softplus(direction_covariance),
-                                              name='displacement_%d' % t)
+    velocity = this.trace.multivariate_normal(
+        direction['loc'],
+        scale_tril=LowerCholeskyTransform()(direction_covariance),
+        name='displacement_%d' % t
+    )
     position = position + velocity
 
     return position, z_current, transition, dir_locs, dir_covs
