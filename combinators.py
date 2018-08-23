@@ -147,12 +147,15 @@ class GuidedTrace(ParticleTrace):
         generative_joint = super(GuidedTrace, self).log_joint(*args, **kwargs)
         if isinstance(generative_joint, torch.Tensor):
             device = generative_joint.device
-        else:
+        elif len(self):
             device = self[list(self.variables())[0]].value.device
+        else:
+            device = 'cpu'
         if normalize_guide and self.guide:
-            guided_nodes = [node for node in kwargs['nodes']
+            all_nodes = kwargs.get('nodes', None) or self.keys()
+            guided_nodes = [node for node in all_nodes
                             if self.guided(node) is not None and
-                            not self.observed(node)]
+                            self.observed(node) is None]
             guide_joint = self._guide.log_joint(
                 *args, nodes=guided_nodes,
                 reparameterized=kwargs.get('reparameterized', True)
