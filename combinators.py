@@ -139,10 +139,11 @@ class GuidedTrace(ParticleTrace):
         else:
             device = self[list(self.variables())[0]].value.device
         if normalize_guide:
-            kwargs['nodes'] = [node for node in kwargs['nodes']
-                               if self.guided(node) is not None]
+            guided_nodes = [node for node in kwargs['nodes']
+                            if self.guided(node) is not None and
+                            not self.observed(node)]
             guide_joint = self._guide.log_joint(
-                *args, nodes=kwargs['nodes'],
+                *args, nodes=guided_nodes,
                 reparameterized=kwargs.get('reparameterized', True)
             )
         else:
