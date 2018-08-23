@@ -138,7 +138,7 @@ class GuidedTrace(ParticleTrace):
             device = generative_joint.device
         else:
             device = self[list(self.variables())[0]].value.device
-        if normalize_guide:
+        if normalize_guide and self.guide:
             guided_nodes = [node for node in kwargs['nodes']
                             if self.guided(node) is not None and
                             not self.observed(node)]
