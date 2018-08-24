@@ -66,13 +66,14 @@ def variational_smc(num_particles, model, proposal, num_iterations, data,
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        proposal.simulate(trace=ResamplerTrace(num_particles, data=data),
-                          reparameterized=False)
-        inference = ResamplerTrace(num_particles, guide=proposal.trace,
-                                   data=data)
-        model(trace=inference)
-        inference = model.trace
         if inclusive_kl:
+            model.simulate(trace=ResamplerTrace(num_particles, data=data),
+                           reparameterized=False)
+            inference = ResamplerTrace(num_particles, guide=model.trace,
+                                       data=data)
+            proposal(trace=inference)
+            inference = proposal.trace
+
             latents = [latent for latent in proposal.latents()
                        if any([latent in param for param in parameters])]
             kl = -inference.log_joint(nodes=latents, normalize_guide=True,
@@ -81,6 +82,13 @@ def variational_smc(num_particles, model, proposal, num_iterations, data,
                          t + 1)
             kl.backward()
         else:
+            proposal.simulate(trace=ResamplerTrace(num_particles, data=data),
+                              reparameterized=False)
+            inference = ResamplerTrace(num_particles, guide=proposal.trace,
+                                       data=data)
+            model(trace=inference)
+            inference = model.trace
+
             elbo = model.marginal_log_likelihood()
             logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
             (-elbo).backward()
