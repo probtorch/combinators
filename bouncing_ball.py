@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
 
 import torch
-from torch.nn.functional import softplus
 from torch.distributions.transforms import LowerCholeskyTransform
 
 import utils
+
+REFLECTIONS = torch.tensor([[1., 1.], [1., -1.], [-1., -1.], [-1., 1.]],
+                           requires_grad=False)
+
+def reflect_directions(angle):
+    unsqueeze = len(angle.shape) < 1
+    if unsqueeze:
+        angle = angle.unsqueeze(0)
+    unit = torch.stack((torch.cos(angle), torch.sin(angle)), dim=-1)
+    result = REFLECTIONS.to(unit).unsqueeze(0) * unit.unsqueeze(1)
+    if unsqueeze:
+        result = result.squeeze(0)
+    return result
 
 def init_bouncing_ball(this=None):
     params = this.args_vardict()
@@ -22,7 +34,8 @@ def init_bouncing_ball(this=None):
         this.trace.dirichlet(transition_alpha[:, d], name='A_%d' % (d+1))
         for d in range(4)
     ], dim=-1)
-    dir_locs = this.trace.param_normal(params, name='directions__loc')
+    dir_angle = this.trace.param_beta(params, name='directions__angle')
+    dir_locs = reflect_directions(dir_angle)
     dir_covs = this.trace.param_normal(params, name='directions__scale')
 
     return initial_position, initial_z, transition, dir_locs, dir_covs
