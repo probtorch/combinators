@@ -14,8 +14,9 @@ import importance
 from importance import ResamplerTrace
 
 class StepwiseImportanceResampler(importance.ImportanceResampler):
-    def __init__(self, f, trainable={}, hyper={}):
-        super(StepwiseImportanceResampler, self).__init__(f, trainable, hyper)
+    def __init__(self, f, trainable={}, hyper={}, resample_factor=2):
+        super(StepwiseImportanceResampler, self).__init__(f, trainable, hyper,
+                                                          resample_factor)
 
     def importance_weight(self, observations=None, latents=None):
         fresh = self.trace.fresh_variables
@@ -34,8 +35,10 @@ class StepwiseImportanceResampler(importance.ImportanceResampler):
         return log_mean_exp(log_weights, dim=0).sum()
 
 class SequentialMonteCarlo(combinators.Model):
-    def __init__(self, step, T, initializer=None):
-        resampled_step = StepwiseImportanceResampler(step)
+    def __init__(self, step, T, initializer=None, resample_factor=2):
+        resampled_step = StepwiseImportanceResampler(
+            step, resample_factor=resample_factor
+        )
         step_sequence = combinators.Model.sequence(resampled_step, T)
         if initializer:
             model = combinators.Model.compose(step_sequence, initializer,
