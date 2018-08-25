@@ -109,22 +109,24 @@ class ResamplerTrace(combinators.GuidedTrace):
         return self.ancestor_indices
 
 class ImportanceResampler(ImportanceSampler):
-    def __init__(self, f, trainable={}, hyper={}):
+    def __init__(self, f, trainable={}, hyper={}, resample_factor=2):
         super(ImportanceResampler, self).__init__(f, trainable, hyper)
         self._trace = ResamplerTrace()
+        self._resample_factor = resample_factor
 
     def forward(self, *args, **kwargs):
         results = super(ImportanceResampler, self).forward(*args, **kwargs)
-        resampled_trace, _ = self.trace.resample(
-            self.importance_weight()
-        )
-        self.ancestor._condition_all(trace=resampled_trace)
+        ess = self.effective_sample_size()
+        if ess < self.trace.num_particles / self._resample_factor:
+            resampled_trace, _ = self.trace.resample(self.importance_weight())
+            self.ancestor._condition_all(trace=resampled_trace)
 
-        results = list(results)
-        for i, var in enumerate(results):
-            if isinstance(var, torch.Tensor):
-                ancestor_indices = self.trace.ancestor_indices.to(
-                    device=var.device
-                )
-                results[i] = var.index_select(0, ancestor_indices)
-        return tuple(results)
+            results = list(results)
+            for i, var in enumerate(results):
+                if isinstance(var, torch.Tensor):
+                    ancestor_indices = self.trace.ancestor_indices.to(
+                        device=var.device
+                    )
+                    results[i] = var.index_select(0, ancestor_indices)
+            results = tuple(results)
+        return results
