@@ -35,6 +35,10 @@ class ImportanceSampler(combinators.Model):
         self.log_weights[str(latents)] = log_likelihood + log_prior
         return self.log_weights[str(latents)]
 
+    def effective_sample_size(self, observations=None, latents=None):
+        log_weights = self.importance_weight(observations, latents)
+        return (log_weights.exp() ** 2).sum(dim=0).pow(-1)
+
     def marginal_log_likelihood(self):
         return log_mean_exp(self.log_weights[str(self.latents())], dim=0)
 
