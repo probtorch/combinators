@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import numpy as np
 import torch
 from torch.distributions.transforms import LowerCholeskyTransform
 
@@ -34,7 +35,7 @@ def init_bouncing_ball(this=None):
         this.trace.dirichlet(transition_alpha[:, d], name='A_%d' % (d+1))
         for d in range(4)
     ], dim=-1)
-    dir_angle = this.trace.param_beta(params, name='directions__angle')
+    dir_angle = this.trace.param_beta(params, name='directions__angle') * np.pi/2
     dir_locs = reflect_directions(dir_angle)
     dir_covs = this.trace.param_normal(params, name='directions__scale')
 
