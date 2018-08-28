@@ -77,13 +77,14 @@ def variational_smc(num_particles, model, proposal, num_iterations, data,
             proposal(trace=inference)
             inference = proposal.trace
 
-            latents = [latent for latent in proposal.latents()
-                       if any([latent in param for param in parameters])]
-            kl = -inference.log_joint(nodes=latents, normalize_guide=True,
-                                      reparameterized=False).mean(dim=0)
-            logging.info('Variational SMC divergence=%.8e at epoch %d', kl,
-                         t + 1)
-            kl.backward()
+            latents = proposal.latents()
+            eubo = inference.log_joint(nodes=latents, reparameterized=False)
+            joint_vars = latents + model.observations()
+            eubo = eubo - model.trace.log_joint(nodes=joint_vars,
+                                                reparameterized=False)
+            eubo = -eubo.mean(dim=0)
+            logging.info('Variational SMC EUBO=%.8e at epoch %d', eubo, t + 1)
+            eubo.backward()
         else:
             proposal.simulate(trace=ResamplerTrace(num_particles, data=data),
                               reparameterized=False)
