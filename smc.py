@@ -14,7 +14,7 @@ import importance
 from importance import ResamplerTrace
 
 class StepwiseImportanceResampler(importance.ImportanceResampler):
-    def __init__(self, model, proposal, trainable={}, hyper={},
+    def __init__(self, model, proposal=None, trainable={}, hyper={},
                  resample_factor=2):
         super(StepwiseImportanceResampler, self).__init__(model, proposal,
                                                           trainable, hyper,

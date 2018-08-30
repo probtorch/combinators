@@ -12,27 +12,29 @@ import combinators
 import utils
 
 class ImportanceSampler(combinators.Model):
-    def __init__(self, model, proposal, trainable={}, hyper={}):
+    def __init__(self, model, proposal=None, trainable={}, hyper={}):
         super(ImportanceSampler, self).__init__(model, trainable, hyper)
         self._proposal = proposal
         self.log_weights = collections.OrderedDict()
 
     def forward(self, *args, **kwargs):
         if kwargs.get('proposal_guides', True):
-            self._proposal.simulate(*args, **kwargs)
+            if self.proposal:
+                self._proposal.simulate(*args, **kwargs)
 
-            inference = self._proposal.trace
-            generative = combinators.GuidedTrace.clamp(inference)
+                inference = self._proposal.trace
+                generative = combinators.GuidedTrace.clamp(inference)
 
-            kwargs = {**kwargs, 'trace': generative}
+                kwargs = {**kwargs, 'trace': generative}
             result = self._function(*args, **kwargs)
         else:
-            self._function.simulate(*args, **kwargs)
-            generative = self._function.trace
-            inference = combinators.GuidedTrace.clamp(generative)
+            result = self._function.simulate(*args, **kwargs)
+            if self.proposal:
+                generative = self._function.trace
+                inference = combinators.GuidedTrace.clamp(generative)
 
-            kwargs = {**kwargs, 'trace': inference}
-            result = self._proposal(*args, **kwargs)
+                kwargs = {**kwargs, 'trace': inference}
+                result = self._proposal(*args, **kwargs)
         return result
 
     @property
@@ -136,7 +138,7 @@ class ResamplerTrace(combinators.GuidedTrace):
         return self.ancestor_indices
 
 class ImportanceResampler(ImportanceSampler):
-    def __init__(self, model, proposal, trainable={}, hyper={},
+    def __init__(self, model, proposal=None, trainable={}, hyper={},
                  resample_factor=2):
         super(ImportanceResampler, self).__init__(model, proposal, trainable,
                                                   hyper)
