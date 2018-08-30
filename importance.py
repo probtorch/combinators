@@ -18,9 +18,13 @@ class ImportanceSampler(combinators.Model):
         self.log_weights = collections.OrderedDict()
 
     def forward(self, *args, **kwargs):
-        if kwargs.get('proposal_guides', True):
+        kwargs['separate_traces'] = True
+        if self.parent:
+            kwargs['trace'] = self.trace
+
+        if kwargs.pop('proposal_guides', True):
             if self.proposal:
-                self._proposal.simulate(*args, **kwargs)
+                self._proposal(*args, **kwargs)
 
                 inference = self._proposal.trace
                 generative = combinators.GuidedTrace.clamp(inference)
@@ -28,7 +32,7 @@ class ImportanceSampler(combinators.Model):
                 kwargs = {**kwargs, 'trace': generative}
             result = self._function(*args, **kwargs)
         else:
-            result = self._function.simulate(*args, **kwargs)
+            result = self._function(*args, **kwargs)
             if self.proposal:
                 generative = self._function.trace
                 inference = combinators.GuidedTrace.clamp(generative)

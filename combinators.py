@@ -299,7 +299,7 @@ class Model(nn.Module):
 
     def forward(self, *args, **kwargs):
         kwargs = {**kwargs, 'this': self}
-        if not self.parent:
+        if not self.parent or kwargs.pop('separate_traces', False):
             self._condition_all(trace=kwargs.pop('trace', None))
         if isinstance(self.trace, ParticleTrace):
             self.trace.push(self)
