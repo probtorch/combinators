@@ -12,15 +12,42 @@ import combinators
 import utils
 
 class ImportanceSampler(combinators.Model):
-    def __init__(self, f, trainable={}, hyper={}):
-        super(ImportanceSampler, self).__init__(f, trainable, hyper)
+    def __init__(self, model, proposal, trainable={}, hyper={}):
+        super(ImportanceSampler, self).__init__(model, trainable, hyper)
+        self._proposal = proposal
         self.log_weights = collections.OrderedDict()
+
+    def forward(self, *args, **kwargs):
+        if kwargs.get('proposal_guides', True):
+            self._proposal.simulate(*args, **kwargs)
+
+            inference = self._proposal.trace
+            generative = combinators.GuidedTrace.clamp(inference)
+
+            kwargs = {**kwargs, 'trace': generative}
+            result = self._function(*args, **kwargs)
+        else:
+            self._function.simulate(*args, **kwargs)
+            generative = self._function.trace
+            inference = combinators.GuidedTrace.clamp(generative)
+
+            kwargs = {**kwargs, 'trace': inference}
+            result = self._proposal(*args, **kwargs)
+        return result
 
     @property
     def _num_particles(self):
         if self.log_weights:
             return list(self.log_weights.items())[0][1].shape[0]
         return 1
+
+    @property
+    def model(self):
+        return self._function
+
+    @property
+    def proposal(self):
+        return self._proposal
 
     def importance_weight(self, observations=None, latents=None):
         if not observations:
@@ -109,8 +136,10 @@ class ResamplerTrace(combinators.GuidedTrace):
         return self.ancestor_indices
 
 class ImportanceResampler(ImportanceSampler):
-    def __init__(self, f, trainable={}, hyper={}, resample_factor=2):
-        super(ImportanceResampler, self).__init__(f, trainable, hyper)
+    def __init__(self, model, proposal, trainable={}, hyper={},
+                 resample_factor=2):
+        super(ImportanceResampler, self).__init__(model, proposal, trainable,
+                                                  hyper)
         self._trace = ResamplerTrace()
         self._resample_factor = resample_factor
 
