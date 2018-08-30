@@ -37,9 +37,10 @@ class StepwiseImportanceResampler(importance.ImportanceResampler):
         return log_mean_exp(log_weights, dim=0).sum()
 
 class SequentialMonteCarlo(combinators.Model):
-    def __init__(self, step, T, initializer=None, resample_factor=2):
+    def __init__(self, step_model, T, step_proposal=None,
+                 initializer=None, resample_factor=2):
         resampled_step = StepwiseImportanceResampler(
-            step.model, step.proposal, resample_factor=resample_factor
+            step_model, step_proposal, resample_factor=resample_factor
         )
         step_sequence = combinators.Model.sequence(resampled_step, T)
         if initializer:
