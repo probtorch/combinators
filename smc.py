@@ -14,8 +14,10 @@ import importance
 from importance import ResamplerTrace
 
 class StepwiseImportanceResampler(importance.ImportanceResampler):
-    def __init__(self, f, trainable={}, hyper={}, resample_factor=2):
-        super(StepwiseImportanceResampler, self).__init__(f, trainable, hyper,
+    def __init__(self, model, proposal=None, trainable={}, hyper={},
+                 resample_factor=2):
+        super(StepwiseImportanceResampler, self).__init__(model, proposal,
+                                                          trainable, hyper,
                                                           resample_factor)
 
     def importance_weight(self, observations=None, latents=None):
@@ -35,9 +37,10 @@ class StepwiseImportanceResampler(importance.ImportanceResampler):
         return log_mean_exp(log_weights, dim=0).sum()
 
 class SequentialMonteCarlo(combinators.Model):
-    def __init__(self, step, T, initializer=None, resample_factor=2):
+    def __init__(self, step_model, T, step_proposal=None,
+                 initializer=None, resample_factor=2):
         resampled_step = StepwiseImportanceResampler(
-            step, resample_factor=resample_factor
+            step_model, step_proposal, resample_factor=resample_factor
         )
         step_sequence = combinators.Model.sequence(resampled_step, T)
         if initializer:
@@ -55,53 +58,40 @@ class SequentialMonteCarlo(combinators.Model):
     def marginal_log_likelihood(self):
         return self.resampled_step.marginal_log_likelihood()
 
-def variational_smc(num_particles, model, proposal, num_iterations, data,
+def variational_smc(num_particles, sampler, num_iterations, data,
                     use_cuda=True, lr=1e-6, inclusive_kl=False):
-    optimizer = torch.optim.Adam(list(proposal.parameters()), lr=lr)
-    parameters = proposal.args_vardict(False).keys()
+    optimizer = torch.optim.Adam(list(sampler.proposal.parameters()), lr=lr)
 
-    model.train()
-    proposal.train()
+    sampler.train()
     if torch.cuda.is_available() and use_cuda:
-        model.cuda()
-        proposal.cuda()
+        sampler.cuda()
 
     for t in range(num_iterations):
         optimizer.zero_grad()
 
+        sampler.simulate(trace=ResamplerTrace(num_particles, data=data),
+                         proposal_guides=not inclusive_kl,
+                         reparameterized=False)
         if inclusive_kl:
-            model.simulate(trace=ResamplerTrace(num_particles, data=data),
-                           reparameterized=False)
-            inference = ResamplerTrace(num_particles, guide=model.trace,
-                                       data=data)
-            proposal(trace=inference)
-            inference = proposal.trace
-
-            latents = proposal.latents()
+            latents = sampler.proposal.latents()
+            inference = sampler.proposal.trace
             eubo = inference.log_joint(nodes=latents, reparameterized=False)
-            joint_vars = latents + model.observations()
-            eubo = eubo - model.trace.log_joint(nodes=joint_vars,
-                                                reparameterized=False)
+            joint_vars = latents + sampler.model.observations()
+            eubo = eubo - sampler.model.trace.log_joint(
+                nodes=joint_vars, reparameterized=False
+            )
             eubo = -eubo.mean(dim=0)
             logging.info('Variational SMC EUBO=%.8e at epoch %d', eubo, t + 1)
             eubo.backward()
         else:
-            proposal.simulate(trace=ResamplerTrace(num_particles, data=data),
-                              reparameterized=False)
-            inference = ResamplerTrace(num_particles, guide=proposal.trace,
-                                       data=data)
-            model(trace=inference)
-            inference = model.trace
-
-            elbo = model.marginal_log_likelihood()
+            inference = sampler.model.trace
+            elbo = sampler.model.marginal_log_likelihood()
             logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
             (-elbo).backward()
         optimizer.step()
 
     if torch.cuda.is_available() and use_cuda:
-        model.cpu()
-        proposal.cpu()
-    model.eval()
-    proposal.eval()
+        sampler.cpu()
+    sampler.eval()
 
-    return inference, proposal.args_vardict()
+    return inference, sampler.proposal.args_vardict()
