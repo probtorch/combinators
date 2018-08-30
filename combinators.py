@@ -106,6 +106,11 @@ class GuidedTrace(ParticleTrace):
         self._guide = guide
         self._data = data
 
+    @classmethod
+    def clamp(cls, guide):
+        return guide.__class__(guide.num_particles, guide=guide,
+                               data=guide.data)
+
     @property
     def guide(self):
         return self._guide
