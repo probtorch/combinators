@@ -39,7 +39,7 @@ class ImportanceSampler(combinators.Model):
 
                 kwargs = {**kwargs, 'trace': inference}
                 result = self._proposal(*args, **kwargs)
-        self.trace = kwargs['trace']
+        self._trace = kwargs['trace']
         return result
 
     @property
