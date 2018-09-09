@@ -39,7 +39,8 @@ class ImportanceSampler(combinators.Model):
 
                 kwargs = {**kwargs, 'trace': inference}
                 result = self._proposal(*args, **kwargs)
-        self.trace = kwargs['trace']
+        if not self.parent:
+            self._trace = kwargs['trace']
         return result
 
     @property
