@@ -100,9 +100,9 @@ class ParticleTrace(probtorch.stochastic.Trace):
     def clamped(self, name):
         return self.observed(name)
 
-class GuidedTrace(ParticleTrace):
+class ConditionedTrace(ParticleTrace):
     def __init__(self, num_particles=1, guide=None, data=None):
-        super(GuidedTrace, self).__init__(num_particles)
+        super(ConditionedTrace, self).__init__(num_particles)
         self._guide = guide
         self._data = data
 
@@ -146,10 +146,10 @@ class GuidedTrace(ParticleTrace):
         tensors = [arg for arg in args if isinstance(arg, torch.Tensor)]
         if tensors and 'value' in kwargs and kwargs['value'] is not None:
             kwargs['value'] = kwargs['value'].to(device=tensors[0].device)
-        return super(GuidedTrace, self).variable(Dist, *args, **kwargs)
+        return super(ConditionedTrace, self).variable(Dist, *args, **kwargs)
 
     def log_joint(self, *args, normalize_guide=False, **kwargs):
-        generative_joint = super(GuidedTrace, self).log_joint(*args, **kwargs)
+        generative_joint = super(ConditionedTrace, self).log_joint(*args, **kwargs)
         if isinstance(generative_joint, torch.Tensor):
             device = generative_joint.device
         elif len(self):
@@ -284,7 +284,7 @@ class Model(nn.Module):
 
     @property
     def guided(self):
-        return isinstance(self._trace, GuidedTrace)
+        return isinstance(self._trace, ConditionedTrace)
 
     def register_args(self, args, trainable=True):
         for k, v in utils.vardict(args).items():

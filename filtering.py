@@ -9,7 +9,7 @@ from probtorch.util import log_sum_exp
 import torch
 
 import combinators
-from combinators import GuidedTrace
+from combinators import ConditionedTrace
 import utils
 
 EMPTY_ANNOTATION = collections.defaultdict(lambda: 0.0)
@@ -113,7 +113,7 @@ def variational_forward_backward(model_init, step_builder, num_iterations, T,
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        inference = GuidedTrace(data=data)
+        inference = ConditionedTrace(data=data)
 
         vs = model_init(*args, trace=inference)
         model_step = step_builder(*vs)

@@ -27,7 +27,7 @@ class ImportanceSampler(combinators.Model):
                 self._proposal(*args, **kwargs)
 
                 inference = self._proposal.trace
-                generative = combinators.GuidedTrace.clamp(inference)
+                generative = combinators.ConditionedTrace.clamp(inference)
 
                 kwargs = {**kwargs, 'trace': generative}
             result = self._function(*args, **kwargs)
@@ -35,7 +35,7 @@ class ImportanceSampler(combinators.Model):
             result = self._function(*args, **kwargs)
             if self.proposal:
                 generative = self._function.trace
-                inference = combinators.GuidedTrace.clamp(generative)
+                inference = combinators.ConditionedTrace.clamp(generative)
 
                 kwargs = {**kwargs, 'trace': inference}
                 result = self._proposal(*args, **kwargs)
@@ -77,7 +77,7 @@ class ImportanceSampler(combinators.Model):
     def marginal_log_likelihood(self):
         return log_mean_exp(self.log_weights[str(self.latents())], dim=0)
 
-class ResamplerTrace(combinators.GuidedTrace):
+class ResamplerTrace(combinators.ConditionedTrace):
     def __init__(self, num_particles=1, guide=None, data=None,
                  ancestor_indices=None, ancestor=None):
         if ancestor is not None:
