@@ -314,7 +314,7 @@ class Model(nn.Module):
         reparameterized = kwargs.pop('reparameterized', True)
 
         result = self.forward(*args, **kwargs)
-        return result, self.trace.log_joint(reparameterized=reparameterized)
+        return self.trace.log_joint(reparameterized=reparameterized), result
 
     @property
     def all_names(self):
