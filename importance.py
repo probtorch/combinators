@@ -75,7 +75,7 @@ class ImportanceSampler(combinators.Model):
         return (log_weights.exp() ** 2).sum(dim=0).pow(-1)
 
     def marginal_log_likelihood(self):
-        return log_mean_exp(self.log_weights[str(self.latents())], dim=0)
+        return log_mean_exp(self.importance_weight(), dim=0)
 
 class ResamplerTrace(combinators.ConditionedTrace):
     def __init__(self, num_particles=1, guide=None, data=None,
