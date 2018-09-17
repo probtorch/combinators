@@ -31,6 +31,7 @@ class ImportanceSampler(combinators.Model):
 
                 kwargs = {**kwargs, 'trace': generative}
             result = self._function(*args, **kwargs)
+            kwargs['trace'] = self.model.trace
         else:
             result = self._function(*args, **kwargs)
             if self.proposal:
@@ -39,6 +40,9 @@ class ImportanceSampler(combinators.Model):
 
                 kwargs = {**kwargs, 'trace': inference}
                 result = self._proposal(*args, **kwargs)
+                kwargs['trace'] = self.proposal.trace
+            else:
+                kwargs['trace'] = self.model.trace
         if not self.parent:
             self._trace = kwargs['trace']
         return result
