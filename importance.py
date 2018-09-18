@@ -66,8 +66,8 @@ class ImportanceSampler(combinators.Model):
         return log_mean_exp(self.importance_weight(), dim=0)
 
 class ResamplerTrace(combinators.ConditionedTrace):
-    def __init__(self, num_particles=1, guide=None, data=None,
-                 ancestor_indices=None, ancestor=None):
+    def __init__(self, num_particles=1, guide=None, data=None, ancestor=None,
+                 log_weights=None):
         if ancestor is not None:
             num_particles = ancestor.num_particles
             guide = ancestor.guide
@@ -75,6 +75,16 @@ class ResamplerTrace(combinators.ConditionedTrace):
         super(ResamplerTrace, self).__init__(num_particles, guide=guide,
                                              data=data)
         self._ancestor = ancestor
+        self._stepwise_log_weights = []
+
+        if log_weights is not None:
+            self._log_weights = log_weights
+            normalized_weights = log_softmax(log_weights, dim=0)
+            resampler = torch.distributions.Categorical(logits=normalized_weights)
+            ancestor_indices = resampler.sample((self.num_particles,))
+        else:
+            self._log_weights = None
+            ancestor_indices = None
         if isinstance(ancestor_indices, torch.Tensor):
             self._ancestor_indices = ancestor_indices
         else:
@@ -82,6 +92,7 @@ class ResamplerTrace(combinators.ConditionedTrace):
                                                   dtype=torch.long)
         self._fresh_variables = set()
         if ancestor:
+            self._stepwise_log_weights = ancestor.stepwise_log_weights
             self._modules = ancestor._modules
             self._stack = ancestor._stack
             for i, key in enumerate(ancestor.variables()):
@@ -114,22 +125,20 @@ class ResamplerTrace(combinators.ConditionedTrace):
     def ancestor_indices(self):
         return self._ancestor_indices
 
-    def resample(self, log_weights):
-        normalized_weights = log_softmax(log_weights, dim=0)
-        resampler = torch.distributions.Categorical(logits=normalized_weights)
+    @property
+    def stepwise_log_weights(self):
+        return self._stepwise_log_weights
 
-        result = ResamplerTrace(
-            self.num_particles,
-            ancestor_indices=resampler.sample((self.num_particles,)),
-            ancestor=self
-        )
+    def resample(self, observations=None, latents=None):
+        log_weights = self.importance_weight(observations, latents)
+        result = ResamplerTrace(self.num_particles, ancestor=self,
+                                log_weights=log_weights)
         return result, log_weights.index_select(0, result.ancestor_indices)
 
-    def collapse(self):
-        if self.ancestor:
-            indices = self.ancestor.collapse()
-            return indices.index_select(0, self.ancestor_indices)
-        return self.ancestor_indices
+    def effective_sample_size(self, observations=None, latents=None):
+        log_weights = self.importance_weight(observations, latents)
+        self._stepwise_log_weights.append(log_weights)
+        return (log_weights*2).exp().sum(dim=0).pow(-1)
 
 class ImportanceResampler(ImportanceSampler):
     def __init__(self, model, proposal=None, trainable={}, hyper={},
@@ -141,9 +150,11 @@ class ImportanceResampler(ImportanceSampler):
 
     def forward(self, *args, **kwargs):
         results = super(ImportanceResampler, self).forward(*args, **kwargs)
-        ess = self.effective_sample_size()
+        observations = self.importance_observations
+        latents = self.importance_latents
+        ess = self.trace.effective_sample_size(observations, latents)
         if ess < self.trace.num_particles / self._resample_factor:
-            resampled_trace, _ = self.trace.resample(self.importance_weight())
+            resampled_trace, _ = self.trace.resample(observations, latents)
             self.ancestor._condition_all(trace=resampled_trace)
 
             results = list(results)
