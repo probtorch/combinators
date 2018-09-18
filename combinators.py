@@ -100,6 +100,29 @@ class ParticleTrace(probtorch.stochastic.Trace):
     def clamped(self, name):
         return self.observed(name)
 
+    @property
+    def observations(self):
+        return [rv for rv in self.variables() if self.is_observed(rv) and\
+                self.have_annotation(self._modules.keys(), rv)]
+
+    @property
+    def latents(self):
+        return [rv for rv in self.variables()\
+                if not self.is_observed(rv) and\
+                self.have_annotation(self._modules.keys(), rv)]
+
+    def importance_weight(self, observations=None, latents=None):
+        if not observations:
+            observations = self.observations
+        if not latents:
+            latents = self.latents
+
+        log_likelihood = self.log_joint(nodes=observations,
+                                        reparameterized=False)
+        log_prior = self.log_joint(nodes=latents, normalize_guide=True,
+                                   reparameterized=False)
+        return log_likelihood + log_prior
+
 class ConditionedTrace(ParticleTrace):
     def __init__(self, num_particles=1, guide=None, data=None):
         super(ConditionedTrace, self).__init__(num_particles)
@@ -316,20 +339,3 @@ class Model(nn.Module):
 
         result = self.forward(*args, **kwargs)
         return self.trace.log_joint(reparameterized=reparameterized), result
-
-    @property
-    def all_names(self):
-        result = []
-        self.apply(lambda m: result.append(m.name) if isinstance(m, Model)\
-                   else None)
-        return result
-
-    def observations(self):
-        return [rv for rv in self.trace.variables()\
-                if self.trace.is_observed(rv)\
-                and self.trace.have_annotation(self.all_names, rv)]
-
-    def latents(self):
-        return [rv for rv in self.trace.variables()\
-                if not self.trace.is_observed(rv) and\
-                self.trace.have_annotation(self.all_names, rv)]
