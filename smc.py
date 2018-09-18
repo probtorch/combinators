@@ -72,9 +72,9 @@ def variational_smc(num_particles, sampler, num_iterations, data,
                          reparameterized=False)
         inference = sampler.trace
         if inclusive_kl:
-            latents = sampler.proposal.latents()
+            latents = sampler.proposal.trace.latents
             eubo = inference.log_joint(nodes=latents, reparameterized=False)
-            joint_vars = latents + sampler.model.observations()
+            joint_vars = latents + sampler.model.trace.observations
             eubo = eubo - sampler.model.trace.log_joint(
                 nodes=joint_vars, reparameterized=False
             )
