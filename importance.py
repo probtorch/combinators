@@ -15,7 +15,14 @@ class ImportanceSampler(combinators.Model):
     def __init__(self, model, proposal=None, trainable={}, hyper={}):
         super(ImportanceSampler, self).__init__(model, trainable, hyper)
         self._proposal = proposal
-        self.log_weights = collections.OrderedDict()
+
+    @property
+    def importance_observations(self):
+        return set(self.trace.observations)
+
+    @property
+    def importance_latents(self):
+        return set(self.trace.latents)
 
     def forward(self, *args, **kwargs):
         kwargs['separate_traces'] = True
@@ -48,35 +55,12 @@ class ImportanceSampler(combinators.Model):
         return result
 
     @property
-    def _num_particles(self):
-        if self.log_weights:
-            return list(self.log_weights.items())[0][1].shape[0]
-        return 1
-
-    @property
     def model(self):
         return self._function
 
     @property
     def proposal(self):
         return self._proposal
-
-    def importance_weight(self, observations=None, latents=None):
-        if not observations:
-            observations = self.observations()
-        if not latents:
-            latents = self.latents()
-        log_likelihood = self.trace.log_joint(nodes=observations,
-                                              reparameterized=False)
-        log_prior = self.trace.log_joint(nodes=latents, normalize_guide=True,
-                                         reparameterized=False)
-
-        self.log_weights[str(latents)] = log_likelihood + log_prior
-        return self.log_weights[str(latents)]
-
-    def effective_sample_size(self, observations=None, latents=None):
-        log_weights = self.importance_weight(observations, latents)
-        return (log_weights.exp() ** 2).sum(dim=0).pow(-1)
 
     def marginal_log_likelihood(self):
         return log_mean_exp(self.importance_weight(), dim=0)
