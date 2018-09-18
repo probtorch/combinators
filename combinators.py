@@ -279,7 +279,6 @@ class Model(nn.Module):
     def add_module(self, name, module):
         super(Model, self).add_module(name, module)
         if isinstance(module, Model):
-            assert not module._parent['parent']
             module._parent['parent'] = self
 
     @property
