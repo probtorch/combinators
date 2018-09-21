@@ -118,6 +118,7 @@ class ParticleTrace(probtorch.stochastic.Trace):
             latents = self.latents
 
         log_likelihood = self.log_joint(nodes=observations,
+                                        normalize_guide=True,
                                         reparameterized=False)
         log_prior = self.log_joint(nodes=latents, normalize_guide=True,
                                    reparameterized=False)
