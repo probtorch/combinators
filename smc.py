@@ -59,6 +59,7 @@ class SequentialMonteCarlo(combinators.Model):
 def variational_smc(num_particles, sampler, num_iterations, data,
                     use_cuda=True, lr=1e-6, inclusive_kl=False):
     optimizer = torch.optim.Adam(list(sampler.proposal.parameters()), lr=lr)
+    parameters = sampler.proposal.args_vardict(False).keys()
 
     sampler.train()
     if torch.cuda.is_available() and use_cuda:
@@ -72,7 +73,8 @@ def variational_smc(num_particles, sampler, num_iterations, data,
                          reparameterized=False)
         inference = sampler.trace
         if inclusive_kl:
-            latents = sampler.proposal.trace.latents
+            latents = [latent for latent in inference.latents
+                       if any([latent in param for param in parameters])]
             eubo = inference.log_joint(nodes=latents, reparameterized=False)
             joint_vars = latents + sampler.model.trace.observations
             eubo = eubo - sampler.model.trace.log_joint(
