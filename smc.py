@@ -76,10 +76,7 @@ def variational_smc(num_particles, sampler, num_iterations, data,
             latents = [latent for latent in inference.latents
                        if any([latent in param for param in parameters])]
             eubo = inference.log_joint(nodes=latents, reparameterized=False)
-            joint_vars = latents + sampler.model.trace.observations
-            eubo = eubo - sampler.model.trace.log_joint(
-                nodes=joint_vars, reparameterized=False
-            )
+            eubo = eubo - sampler.model.trace.log_joint(reparameterized=False)
             eubo = -eubo.mean(dim=0)
             logging.info('Variational SMC EUBO=%.8e at epoch %d', eubo, t + 1)
             eubo.backward()
