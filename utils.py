@@ -86,11 +86,11 @@ def map_tensors(f, *args):
         else:
             yield arg
 
-def vardict(existing=None):
+def vardict(existing=None, to=()):
     vdict = flatdict.FlatDict(delimiter='__')
     if existing:
         for k, v in existing.items():
-            vdict[k] = v
+            vdict[k] = batch_expand(v, to) if to else v
     return vdict
 
 def vardict_keys(vdict):
