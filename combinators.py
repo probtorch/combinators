@@ -18,6 +18,7 @@ class BroadcastingTrace(probtorch.stochastic.Trace):
         self._stack = []
         self._particle_stack = [num_particles]
 
+    @property
     def batch_shape(self):
         return tuple(self._particle_stack)
 
@@ -25,10 +26,12 @@ class BroadcastingTrace(probtorch.stochastic.Trace):
         self._particle_stack = [n] + self._particle_stack
 
     def pop_batch(self):
-        self._particle_stack = self._particle_stack[1:]
+        result = self._particle_stack[1:]
+        self._particle_stack = result
+        return result
 
     @property
-    def num_particles(self, i=-1):
+    def num_particles(self, i=0):
         return self._particle_stack[i]
 
     def log_joint(self, *args, **kwargs):
@@ -38,10 +41,14 @@ class BroadcastingTrace(probtorch.stochastic.Trace):
     def variable(self, Dist, *args, **kwargs):
         to_shape = kwargs.pop('to', None)
         args = [utils.batch_expand(arg, to_shape)
-                if isinstance(arg, torch.Tensor) else arg for arg in args]
+                if isinstance(arg, torch.Tensor) and to_shape
+                else arg for arg in args]
         kwargs = {k: utils.batch_expand(v, to_shape)
                      if isinstance(v, torch.Tensor) and to_shape else v
                   for k, v in kwargs.items()}
+        if isinstance(kwargs.get('value', None), torch.Tensor) and not to_shape:
+            kwargs['value'] = utils.batch_expand(kwargs['value'],
+                                                 self.batch_shape)
         result = super(BroadcastingTrace, self).variable(Dist, *args, **kwargs)
         if self._stack:
             module_name = self._stack[-1]._function.__name__
@@ -328,7 +335,7 @@ class Model(nn.Module):
             else:
                 self.register_buffer(k, v)
 
-    def args_vardict(self, keep_vars=True, to=()):
+    def args_vardict(self, to, keep_vars=True):
         return utils.vardict(self.state_dict(keep_vars=keep_vars), to=to)
 
     def forward(self, *args, **kwargs):
