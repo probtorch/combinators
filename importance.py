@@ -15,7 +15,14 @@ class ImportanceSampler(combinators.Model):
     def __init__(self, model, proposal=None, trainable={}, hyper={}):
         super(ImportanceSampler, self).__init__(model, trainable, hyper)
         self._proposal = proposal
-        self.log_weights = collections.OrderedDict()
+
+    @property
+    def importance_observations(self):
+        return set(self.trace.observations)
+
+    @property
+    def importance_latents(self):
+        return set(self.trace.latents)
 
     def forward(self, *args, **kwargs):
         kwargs['separate_traces'] = True
@@ -27,25 +34,25 @@ class ImportanceSampler(combinators.Model):
                 self._proposal(*args, **kwargs)
 
                 inference = self._proposal.trace
-                generative = combinators.GuidedTrace.clamp(inference)
+                generative = combinators.ConditionedTrace.clamp(inference)
 
                 kwargs = {**kwargs, 'trace': generative}
             result = self._function(*args, **kwargs)
+            kwargs['trace'] = self.model.trace
         else:
             result = self._function(*args, **kwargs)
             if self.proposal:
                 generative = self._function.trace
-                inference = combinators.GuidedTrace.clamp(generative)
+                inference = combinators.ConditionedTrace.clamp(generative)
 
                 kwargs = {**kwargs, 'trace': inference}
                 result = self._proposal(*args, **kwargs)
+                kwargs['trace'] = self.proposal.trace
+            else:
+                kwargs['trace'] = self.model.trace
+        if not self.parent:
+            self._trace = kwargs['trace']
         return result
-
-    @property
-    def _num_particles(self):
-        if self.log_weights:
-            return list(self.log_weights.items())[0][1].shape[0]
-        return 1
 
     @property
     def model(self):
@@ -55,29 +62,12 @@ class ImportanceSampler(combinators.Model):
     def proposal(self):
         return self._proposal
 
-    def importance_weight(self, observations=None, latents=None):
-        if not observations:
-            observations = self.observations()
-        if not latents:
-            latents = self.latents()
-        log_likelihood = self.trace.log_joint(nodes=observations,
-                                              reparameterized=False)
-        log_prior = self.trace.log_joint(nodes=latents, normalize_guide=True,
-                                         reparameterized=False)
-
-        self.log_weights[str(latents)] = log_likelihood + log_prior
-        return self.log_weights[str(latents)]
-
-    def effective_sample_size(self, observations=None, latents=None):
-        log_weights = self.importance_weight(observations, latents)
-        return (log_weights.exp() ** 2).sum(dim=0).pow(-1)
-
     def marginal_log_likelihood(self):
-        return log_mean_exp(self.log_weights[str(self.latents())], dim=0)
+        return log_mean_exp(self.importance_weight(), dim=0)
 
-class ResamplerTrace(combinators.GuidedTrace):
-    def __init__(self, num_particles=1, guide=None, data=None,
-                 ancestor_indices=None, ancestor=None):
+class ResamplerTrace(combinators.ConditionedTrace):
+    def __init__(self, num_particles=1, guide=None, data=None, ancestor=None,
+                 log_weights=None):
         if ancestor is not None:
             num_particles = ancestor.num_particles
             guide = ancestor.guide
@@ -85,13 +75,24 @@ class ResamplerTrace(combinators.GuidedTrace):
         super(ResamplerTrace, self).__init__(num_particles, guide=guide,
                                              data=data)
         self._ancestor = ancestor
+        self._saved_log_weights = []
+
+        if log_weights is not None:
+            self._log_weights = log_weights
+            normalized_weights = log_softmax(log_weights, dim=0)
+            resampler = torch.distributions.Categorical(logits=normalized_weights)
+            ancestor_indices = resampler.sample((self.num_particles,))
+        else:
+            self._log_weights = None
+            ancestor_indices = None
         if isinstance(ancestor_indices, torch.Tensor):
             self._ancestor_indices = ancestor_indices
         else:
-            self._ancestor_indices = torch.arange(self._num_particles,
+            self._ancestor_indices = torch.arange(self.num_particles,
                                                   dtype=torch.long)
         self._fresh_variables = set()
         if ancestor:
+            self._saved_log_weights = ancestor.saved_log_weights
             self._modules = ancestor._modules
             self._stack = ancestor._stack
             for i, key in enumerate(ancestor.variables()):
@@ -124,22 +125,29 @@ class ResamplerTrace(combinators.GuidedTrace):
     def ancestor_indices(self):
         return self._ancestor_indices
 
-    def resample(self, log_weights):
-        normalized_weights = log_softmax(log_weights, dim=0)
-        resampler = torch.distributions.Categorical(logits=normalized_weights)
+    @property
+    def saved_log_weights(self):
+        return self._saved_log_weights
 
-        result = ResamplerTrace(
-            self.num_particles,
-            ancestor_indices=resampler.sample((self.num_particles,)),
-            ancestor=self
-        )
+    def save_importance_weight(self, observations=None, latents=None):
+        log_weights = self.importance_weight(observations, latents)
+        self._saved_log_weights.append(log_weights)
+        self._fresh_variables = set()
+        return log_weights
+
+    def resample(self, observations=None, latents=None):
+        log_weights = self.importance_weight(observations, latents)
+        result = ResamplerTrace(self.num_particles, ancestor=self,
+                                log_weights=log_weights)
         return result, log_weights.index_select(0, result.ancestor_indices)
 
-    def collapse(self):
-        if self.ancestor:
-            indices = self.ancestor.collapse()
-            return indices.index_select(0, self.ancestor_indices)
-        return self.ancestor_indices
+    def effective_sample_size(self, observations=None, latents=None,
+                              save=False):
+        if save:
+            log_weights = self.save_importance_weight(observations, latents)
+        else:
+            log_weights = self.importance_weight(observations, latents)
+        return (log_weights*2).exp().sum(dim=0).pow(-1)
 
 class ImportanceResampler(ImportanceSampler):
     def __init__(self, model, proposal=None, trainable={}, hyper={},
@@ -151,9 +159,11 @@ class ImportanceResampler(ImportanceSampler):
 
     def forward(self, *args, **kwargs):
         results = super(ImportanceResampler, self).forward(*args, **kwargs)
-        ess = self.effective_sample_size()
+        observations = self.importance_observations
+        latents = self.importance_latents
+        ess = self.trace.effective_sample_size(observations, latents, True)
         if ess < self.trace.num_particles / self._resample_factor:
-            resampled_trace, _ = self.trace.resample(self.importance_weight())
+            resampled_trace, _ = self.trace.resample(observations, latents)
             self.ancestor._condition_all(trace=resampled_trace)
 
             results = list(results)

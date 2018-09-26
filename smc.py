@@ -9,7 +9,7 @@ from probtorch.util import log_mean_exp
 import torch
 
 import combinators
-from combinators import ParticleTrace
+from combinators import BroadcastingTrace
 import importance
 from importance import ResamplerTrace
 
@@ -20,20 +20,18 @@ class StepwiseImportanceResampler(importance.ImportanceResampler):
                                                           trainable, hyper,
                                                           resample_factor)
 
-    def importance_weight(self, observations=None, latents=None):
+    @property
+    def importance_observations(self):
         fresh = self.trace.fresh_variables
-        if not observations:
-            observations = list(fresh.intersection(self.observations()))
-        if not latents:
-            latents = list(fresh.intersection(self.latents()))
-        return super(StepwiseImportanceResampler, self).importance_weight(
-            observations, latents
-        )
+        return set(fresh.intersection(self.trace.observations))
+
+    @property
+    def importance_latents(self):
+        fresh = self.trace.fresh_variables
+        return set(fresh.intersection(self.trace.latents))
 
     def marginal_log_likelihood(self):
-        log_weights = torch.zeros(len(self.log_weights), self._num_particles)
-        for t, latent in enumerate(self.log_weights):
-            log_weights[t] = self.log_weights[latent]
+        log_weights = torch.stack(self.trace.saved_log_weights, dim=-1)
         return log_mean_exp(log_weights, dim=0).sum()
 
 class SequentialMonteCarlo(combinators.Model):
@@ -61,6 +59,7 @@ class SequentialMonteCarlo(combinators.Model):
 def variational_smc(num_particles, sampler, num_iterations, data,
                     use_cuda=True, lr=1e-6, inclusive_kl=False):
     optimizer = torch.optim.Adam(list(sampler.proposal.parameters()), lr=lr)
+    parameters = sampler.proposal.args_vardict(False).keys()
 
     sampler.train()
     if torch.cuda.is_available() and use_cuda:
@@ -72,19 +71,15 @@ def variational_smc(num_particles, sampler, num_iterations, data,
         sampler.simulate(trace=ResamplerTrace(num_particles, data=data),
                          proposal_guides=not inclusive_kl,
                          reparameterized=False)
+        inference = sampler.trace
         if inclusive_kl:
-            latents = sampler.proposal.latents()
-            inference = sampler.proposal.trace
-            eubo = inference.log_joint(nodes=latents, reparameterized=False)
-            joint_vars = latents + sampler.model.observations()
-            eubo = eubo - sampler.model.trace.log_joint(
-                nodes=joint_vars, reparameterized=False
-            )
+            latents = [latent for latent in inference.latents
+                       if any([latent in param for param in parameters])]
+            eubo = inference.importance_weight(None, latents=latents)
             eubo = -eubo.mean(dim=0)
             logging.info('Variational SMC EUBO=%.8e at epoch %d', eubo, t + 1)
             eubo.backward()
         else:
-            inference = sampler.model.trace
             elbo = sampler.model.marginal_log_likelihood()
             logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
             (-elbo).backward()
@@ -94,4 +89,4 @@ def variational_smc(num_particles, sampler, num_iterations, data,
         sampler.cpu()
     sampler.eval()
 
-    return inference, sampler.proposal.args_vardict()
+    return inference, sampler.proposal.args_vardict(inference.batch_shape)

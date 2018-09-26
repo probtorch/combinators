@@ -10,7 +10,7 @@ import combinators
 import utils
 
 def init_gmm(pi_name='Pi', this=None):
-    params = this.args_vardict()
+    params = this.args_vardict(this.trace.batch_shape)
     pi = this.trace.param_dirichlet(params, name=pi_name)
     mu = this.trace.param_normal(params, name='mu')
     sigma = torch.sqrt(this.trace.param_normal(params, name='sigma')**2)

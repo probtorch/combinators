@@ -11,28 +11,42 @@ import torch.nn as nn
 
 import utils
 
-class ParticleTrace(probtorch.stochastic.Trace):
+class BroadcastingTrace(probtorch.stochastic.Trace):
     def __init__(self, num_particles=1):
-        super(ParticleTrace, self).__init__()
+        super(BroadcastingTrace, self).__init__()
         self._modules = collections.defaultdict(lambda: {})
         self._stack = []
-        self._num_particles = num_particles
+        self._particle_stack = [num_particles]
 
     @property
-    def num_particles(self):
-        return self._num_particles
+    def batch_shape(self):
+        return tuple(self._particle_stack)
+
+    def push_batch(self, n):
+        self._particle_stack = [n] + self._particle_stack
+
+    def pop_batch(self):
+        result = self._particle_stack[1:]
+        self._particle_stack = result
+        return result
+
+    @property
+    def num_particles(self, i=0):
+        return self._particle_stack[i]
 
     def log_joint(self, *args, **kwargs):
-        return super(ParticleTrace, self).log_joint(*args, sample_dim=0,
-                                                    **kwargs)
+        return super(BroadcastingTrace, self).log_joint(*args, sample_dim=0,
+                                                        **kwargs)
 
     def variable(self, Dist, *args, **kwargs):
-        args = [utils.particlize(arg, self.num_particles)
-                if isinstance(arg, torch.Tensor) else arg for arg in args]
-        kwargs = {k: utils.particlize(v, self.num_particles)
-                     if isinstance(v, torch.Tensor) else v
+        to_shape = kwargs.pop('to', None)
+        args = [utils.batch_expand(arg, to_shape)
+                if isinstance(arg, torch.Tensor) and to_shape
+                else arg for arg in args]
+        kwargs = {k: utils.batch_expand(v, to_shape)
+                     if isinstance(v, torch.Tensor) and to_shape else v
                   for k, v in kwargs.items()}
-        result = super(ParticleTrace, self).variable(Dist, *args, **kwargs)
+        result = super(BroadcastingTrace, self).variable(Dist, *args, **kwargs)
         if self._stack:
             module_name = self._stack[-1]._function.__name__
             self._modules[module_name][kwargs['name']] = {
@@ -100,9 +114,33 @@ class ParticleTrace(probtorch.stochastic.Trace):
     def clamped(self, name):
         return self.observed(name)
 
-class GuidedTrace(ParticleTrace):
+    @property
+    def observations(self):
+        return [rv for rv in self.variables() if self.is_observed(rv) and\
+                self.have_annotation(self._modules.keys(), rv)]
+
+    @property
+    def latents(self):
+        return [rv for rv in self.variables()\
+                if not self.is_observed(rv) and\
+                self.have_annotation(self._modules.keys(), rv)]
+
+    def importance_weight(self, observations=None, latents=None):
+        if not observations:
+            observations = self.observations
+        if not latents:
+            latents = self.latents
+
+        log_likelihood = self.log_joint(nodes=observations,
+                                        normalize_guide=True,
+                                        reparameterized=False)
+        log_prior = self.log_joint(nodes=latents, normalize_guide=True,
+                                   reparameterized=False)
+        return log_likelihood + log_prior
+
+class ConditionedTrace(BroadcastingTrace):
     def __init__(self, num_particles=1, guide=None, data=None):
-        super(GuidedTrace, self).__init__(num_particles)
+        super(ConditionedTrace, self).__init__(num_particles)
         self._guide = guide
         self._data = data
 
@@ -139,17 +177,23 @@ class GuidedTrace(ParticleTrace):
         return None
 
     def variable(self, Dist, *args, **kwargs):
-        if 'name' in kwargs and ('value' not in kwargs or not kwargs['value']):
-            clamped = self.clamped(kwargs['name'])
+        if 'name' in kwargs and not kwargs.get('value', None):
+            name = kwargs['name']
+            clamped = self.clamped(name)
+            to_shape = kwargs.get('to', None)
+            if isinstance(clamped, torch.Tensor) and not to_shape and\
+               self.observed(name) is not None:
+                clamped = utils.batch_expand(clamped, self.batch_shape)
             if clamped is not None:
                 kwargs['value'] = clamped
+
         tensors = [arg for arg in args if isinstance(arg, torch.Tensor)]
         if tensors and 'value' in kwargs and kwargs['value'] is not None:
             kwargs['value'] = kwargs['value'].to(device=tensors[0].device)
-        return super(GuidedTrace, self).variable(Dist, *args, **kwargs)
+        return super(ConditionedTrace, self).variable(Dist, *args, **kwargs)
 
     def log_joint(self, *args, normalize_guide=False, **kwargs):
-        generative_joint = super(GuidedTrace, self).log_joint(*args, **kwargs)
+        generative_joint = super(ConditionedTrace, self).log_joint(*args, **kwargs)
         if isinstance(generative_joint, torch.Tensor):
             device = generative_joint.device
         elif len(self):
@@ -166,7 +210,7 @@ class GuidedTrace(ParticleTrace):
                 reparameterized=kwargs.get('reparameterized', True)
             )
         else:
-            guide_joint = torch.zeros(self.num_particles).to(device)
+            guide_joint = torch.zeros(self.batch_shape).to(device)
 
         return generative_joint - guide_joint
 
@@ -275,7 +319,7 @@ class Model(nn.Module):
 
     def _condition_all(self, trace=None):
         if trace is None:
-            trace = ParticleTrace()
+            trace = BroadcastingTrace()
         self.apply(lambda m: m._condition(trace))
 
     @property
@@ -284,7 +328,7 @@ class Model(nn.Module):
 
     @property
     def guided(self):
-        return isinstance(self._trace, GuidedTrace)
+        return isinstance(self._trace, ConditionedTrace)
 
     def register_args(self, args, trainable=True):
         for k, v in utils.vardict(args).items():
@@ -294,41 +338,24 @@ class Model(nn.Module):
             else:
                 self.register_buffer(k, v)
 
-    def args_vardict(self, keep_vars=True):
-        return utils.vardict(self.state_dict(keep_vars=keep_vars))
+    def args_vardict(self, to, keep_vars=True):
+        return utils.vardict(self.state_dict(keep_vars=keep_vars), to=to)
 
     def forward(self, *args, **kwargs):
         kwargs = {**kwargs, 'this': self}
-        if not self.parent or kwargs.pop('separate_traces', False):
+        if kwargs.pop('separate_traces', False) or not self.parent:
             self._condition_all(trace=kwargs.pop('trace', None))
-        if isinstance(self.trace, ParticleTrace):
+        if isinstance(self.trace, BroadcastingTrace):
             self.trace.push(self)
         result = self._function(*args, **kwargs)
-        if isinstance(self.trace, ParticleTrace):
+        if isinstance(self.trace, BroadcastingTrace):
             self.trace.pop()
         return result
 
     def simulate(self, *args, **kwargs):
         if 'trace' not in kwargs:
-            kwargs['trace'] = ParticleTrace()
+            kwargs['trace'] = BroadcastingTrace()
         reparameterized = kwargs.pop('reparameterized', True)
 
         result = self.forward(*args, **kwargs)
-        return result, self.trace.log_joint(reparameterized=reparameterized)
-
-    @property
-    def all_names(self):
-        result = []
-        self.apply(lambda m: result.append(m.name) if isinstance(m, Model)\
-                   else None)
-        return result
-
-    def observations(self):
-        return [rv for rv in self.trace.variables()\
-                if self.trace.is_observed(rv)\
-                and self.trace.have_annotation(self.all_names, rv)]
-
-    def latents(self):
-        return [rv for rv in self.trace.variables()\
-                if not self.trace.is_observed(rv) and\
-                self.trace.have_annotation(self.all_names, rv)]
+        return self.trace.log_joint(reparameterized=reparameterized), result

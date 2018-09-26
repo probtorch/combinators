@@ -20,7 +20,7 @@ def reflect_directions(angle):
     return result
 
 def init_bouncing_ball(this=None):
-    params = this.args_vardict()
+    params = this.args_vardict(this.trace.batch_shape)
 
     initial_alpha = this.trace.param_dirichlet(params, name='alpha_0')
     transition_alpha = torch.stack([

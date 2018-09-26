@@ -8,7 +8,7 @@ import combinators
 import utils
 
 def init_ssm(this=None):
-    params = this.args_vardict()
+    params = this.args_vardict(this.trace.batch_shape)
     mu = this.trace.param_normal(params, name='mu')
     sigma = torch.sqrt(this.trace.param_normal(params, name='sigma')**2)
     delta = this.trace.param_normal(params, name='delta')
