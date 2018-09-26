@@ -9,7 +9,7 @@ from probtorch.util import log_mean_exp
 import torch
 
 import combinators
-from combinators import ParticleTrace
+from combinators import BroadcastingTrace
 import importance
 from importance import ResamplerTrace
 
@@ -89,4 +89,4 @@ def variational_smc(num_particles, sampler, num_iterations, data,
         sampler.cpu()
     sampler.eval()
 
-    return inference, sampler.proposal.args_vardict()
+    return inference, sampler.proposal.args_vardict(inference.batch_shape)
