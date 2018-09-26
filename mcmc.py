@@ -9,7 +9,7 @@ from probtorch.util import log_mean_exp
 import torch
 
 import combinators
-from combinators import ParticleTrace
+from combinators import BroadcastingTrace
 import importance
 from importance import ResamplerTrace
 
