@@ -46,9 +46,6 @@ class BroadcastingTrace(probtorch.stochastic.Trace):
         kwargs = {k: utils.batch_expand(v, to_shape)
                      if isinstance(v, torch.Tensor) and to_shape else v
                   for k, v in kwargs.items()}
-        if isinstance(kwargs.get('value', None), torch.Tensor) and not to_shape:
-            kwargs['value'] = utils.batch_expand(kwargs['value'],
-                                                 self.batch_shape)
         result = super(BroadcastingTrace, self).variable(Dist, *args, **kwargs)
         if self._stack:
             module_name = self._stack[-1]._function.__name__
@@ -180,10 +177,16 @@ class ConditionedTrace(BroadcastingTrace):
         return None
 
     def variable(self, Dist, *args, **kwargs):
-        if 'name' in kwargs and ('value' not in kwargs or not kwargs['value']):
-            clamped = self.clamped(kwargs['name'])
+        if 'name' in kwargs and not kwargs.get('value', None):
+            name = kwargs['name']
+            clamped = self.clamped(name)
+            to_shape = kwargs.get('to', None)
+            if isinstance(clamped, torch.Tensor) and not to_shape and\
+               self.observed(name) is not None:
+                clamped = utils.batch_expand(clamped, self.batch_shape)
             if clamped is not None:
                 kwargs['value'] = clamped
+
         tensors = [arg for arg in args if isinstance(arg, torch.Tensor)]
         if tensors and 'value' in kwargs and kwargs['value'] is not None:
             kwargs['value'] = kwargs['value'].to(device=tensors[0].device)
