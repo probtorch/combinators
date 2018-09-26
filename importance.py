@@ -88,7 +88,7 @@ class ResamplerTrace(combinators.ConditionedTrace):
         if isinstance(ancestor_indices, torch.Tensor):
             self._ancestor_indices = ancestor_indices
         else:
-            self._ancestor_indices = torch.arange(self._num_particles,
+            self._ancestor_indices = torch.arange(self.num_particles,
                                                   dtype=torch.long)
         self._fresh_variables = set()
         if ancestor:
