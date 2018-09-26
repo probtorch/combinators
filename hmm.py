@@ -11,7 +11,7 @@ import gmm
 import utils
 
 def init_hmm(this=None):
-    params = this.args_vardict()
+    params = this.args_vardict(this.trace.batch_shape)
     mu, sigma, pi0 = gmm.init_gmm('Pi_0', this)
 
     pi = torch.zeros(this.trace.num_particles, pi0.shape[1], pi0.shape[1])

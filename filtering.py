@@ -135,4 +135,4 @@ def variational_forward_backward(model_init, step_builder, num_iterations, T,
         model_init.cpu()
         model_step.cpu()
 
-    return inference, model_init.args_vardict()
+    return inference, model_init.args_vardict(inference.batch_shape)
