@@ -4,6 +4,7 @@ import collections
 import functools
 import inspect
 
+import numpy as np
 import probtorch
 from probtorch.stochastic import RandomVariable
 import torch
@@ -31,8 +32,10 @@ class BroadcastingTrace(probtorch.stochastic.Trace):
         return result
 
     @property
-    def num_particles(self, i=0):
-        return self._particle_stack[i]
+    def num_particles(self, i=-1):
+        if i >= 0:
+            return self._particle_stack[i]
+        return int(np.product(self._particle_stack))
 
     def log_joint(self, *args, **kwargs):
         return super(BroadcastingTrace, self).log_joint(*args, sample_dim=0,
