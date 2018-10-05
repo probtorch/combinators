@@ -135,17 +135,24 @@ class BroadcastingTrace(probtorch.stochastic.Trace):
         if not latents:
             latents = self.latents
 
+        # BUG: setting this to false gives us correct SMC weights, but not
+        # correct nonsequential importance weights
+        conditional_started = False
         weighted_vars = set(observations) | set(latents)
 
         # Iterate over random variables in the order the trace sampled them,
         # which we'll take to approximate conditioning order
         weight = torch.zeros(self.batch_shape)
         for rv in self.keys():
-            log_conditional = self.log_joint(nodes=[rv], normalize_guide=True,
-                                             reparameterized=False)
-            if rv not in weighted_vars:
-                log_conditional = log_mean_exp(log_conditional + weight)
-            weight = log_conditional + weight
+            weighting_var = rv in weighted_vars
+            conditional_started = conditional_started or weighting_var
+            if conditional_started:
+                log_conditional = self.log_joint(nodes=[rv],
+                                                 normalize_guide=True,
+                                                 reparameterized=False)
+                if not weighting_var:
+                    log_conditional = log_mean_exp(log_conditional + weight)
+                weight = log_conditional + weight
 
         return weight
 
