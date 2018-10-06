@@ -21,6 +21,12 @@ class BroadcastingTrace(probtorch.stochastic.Trace):
         self._particle_stack = [num_particles]
 
     @property
+    def device(self):
+        for v in self.variables():
+            return self[v].value.device
+        return 'cpu'
+
+    @property
     def batch_shape(self):
         return tuple(self._particle_stack)
 
