@@ -144,6 +144,12 @@ class ResamplerTrace(ImportanceTrace):
     def effective_sample_size(self):
         return (self.log_proper_weight()*2).exp().sum(dim=0).pow(-1)
 
+    def marginal_log_likelihood(self):
+        recent_weight = log_mean_exp(self.log_proper_weight(), dim=0)
+        if self.ancestor is not None:
+            return recent_weight + self.ancestor.marginal_log_likelihood()
+        return recent_weight
+
 class ImportanceResampler(ImportanceSampler):
     def __init__(self, model, proposal=None, trainable={}, hyper={},
                  resample_factor=2):
