@@ -176,6 +176,18 @@ class ImportanceResampler(ImportanceSampler):
             results = tuple(results)
         return results
 
+    @classmethod
+    def smc(cls, step_model, T, step_proposal=None, initializer=None,
+            resample_factor=2):
+        resampled_step = cls(step_model, step_proposal,
+                             resample_factor=resample_factor)
+        step_sequence = combinators.Model.sequence(resampled_step, T)
+        if initializer:
+            return combinators.Model.compose(step_sequence, initializer,
+                                             intermediate_name='initializer')
+        else:
+            return step_sequence
+
 def variational_importance(num_particles, sampler, num_iterations, data,
                            use_cuda=True, lr=1e-6, inclusive_kl=False):
     optimizer = torch.optim.Adam(list(sampler.proposal.parameters()), lr=lr)
