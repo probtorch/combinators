@@ -137,10 +137,13 @@ class ResamplerTrace(ImportanceTrace):
     def saved_log_weights(self):
         return self._saved_log_weights
 
+    def is_inherited(self, variable):
+        return self.ancestor and variable in self.ancestor
+
     @property
     def weighting_variables(self):
         for observation in self.observations:
-            if observation not in self.ancestor:
+            if not self.is_inherited(observation):
                 yield observation
 
     def save_importance_weight(self, observations=None, latents=None):
