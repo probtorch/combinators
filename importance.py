@@ -11,6 +11,24 @@ from torch.nn.functional import log_softmax
 import combinators
 import utils
 
+class ImportanceTrace(combinators.ConditionedTrace):
+    @property
+    def weighting_variables(self):
+        return self.observations
+
+    def log_proper_weight(self):
+        # Iterate over random variables in the order the trace sampled them,
+        # which we'll take to approximate conditioning order
+        weight = torch.zeros(self.batch_shape)
+        for rv in self.keys():
+            log_conditional = self.log_joint(nodes=[rv], normalize_guide=True,
+                                             reparameterized=False)
+            if rv in self.weighting_variables:
+                log_conditional = log_mean_exp(log_conditional + weight)
+            weight = log_conditional + weight
+
+        return weight
+
 class ImportanceSampler(combinators.Model):
     def __init__(self, model, proposal=None, trainable={}, hyper={}):
         super(ImportanceSampler, self).__init__(model, trainable, hyper)
@@ -65,7 +83,7 @@ class ImportanceSampler(combinators.Model):
     def marginal_log_likelihood(self):
         return log_mean_exp(self.importance_weight(), dim=0)
 
-class ResamplerTrace(combinators.ConditionedTrace):
+class ResamplerTrace(ImportanceTrace):
     def __init__(self, num_particles=1, guide=None, data=None, ancestor=None,
                  log_weights=None):
         if ancestor is not None:
