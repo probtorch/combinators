@@ -193,7 +193,8 @@ def variational_importance(num_particles, sampler, num_iterations, data,
                            patience=50):
     optimizer = torch.optim.Adam(list(sampler.proposal.parameters()), lr=lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.5, min_lr=1e-6, patience=patience, verbose=True
+        optimizer, factor=0.5, min_lr=1e-6, patience=patience, verbose=True,
+        mode='min' if inclusive_kl else 'max',
     )
 
     sampler.train()
@@ -215,7 +216,7 @@ def variational_importance(num_particles, sampler, num_iterations, data,
         logging.info('%s=%.8e at epoch %d', bound_name, signed_bound, t + 1)
         bound.backward()
         optimizer.step()
-        bounds[t] = bound
+        bounds[t] = bound if inclusive_kl else -bound
         scheduler.step(bounds[t])
 
     if torch.cuda.is_available() and use_cuda:
