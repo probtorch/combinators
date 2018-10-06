@@ -14,7 +14,7 @@ import utils
 class ImportanceTrace(combinators.ConditionedTrace):
     @property
     def weighting_variables(self):
-        return self.observations
+        return self.variables()
 
     def log_proper_weight(self):
         # Iterate over random variables in the order the trace sampled them,
@@ -142,9 +142,8 @@ class ResamplerTrace(ImportanceTrace):
 
     @property
     def weighting_variables(self):
-        for observation in self.observations:
-            if not self.is_inherited(observation):
-                yield observation
+        return [node for node in super(ResamplerTrace, self).weighting_variables
+                if not self.is_inherited(node)]
 
     def save_importance_weight(self):
         log_weights = self.log_proper_weight()
