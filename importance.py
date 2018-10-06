@@ -189,13 +189,18 @@ class ImportanceResampler(ImportanceSampler):
             return step_sequence
 
 def variational_importance(num_particles, sampler, num_iterations, data,
-                           use_cuda=True, lr=1e-6, inclusive_kl=False):
+                           use_cuda=True, lr=1e-6, inclusive_kl=False,
+                           patience=50):
     optimizer = torch.optim.Adam(list(sampler.proposal.parameters()), lr=lr)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, factor=0.5, min_lr=1e-6, patience=patience, verbose=True
+    )
 
     sampler.train()
     if torch.cuda.is_available() and use_cuda:
         sampler.cuda()
 
+    bounds = list(range(num_iterations))
     for t in range(num_iterations):
         optimizer.zero_grad()
 
@@ -207,13 +212,16 @@ def variational_importance(num_particles, sampler, num_iterations, data,
         bound = -inference.marginal_log_likelihood()
         bound_name = 'EUBO' if inclusive_kl else 'ELBO'
         signed_bound = bound if inclusive_kl else -bound
-        logging.info('Variational %s=%.8e at epoch %d', bound_name,
-                     signed_bound, t + 1)
+        logging.info('%s=%.8e at epoch %d', bound_name, signed_bound, t + 1)
         bound.backward()
         optimizer.step()
+        bounds[t] = bound
+        scheduler.step(bounds[t])
 
     if torch.cuda.is_available() and use_cuda:
         sampler.cpu()
     sampler.eval()
 
-    return inference, sampler.proposal.args_vardict(inference.batch_shape)
+    trained_params = sampler.proposal.args_vardict(inference.batch_shape)
+
+    return inference, trained_params, bounds
