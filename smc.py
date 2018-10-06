@@ -46,6 +46,8 @@ def variational_smc(num_particles, sampler, num_iterations, data,
                          reparameterized=False)
         inference = sampler.trace
         if inclusive_kl:
+            # TODO: I still want to be able to approximate the posterior with
+            # respect to only those variables I'm actually training.
             latents = [latent for latent in inference.latents
                        if any([latent in param for param in parameters])]
             eubo = inference.importance_weight(None, latents=latents)
