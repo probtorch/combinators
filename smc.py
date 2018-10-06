@@ -13,17 +13,6 @@ from combinators import BroadcastingTrace
 import importance
 from importance import ResamplerTrace
 
-class StepwiseImportanceResampler(importance.ImportanceResampler):
-    def __init__(self, model, proposal=None, trainable={}, hyper={},
-                 resample_factor=2):
-        super(StepwiseImportanceResampler, self).__init__(model, proposal,
-                                                          trainable, hyper,
-                                                          resample_factor)
-
-    def marginal_log_likelihood(self):
-        log_weights = torch.stack(self.trace.saved_log_weights, dim=-1)
-        return log_mean_exp(log_weights, dim=0).sum()
-
 class SequentialMonteCarlo(combinators.Model):
     def __init__(self, step_model, T, step_proposal=None,
                  initializer=None, resample_factor=2):
