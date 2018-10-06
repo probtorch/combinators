@@ -90,7 +90,6 @@ class ResamplerTrace(combinators.ConditionedTrace):
         else:
             self._ancestor_indices = torch.arange(self.num_particles,
                                                   dtype=torch.long)
-        self._fresh_variables = set()
         if ancestor:
             self._saved_log_weights = ancestor.saved_log_weights
             self._modules = ancestor._modules
@@ -108,18 +107,9 @@ class ResamplerTrace(combinators.ConditionedTrace):
                 else:
                     self[i] = sample
 
-    def variable(self, Dist, *args, **kwargs):
-        if 'name' in kwargs:
-            self._fresh_variables.add(kwargs['name'])
-        return super(ResamplerTrace, self).variable(Dist, *args, **kwargs)
-
     @property
     def ancestor(self):
         return self._ancestor
-
-    @property
-    def fresh_variables(self):
-        return self._fresh_variables
 
     @property
     def ancestor_indices(self):
@@ -138,7 +128,6 @@ class ResamplerTrace(combinators.ConditionedTrace):
     def save_importance_weight(self, observations=None, latents=None):
         log_weights = self.importance_weight(observations, latents)
         self._saved_log_weights.append(log_weights)
-        self._fresh_variables = set()
         return log_weights
 
     def resample(self, observations=None, latents=None):
