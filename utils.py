@@ -12,7 +12,7 @@ EMPTY_TRACE = collections.defaultdict(lambda: None)
 
 def plot_evidence_bounds(bounds, lower=True, figsize=(10, 10)):
     epochs = range(len(bounds))
-    bound_name = '-ELBO' if lower else 'EUBO'
+    bound_name = 'ELBO' if lower else 'EUBO'
 
     free_energy_fig = plt.figure(figsize=figsize)
 
