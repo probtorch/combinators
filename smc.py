@@ -44,14 +44,13 @@ def variational_smc(num_particles, sampler, num_iterations, data,
                          proposal_guides=not inclusive_kl,
                          reparameterized=False)
         inference = sampler.trace
-        if inclusive_kl:
-            eubo = -inference.marginal_log_likelihood()
-            logging.info('Variational SMC EUBO=%.8e at epoch %d', eubo, t + 1)
-            eubo.backward()
-        else:
-            elbo = inference.marginal_log_likelihood()
-            logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
-            (-elbo).backward()
+
+        bound = -inference.marginal_log_likelihood()
+        bound_name = 'EUBO' if inclusive_kl else 'ELBO'
+        signed_bound = bound if inclusive_kl else -bound
+        logging.info('Variational SMC %s=%.8e at epoch %d', bound_name,
+                     signed_bound, t + 1)
+        bound.backward()
         optimizer.step()
 
     if torch.cuda.is_available() and use_cuda:
