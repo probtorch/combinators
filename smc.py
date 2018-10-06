@@ -20,16 +20,6 @@ class StepwiseImportanceResampler(importance.ImportanceResampler):
                                                           trainable, hyper,
                                                           resample_factor)
 
-    @property
-    def importance_observations(self):
-        fresh = self.trace.fresh_variables
-        return set(fresh.intersection(self.trace.observations))
-
-    @property
-    def importance_latents(self):
-        fresh = self.trace.fresh_variables
-        return set(fresh.intersection(self.trace.latents))
-
     def marginal_log_likelihood(self):
         log_weights = torch.stack(self.trace.saved_log_weights, dim=-1)
         return log_mean_exp(log_weights, dim=0).sum()
@@ -50,8 +40,8 @@ class SequentialMonteCarlo(combinators.Model):
         self.resampled_step = resampled_step
         self.initializer = initializer
 
-    def importance_weight(self, observations=None, latents=None):
-        return self.resampled_step.importance_weight(observations, latents)
+    def importance_weight(self):
+        return self.resampled_step.importance_weight()
 
     def marginal_log_likelihood(self):
         return self.resampled_step.marginal_log_likelihood()

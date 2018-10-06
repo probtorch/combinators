@@ -81,7 +81,7 @@ class ImportanceSampler(combinators.Model):
         return self._proposal
 
     def marginal_log_likelihood(self):
-        return log_mean_exp(self.importance_weight(), dim=0)
+        return log_mean_exp(self.log_proper_weight(), dim=0)
 
 class ResamplerTrace(ImportanceTrace):
     def __init__(self, num_particles=1, guide=None, data=None, ancestor=None,
@@ -146,23 +146,22 @@ class ResamplerTrace(ImportanceTrace):
             if not self.is_inherited(observation):
                 yield observation
 
-    def save_importance_weight(self, observations=None, latents=None):
-        log_weights = self.importance_weight(observations, latents)
+    def save_importance_weight(self):
+        log_weights = self.log_proper_weight()
         self._saved_log_weights.append(log_weights)
         return log_weights
 
-    def resample(self, observations=None, latents=None):
-        log_weights = self.importance_weight(observations, latents)
+    def resample(self):
+        log_weights = self.log_proper_weight()
         result = ResamplerTrace(self.num_particles, ancestor=self,
                                 log_weights=log_weights)
         return result, log_weights.index_select(0, result.ancestor_indices)
 
-    def effective_sample_size(self, observations=None, latents=None,
-                              save=False):
+    def effective_sample_size(self, save=False):
         if save:
-            log_weights = self.save_importance_weight(observations, latents)
+            log_weights = self.save_importance_weight()
         else:
-            log_weights = self.importance_weight(observations, latents)
+            log_weights = self.log_proper_weight()
         return (log_weights*2).exp().sum(dim=0).pow(-1)
 
 class ImportanceResampler(ImportanceSampler):
@@ -175,11 +174,9 @@ class ImportanceResampler(ImportanceSampler):
 
     def forward(self, *args, **kwargs):
         results = super(ImportanceResampler, self).forward(*args, **kwargs)
-        observations = self.importance_observations
-        latents = self.importance_latents
-        ess = self.trace.effective_sample_size(observations, latents, True)
+        ess = self.trace.effective_sample_size(True)
         if ess < self.trace.num_particles / self._resample_factor:
-            resampled_trace, _ = self.trace.resample(observations, latents)
+            resampled_trace, _ = self.trace.resample()
             self.ancestor._condition_all(trace=resampled_trace)
 
             results = list(results)
