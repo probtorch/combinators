@@ -129,6 +129,23 @@ class BroadcastingTrace(probtorch.stochastic.Trace):
                 if not self.is_observed(rv) and\
                 self.have_annotation(self._modules.keys(), rv)]
 
+    @property
+    def weighting_variables(self):
+        return self.observations
+
+    def log_proper_weight(self):
+        # Iterate over random variables in the order the trace sampled them,
+        # which we'll take to approximate conditioning order
+        weight = torch.zeros(self.batch_shape)
+        for rv in self.keys():
+            log_conditional = self.log_joint(nodes=[rv], normalize_guide=True,
+                                             reparameterized=False)
+            if rv in self.weighting_variables:
+                log_conditional = log_mean_exp(log_conditional + weight)
+            weight = log_conditional + weight
+
+        return weight
+
     def importance_weight(self, observations=None, latents=None):
         if not observations:
             observations = self.observations
