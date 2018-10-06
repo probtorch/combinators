@@ -59,7 +59,7 @@ def variational_smc(num_particles, sampler, num_iterations, data,
             logging.info('Variational SMC EUBO=%.8e at epoch %d', eubo, t + 1)
             eubo.backward()
         else:
-            elbo = sampler.model.marginal_log_likelihood()
+            elbo = inference.marginal_log_likelihood()
             logging.info('Variational SMC ELBO=%.8e at epoch %d', elbo, t + 1)
             (-elbo).backward()
         optimizer.step()
