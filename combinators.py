@@ -4,8 +4,10 @@ import collections
 import functools
 import inspect
 
+import numpy as np
 import probtorch
 from probtorch.stochastic import RandomVariable
+from probtorch.util import log_mean_exp
 import torch
 import torch.nn as nn
 
@@ -17,6 +19,12 @@ class BroadcastingTrace(probtorch.stochastic.Trace):
         self._modules = collections.defaultdict(lambda: {})
         self._stack = []
         self._particle_stack = [num_particles]
+
+    @property
+    def device(self):
+        for v in self.variables():
+            return self[v].value.device
+        return 'cpu'
 
     @property
     def batch_shape(self):
@@ -31,8 +39,10 @@ class BroadcastingTrace(probtorch.stochastic.Trace):
         return result
 
     @property
-    def num_particles(self, i=0):
-        return self._particle_stack[i]
+    def num_particles(self, i=-1):
+        if i >= 0:
+            return self._particle_stack[i]
+        return int(np.product(self._particle_stack))
 
     def log_joint(self, *args, **kwargs):
         return super(BroadcastingTrace, self).log_joint(*args, sample_dim=0,
@@ -125,19 +135,6 @@ class BroadcastingTrace(probtorch.stochastic.Trace):
                 if not self.is_observed(rv) and\
                 self.have_annotation(self._modules.keys(), rv)]
 
-    def importance_weight(self, observations=None, latents=None):
-        if not observations:
-            observations = self.observations
-        if not latents:
-            latents = self.latents
-
-        log_likelihood = self.log_joint(nodes=observations,
-                                        normalize_guide=True,
-                                        reparameterized=False)
-        log_prior = self.log_joint(nodes=latents, normalize_guide=True,
-                                   reparameterized=False)
-        return log_likelihood + log_prior
-
 class ConditionedTrace(BroadcastingTrace):
     def __init__(self, num_particles=1, guide=None, data=None):
         super(ConditionedTrace, self).__init__(num_particles)
@@ -191,28 +188,6 @@ class ConditionedTrace(BroadcastingTrace):
         if tensors and 'value' in kwargs and kwargs['value'] is not None:
             kwargs['value'] = kwargs['value'].to(device=tensors[0].device)
         return super(ConditionedTrace, self).variable(Dist, *args, **kwargs)
-
-    def log_joint(self, *args, normalize_guide=False, **kwargs):
-        generative_joint = super(ConditionedTrace, self).log_joint(*args, **kwargs)
-        if isinstance(generative_joint, torch.Tensor):
-            device = generative_joint.device
-        elif len(self):
-            device = self[list(self.variables())[0]].value.device
-        else:
-            device = 'cpu'
-        if normalize_guide and self.guide:
-            all_nodes = kwargs.get('nodes', None) or self.keys()
-            guided_nodes = [node for node in all_nodes
-                            if self.guided(node) is not None and
-                            self.observed(node) is None]
-            guide_joint = self._guide.log_joint(
-                *args, nodes=guided_nodes,
-                reparameterized=kwargs.get('reparameterized', True)
-            )
-        else:
-            guide_joint = torch.zeros(self.batch_shape).to(device)
-
-        return generative_joint - guide_joint
 
 class Model(nn.Module):
     def __init__(self, f, trainable={}, hyper={}):
