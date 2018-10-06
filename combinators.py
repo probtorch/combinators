@@ -183,28 +183,6 @@ class ConditionedTrace(BroadcastingTrace):
             kwargs['value'] = kwargs['value'].to(device=tensors[0].device)
         return super(ConditionedTrace, self).variable(Dist, *args, **kwargs)
 
-    def log_joint(self, *args, normalize_guide=False, **kwargs):
-        generative_joint = super(ConditionedTrace, self).log_joint(*args, **kwargs)
-        if isinstance(generative_joint, torch.Tensor):
-            device = generative_joint.device
-        elif len(self):
-            device = self[list(self.variables())[0]].value.device
-        else:
-            device = 'cpu'
-        if normalize_guide and self.guide:
-            all_nodes = kwargs.get('nodes', None) or self.keys()
-            guided_nodes = [node for node in all_nodes
-                            if self.guided(node) is not None and
-                            self.observed(node) is None]
-            guide_joint = self._guide.log_joint(
-                *args, nodes=guided_nodes,
-                reparameterized=kwargs.get('reparameterized', True)
-            )
-        else:
-            guide_joint = torch.zeros(self.batch_shape).to(device)
-
-        return generative_joint - guide_joint
-
 class Model(nn.Module):
     def __init__(self, f, trainable={}, hyper={}):
         super(Model, self).__init__()
