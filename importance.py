@@ -17,17 +17,20 @@ class ImportanceTrace(combinators.ConditionedTrace):
         return self.variables()
 
     def log_proper_weight(self):
-        # Iterate over random variables in the order the trace sampled them,
-        # which we'll take to approximate conditioning order
-        weight = torch.zeros(self.batch_shape)
-        for rv in self.keys():
-            log_conditional = self.log_joint(nodes=[rv], normalize_guide=True,
-                                             reparameterized=False)
-            if rv in self.weighting_variables:
-                log_conditional = log_mean_exp(log_conditional + weight)
-            weight = log_conditional + weight
+        nodes = list(self.weighting_variables)
+        latents = [rv for rv in nodes if rv in self.latents]
+        priors = [rv for rv in latents if self.guided(rv) is None]
+        guided = [rv for rv in latents if self.guided(rv) is not None]
 
-        return weight
+        generative_joint = self.log_joint(nodes=nodes, reparameterized=False)
+        prior_joint = self.log_joint(nodes=priors, reparameterized=False)
+        guide_joint = self.guide.log_joint(nodes=guided, reparameterized=False)\
+                      if self.guide is not None else 0.0
+
+        log_weight = generative_joint - (prior_joint + guide_joint)
+        if not isinstance(log_weight, torch.Tensor):
+            return torch.zeros(self.batch_shape).to(self.device)
+        return log_weight
 
 class ImportanceSampler(combinators.Model):
     def __init__(self, model, proposal=None, trainable={}, hyper={}):
