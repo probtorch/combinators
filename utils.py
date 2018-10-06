@@ -3,11 +3,28 @@
 import collections
 import flatdict
 
+import matplotlib.pyplot as plt
 import probtorch
 import torch
 import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
+
+def plot_evidence_bounds(bounds, lower=True, figsize=(10, 10)):
+    epochs = range(len(bounds))
+    bound_name = '-ELBO' if lower else 'EUBO'
+
+    free_energy_fig = plt.figure(figsize=figsize)
+
+    plt.plot(epochs, bounds, 'b-', label='Data')
+    plt.legend()
+
+    free_energy_fig.tight_layout()
+    plt.title('%s over training' % bound_name)
+    free_energy_fig.axes[0].set_xlabel('Epoch')
+    free_energy_fig.axes[0].set_ylabel('%s (nats)' % bound_name)
+
+    plt.show()
 
 def batch_expand(tensor, shape):
     tensor = tensor.expand(shape[-1], *tensor.shape)
