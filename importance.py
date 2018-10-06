@@ -40,14 +40,6 @@ class ImportanceSampler(combinators.Model):
         super(ImportanceSampler, self).__init__(model, trainable, hyper)
         self._proposal = proposal
 
-    @property
-    def importance_observations(self):
-        return set(self.trace.observations)
-
-    @property
-    def importance_latents(self):
-        return set(self.trace.latents)
-
     def forward(self, *args, **kwargs):
         kwargs['separate_traces'] = True
         if self.parent:
