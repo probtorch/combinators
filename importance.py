@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import collections
+import logging
 
 import probtorch
 from probtorch.stochastic import RandomVariable
@@ -174,3 +175,33 @@ class ImportanceResampler(ImportanceSampler):
                     results[i] = var.index_select(0, ancestor_indices)
             results = tuple(results)
         return results
+
+def variational_importance(num_particles, sampler, num_iterations, data,
+                           use_cuda=True, lr=1e-6, inclusive_kl=False):
+    optimizer = torch.optim.Adam(list(sampler.proposal.parameters()), lr=lr)
+
+    sampler.train()
+    if torch.cuda.is_available() and use_cuda:
+        sampler.cuda()
+
+    for t in range(num_iterations):
+        optimizer.zero_grad()
+
+        sampler.simulate(trace=ResamplerTrace(num_particles, data=data),
+                         proposal_guides=not inclusive_kl,
+                         reparameterized=False)
+        inference = sampler.trace
+
+        bound = -inference.marginal_log_likelihood()
+        bound_name = 'EUBO' if inclusive_kl else 'ELBO'
+        signed_bound = bound if inclusive_kl else -bound
+        logging.info('Variational %s=%.8e at epoch %d', bound_name,
+                     signed_bound, t + 1)
+        bound.backward()
+        optimizer.step()
+
+    if torch.cuda.is_available() and use_cuda:
+        sampler.cpu()
+    sampler.eval()
+
+    return inference, sampler.proposal.args_vardict(inference.batch_shape)
