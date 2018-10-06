@@ -32,7 +32,6 @@ class SequentialMonteCarlo(combinators.Model):
 def variational_smc(num_particles, sampler, num_iterations, data,
                     use_cuda=True, lr=1e-6, inclusive_kl=False):
     optimizer = torch.optim.Adam(list(sampler.proposal.parameters()), lr=lr)
-    parameters = sampler.proposal.args_vardict(False).keys()
 
     sampler.train()
     if torch.cuda.is_available() and use_cuda:
@@ -46,12 +45,7 @@ def variational_smc(num_particles, sampler, num_iterations, data,
                          reparameterized=False)
         inference = sampler.trace
         if inclusive_kl:
-            # TODO: I still want to be able to approximate the posterior with
-            # respect to only those variables I'm actually training.
-            latents = [latent for latent in inference.latents
-                       if any([latent in param for param in parameters])]
-            eubo = inference.importance_weight(None, latents=latents)
-            eubo = -eubo.mean(dim=0)
+            eubo = -inference.marginal_log_likelihood()
             logging.info('Variational SMC EUBO=%.8e at epoch %d', eubo, t + 1)
             eubo.backward()
         else:
