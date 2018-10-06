@@ -29,12 +29,6 @@ class SequentialMonteCarlo(combinators.Model):
         self.resampled_step = resampled_step
         self.initializer = initializer
 
-    def importance_weight(self):
-        return self.resampled_step.importance_weight()
-
-    def marginal_log_likelihood(self):
-        return self.resampled_step.marginal_log_likelihood()
-
 def variational_smc(num_particles, sampler, num_iterations, data,
                     use_cuda=True, lr=1e-6, inclusive_kl=False):
     optimizer = torch.optim.Adam(list(sampler.proposal.parameters()), lr=lr)
