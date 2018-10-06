@@ -129,6 +129,12 @@ class ResamplerTrace(combinators.ConditionedTrace):
     def saved_log_weights(self):
         return self._saved_log_weights
 
+    @property
+    def weighting_variables(self):
+        for observation in self.observations:
+            if observation not in self.ancestor:
+                yield observation
+
     def save_importance_weight(self, observations=None, latents=None):
         log_weights = self.importance_weight(observations, latents)
         self._saved_log_weights.append(log_weights)
