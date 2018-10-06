@@ -32,6 +32,9 @@ class ImportanceTrace(combinators.ConditionedTrace):
             return torch.zeros(self.batch_shape).to(self.device)
         return log_weight
 
+    def marginal_log_likelihood(self):
+        return log_mean_exp(self.log_proper_weight())
+
 class ImportanceSampler(combinators.Model):
     def __init__(self, model, proposal=None, trainable={}, hyper={}):
         super(ImportanceSampler, self).__init__(model, trainable, hyper)
