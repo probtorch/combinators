@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import collections
+import logging
 
 import probtorch
 from probtorch.stochastic import RandomVariable
@@ -11,18 +12,34 @@ from torch.nn.functional import log_softmax
 import combinators
 import utils
 
+class ImportanceTrace(combinators.ConditionedTrace):
+    @property
+    def weighting_variables(self):
+        return self.variables()
+
+    def log_proper_weight(self):
+        nodes = list(self.weighting_variables)
+        latents = [rv for rv in nodes if rv in self.latents]
+        priors = [rv for rv in latents if self.guided(rv) is None]
+        guided = [rv for rv in latents if self.guided(rv) is not None]
+
+        generative_joint = self.log_joint(nodes=nodes, reparameterized=False)
+        prior_joint = self.log_joint(nodes=priors, reparameterized=False)
+        guide_joint = self.guide.log_joint(nodes=guided, reparameterized=False)\
+                      if self.guide is not None else 0.0
+
+        log_weight = generative_joint - (prior_joint + guide_joint)
+        if not isinstance(log_weight, torch.Tensor):
+            return torch.zeros(self.batch_shape).to(self.device)
+        return log_weight
+
+    def marginal_log_likelihood(self):
+        return log_mean_exp(self.log_proper_weight())
+
 class ImportanceSampler(combinators.Model):
     def __init__(self, model, proposal=None, trainable={}, hyper={}):
         super(ImportanceSampler, self).__init__(model, trainable, hyper)
         self._proposal = proposal
-
-    @property
-    def importance_observations(self):
-        return set(self.trace.observations)
-
-    @property
-    def importance_latents(self):
-        return set(self.trace.latents)
 
     def forward(self, *args, **kwargs):
         kwargs['separate_traces'] = True
@@ -63,9 +80,9 @@ class ImportanceSampler(combinators.Model):
         return self._proposal
 
     def marginal_log_likelihood(self):
-        return log_mean_exp(self.importance_weight(), dim=0)
+        return log_mean_exp(self.log_proper_weight(), dim=0)
 
-class ResamplerTrace(combinators.ConditionedTrace):
+class ResamplerTrace(ImportanceTrace):
     def __init__(self, num_particles=1, guide=None, data=None, ancestor=None,
                  log_weights=None):
         if ancestor is not None:
@@ -75,24 +92,19 @@ class ResamplerTrace(combinators.ConditionedTrace):
         super(ResamplerTrace, self).__init__(num_particles, guide=guide,
                                              data=data)
         self._ancestor = ancestor
-        self._saved_log_weights = []
 
         if log_weights is not None:
-            self._log_weights = log_weights
             normalized_weights = log_softmax(log_weights, dim=0)
             resampler = torch.distributions.Categorical(logits=normalized_weights)
             ancestor_indices = resampler.sample((self.num_particles,))
         else:
-            self._log_weights = None
             ancestor_indices = None
         if isinstance(ancestor_indices, torch.Tensor):
             self._ancestor_indices = ancestor_indices
         else:
             self._ancestor_indices = torch.arange(self.num_particles,
                                                   dtype=torch.long)
-        self._fresh_variables = set()
         if ancestor:
-            self._saved_log_weights = ancestor.saved_log_weights
             self._modules = ancestor._modules
             self._stack = ancestor._stack
             for i, key in enumerate(ancestor.variables()):
@@ -108,46 +120,36 @@ class ResamplerTrace(combinators.ConditionedTrace):
                 else:
                     self[i] = sample
 
-    def variable(self, Dist, *args, **kwargs):
-        if 'name' in kwargs:
-            self._fresh_variables.add(kwargs['name'])
-        return super(ResamplerTrace, self).variable(Dist, *args, **kwargs)
-
     @property
     def ancestor(self):
         return self._ancestor
 
     @property
-    def fresh_variables(self):
-        return self._fresh_variables
-
-    @property
     def ancestor_indices(self):
         return self._ancestor_indices
 
+    def is_inherited(self, variable):
+        return self.ancestor and variable in self.ancestor
+
     @property
-    def saved_log_weights(self):
-        return self._saved_log_weights
+    def weighting_variables(self):
+        return [node for node in super(ResamplerTrace, self).weighting_variables
+                if not self.is_inherited(node)]
 
-    def save_importance_weight(self, observations=None, latents=None):
-        log_weights = self.importance_weight(observations, latents)
-        self._saved_log_weights.append(log_weights)
-        self._fresh_variables = set()
-        return log_weights
-
-    def resample(self, observations=None, latents=None):
-        log_weights = self.importance_weight(observations, latents)
+    def resample(self):
+        log_weights = self.log_proper_weight()
         result = ResamplerTrace(self.num_particles, ancestor=self,
                                 log_weights=log_weights)
         return result, log_weights.index_select(0, result.ancestor_indices)
 
-    def effective_sample_size(self, observations=None, latents=None,
-                              save=False):
-        if save:
-            log_weights = self.save_importance_weight(observations, latents)
-        else:
-            log_weights = self.importance_weight(observations, latents)
-        return (log_weights*2).exp().sum(dim=0).pow(-1)
+    def effective_sample_size(self):
+        return (self.log_proper_weight()*2).exp().sum(dim=0).pow(-1)
+
+    def marginal_log_likelihood(self):
+        recent_weight = log_mean_exp(self.log_proper_weight(), dim=0)
+        if self.ancestor is not None:
+            return recent_weight + self.ancestor.marginal_log_likelihood()
+        return recent_weight
 
 class ImportanceResampler(ImportanceSampler):
     def __init__(self, model, proposal=None, trainable={}, hyper={},
@@ -159,11 +161,9 @@ class ImportanceResampler(ImportanceSampler):
 
     def forward(self, *args, **kwargs):
         results = super(ImportanceResampler, self).forward(*args, **kwargs)
-        observations = self.importance_observations
-        latents = self.importance_latents
-        ess = self.trace.effective_sample_size(observations, latents, True)
+        ess = self.trace.effective_sample_size()
         if ess < self.trace.num_particles / self._resample_factor:
-            resampled_trace, _ = self.trace.resample(observations, latents)
+            resampled_trace, _ = self.trace.resample()
             self.ancestor._condition_all(trace=resampled_trace)
 
             results = list(results)
@@ -175,3 +175,54 @@ class ImportanceResampler(ImportanceSampler):
                     results[i] = var.index_select(0, ancestor_indices)
             results = tuple(results)
         return results
+
+    @classmethod
+    def smc(cls, step_model, T, step_proposal=None, initializer=None,
+            resample_factor=2):
+        resampled_step = cls(step_model, step_proposal,
+                             resample_factor=resample_factor)
+        step_sequence = combinators.Model.sequence(resampled_step, T)
+        if initializer:
+            return combinators.Model.compose(step_sequence, initializer,
+                                             intermediate_name='initializer')
+        else:
+            return step_sequence
+
+def variational_importance(num_particles, sampler, num_iterations, data,
+                           use_cuda=True, lr=1e-6, inclusive_kl=False,
+                           patience=50):
+    optimizer = torch.optim.Adam(list(sampler.proposal.parameters()), lr=lr)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, factor=0.5, min_lr=1e-6, patience=patience, verbose=True,
+        mode='min' if inclusive_kl else 'max',
+    )
+
+    sampler.train()
+    if torch.cuda.is_available() and use_cuda:
+        sampler.cuda()
+
+    bounds = list(range(num_iterations))
+    for t in range(num_iterations):
+        optimizer.zero_grad()
+
+        sampler.simulate(trace=ResamplerTrace(num_particles, data=data),
+                         proposal_guides=not inclusive_kl,
+                         reparameterized=False)
+        inference = sampler.trace
+
+        bound = -inference.marginal_log_likelihood()
+        bound_name = 'EUBO' if inclusive_kl else 'ELBO'
+        signed_bound = bound if inclusive_kl else -bound
+        logging.info('%s=%.8e at epoch %d', bound_name, signed_bound, t + 1)
+        bound.backward()
+        optimizer.step()
+        bounds[t] = bound if inclusive_kl else -bound
+        scheduler.step(bounds[t])
+
+    if torch.cuda.is_available() and use_cuda:
+        sampler.cpu()
+    sampler.eval()
+
+    trained_params = sampler.proposal.args_vardict(inference.batch_shape)
+
+    return inference, trained_params, bounds
