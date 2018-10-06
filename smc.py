@@ -1,17 +1,7 @@
 #!/usr/bin/env python3
 
-import collections
-import logging
-
-import numpy as np
-import probtorch
-from probtorch.util import log_mean_exp
-import torch
-
 import combinators
-from combinators import BroadcastingTrace
 import importance
-from importance import ResamplerTrace
 
 class SequentialMonteCarlo(combinators.Model):
     def __init__(self, step_model, T, step_proposal=None,
@@ -28,33 +18,3 @@ class SequentialMonteCarlo(combinators.Model):
         super(SequentialMonteCarlo, self).__init__(model)
         self.resampled_step = resampled_step
         self.initializer = initializer
-
-def variational_smc(num_particles, sampler, num_iterations, data,
-                    use_cuda=True, lr=1e-6, inclusive_kl=False):
-    optimizer = torch.optim.Adam(list(sampler.proposal.parameters()), lr=lr)
-
-    sampler.train()
-    if torch.cuda.is_available() and use_cuda:
-        sampler.cuda()
-
-    for t in range(num_iterations):
-        optimizer.zero_grad()
-
-        sampler.simulate(trace=ResamplerTrace(num_particles, data=data),
-                         proposal_guides=not inclusive_kl,
-                         reparameterized=False)
-        inference = sampler.trace
-
-        bound = -inference.marginal_log_likelihood()
-        bound_name = 'EUBO' if inclusive_kl else 'ELBO'
-        signed_bound = bound if inclusive_kl else -bound
-        logging.info('Variational SMC %s=%.8e at epoch %d', bound_name,
-                     signed_bound, t + 1)
-        bound.backward()
-        optimizer.step()
-
-    if torch.cuda.is_available() and use_cuda:
-        sampler.cpu()
-    sampler.eval()
-
-    return inference, sampler.proposal.args_vardict(inference.batch_shape)
