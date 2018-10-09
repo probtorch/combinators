@@ -196,8 +196,7 @@ def variational_importance(num_particles, sampler, num_iterations, data,
         optimizer.zero_grad()
 
         sampler.simulate(trace=ResamplerTrace(num_particles, data=data),
-                         proposal_guides=not inclusive_kl,
-                         reparameterized=False)
+                         proposal_guides=not inclusive_kl)
         inference = sampler.trace
 
         bound = -inference.marginal_log_likelihood()
