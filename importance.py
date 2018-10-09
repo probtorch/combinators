@@ -79,9 +79,6 @@ class ImportanceSampler(combinators.Model):
     def proposal(self):
         return self._proposal
 
-    def marginal_log_likelihood(self):
-        return log_mean_exp(self.log_proper_weight(), dim=0)
-
 class ResamplerTrace(ImportanceTrace):
     def __init__(self, num_particles=1, guide=None, data=None, ancestor=None,
                  log_weights=None):
