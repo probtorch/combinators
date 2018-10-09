@@ -28,7 +28,6 @@ class IndependentMH(combinators.Model):
         for i in range(self._num_iterations):
             self._proposal.simulate(
                 trace=ResamplerTrace(ancestor=original_trace),
-                reparameterized=False
             )
             kwargs['trace'] = ResamplerTrace(original_trace.num_particles,
                                              guide=self._proposal.trace,

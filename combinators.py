@@ -135,6 +135,20 @@ class BroadcastingTrace(probtorch.stochastic.Trace):
                 if not self.is_observed(rv) and\
                 self.have_annotation(self._modules.keys(), rv)]
 
+    @property
+    def weighting_variables(self):
+        return self.variables()
+
+    def log_proper_weight(self):
+        nodes = list(self.weighting_variables)
+        log_weight = self.log_joint(nodes=nodes, reparameterized=False)
+        if not isinstance(log_weight, torch.Tensor):
+            return torch.zeros(self.batch_shape).to(self.device)
+        return log_weight
+
+    def marginal_log_likelihood(self):
+        return log_mean_exp(self.log_proper_weight())
+
 class ConditionedTrace(BroadcastingTrace):
     def __init__(self, num_particles=1, guide=None, data=None):
         super(ConditionedTrace, self).__init__(num_particles)
@@ -330,7 +344,6 @@ class Model(nn.Module):
     def simulate(self, *args, **kwargs):
         if 'trace' not in kwargs:
             kwargs['trace'] = BroadcastingTrace()
-        reparameterized = kwargs.pop('reparameterized', True)
 
         result = self.forward(*args, **kwargs)
-        return self.trace.log_joint(reparameterized=reparameterized), result
+        return self.trace.log_proper_weight(), result

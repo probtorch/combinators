@@ -13,10 +13,6 @@ import combinators
 import utils
 
 class ImportanceTrace(combinators.ConditionedTrace):
-    @property
-    def weighting_variables(self):
-        return self.variables()
-
     def log_proper_weight(self):
         nodes = list(self.weighting_variables)
         latents = [rv for rv in nodes if rv in self.latents]
@@ -32,9 +28,6 @@ class ImportanceTrace(combinators.ConditionedTrace):
         if not isinstance(log_weight, torch.Tensor):
             return torch.zeros(self.batch_shape).to(self.device)
         return log_weight
-
-    def marginal_log_likelihood(self):
-        return log_mean_exp(self.log_proper_weight())
 
 class ImportanceSampler(combinators.Model):
     def __init__(self, model, proposal=None, trainable={}, hyper={}):
@@ -78,9 +71,6 @@ class ImportanceSampler(combinators.Model):
     @property
     def proposal(self):
         return self._proposal
-
-    def marginal_log_likelihood(self):
-        return log_mean_exp(self.log_proper_weight(), dim=0)
 
 class ResamplerTrace(ImportanceTrace):
     def __init__(self, num_particles=1, guide=None, data=None, ancestor=None,
@@ -206,8 +196,7 @@ def variational_importance(num_particles, sampler, num_iterations, data,
         optimizer.zero_grad()
 
         sampler.simulate(trace=ResamplerTrace(num_particles, data=data),
-                         proposal_guides=not inclusive_kl,
-                         reparameterized=False)
+                         proposal_guides=not inclusive_kl)
         inference = sampler.trace
 
         bound = -inference.marginal_log_likelihood()
