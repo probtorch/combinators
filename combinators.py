@@ -216,10 +216,6 @@ class Model(nn.Module):
         self.register_args(hyper, False)
 
     @classmethod
-    def map_iid(cls, func, items, **kwargs):
-        return cls(lambda **kws: [func(item, **kws, **kwargs) for item in items])
-
-    @classmethod
     def reduce(cls, func, items, initializer=None, **kwargs):
         def wrapper(*args, items=items, initializer=initializer, **kws):
             return functools.reduce(
@@ -333,3 +329,14 @@ class Partial(Model):
     def _forward(self, *args, **kwargs):
         kwargs = {**kwargs, **self._curry_kwargs}
         return self._curried(*self._curry_arguments, *args, **kwargs)
+
+class MapIid(Model):
+    def __init__(self, func, items, **kwargs):
+        super(MapIid, self).__init__(self._forward)
+        self.add_module('_map_func', func)
+        self._map_items = items
+        self._map_kwargs = kwargs
+
+    def _forward(self, *args, **kwargs):
+        return [self._map_func(item, **kwargs, **self._map_kwargs)
+                for item in self._map_items]
