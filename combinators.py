@@ -216,18 +216,6 @@ class Model(nn.Module):
         self.register_args(hyper, False)
 
     @classmethod
-    def reduce(cls, func, items, initializer=None, **kwargs):
-        def wrapper(*args, items=items, initializer=initializer, **kws):
-            return functools.reduce(
-                functools.partial(func, *args, **kws, **kwargs), items,
-                initializer
-            )
-        result = cls(wrapper)
-        if isinstance(func, Model):
-            result.add_module(func.name, func)
-        return result
-
-    @classmethod
     def sequence(cls, step, T, *args, **kwargs):
         return cls.reduce(step, range(T), initializer=args, **kwargs)
 
@@ -340,3 +328,18 @@ class MapIid(Model):
     def _forward(self, *args, **kwargs):
         return [self._map_func(item, **kwargs, **self._map_kwargs)
                 for item in self._map_items]
+
+class Reduce(Model):
+    def __init__(self, func, items, initializer=None, **kwargs):
+        super(Reduce, self).__init__(self._forward)
+        self.add_module('_associative', func)
+        self._items = items
+        self._initializer = initializer
+        self._associative_kwargs = kwargs
+
+    def _forward(self, *args, **kwargs):
+        accumulator = self._initializer
+        for item in self._items:
+            accumulator = self._associative(accumulator, item, *args, **kwargs,
+                                            **self._associative_kwargs)
+        return accumulator
