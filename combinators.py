@@ -333,12 +333,15 @@ class Reduce(Model):
     def __init__(self, func, items, initializer=None, **kwargs):
         super(Reduce, self).__init__(self._forward)
         self.add_module('_associative', func)
+        self.add_module('_initializer', initializer)
         self._items = items
-        self._initializer = initializer
         self._associative_kwargs = kwargs
 
     def _forward(self, *args, **kwargs):
-        accumulator = self._initializer
+        if self._initializer is not None:
+            accumulator = self._initializer()
+        else:
+            accumulator = None
         for item in self._items:
             accumulator = self._associative(accumulator, item, *args, **kwargs,
                                             **self._associative_kwargs)
