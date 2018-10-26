@@ -22,24 +22,6 @@ def init_hmm(this=None):
                     this=this)
     return z0, mu, sigma, pi, pi0
 
-def forward_filter_hmm(mu, sigma, pi, pi0):
-    transition = lambda prev, current: torch.log(pi[:, prev, current])
-    observation_dists = [Normal(mu[:, state], softplus(sigma[:, state]))
-                         for state in range(pi.shape[1])]
-    return filtering.ForwardMessenger(hmm_step, 'Z_%d', 'X_%d', transition,
-                                      observation_dists,
-                                      initial_marginals=('init_hmm',
-                                                         torch.log(pi0)))
-
-def forward_backward_filter_hmm(mu, sigma, pi, pi0):
-    transition = lambda prev, current: torch.log(pi[:, prev, current])
-    observation_dists = [Normal(mu[:, state], softplus(sigma[:, state]))
-                         for state in range(pi.shape[1])]
-    return filtering.ForwardBackwardMessenger(
-        hmm_step, 'Z_%d', 'X_%d', transition, observation_dists,
-        initial_marginals=('init_hmm', torch.log(pi0))
-    )
-
 def hmm_step(theta, t, this=None):
     z_prev, mu, sigma, pi, pi0 = theta
     t += 1

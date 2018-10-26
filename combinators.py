@@ -215,69 +215,6 @@ class Model(nn.Module):
         self.register_args(trainable, True)
         self.register_args(hyper, False)
 
-    @classmethod
-    def _bind(cls, outer, inner, intermediate_name=None):
-        def result(*args, **kwargs):
-            this = kwargs['this']
-            temp = inner(*args, **kwargs)
-            if intermediate_name:
-                kws = {'this': this, intermediate_name: temp}
-                return outer(**kws)
-            return outer(*temp, this=this) if isinstance(temp, tuple) else\
-                   outer(temp, this=this)
-        return result
-
-    @classmethod
-    def compose(cls, outer, inner, name=None, intermediate_name=None):
-        result = cls._bind(outer, inner, intermediate_name)
-        if name is not None:
-            result.__name__ = name
-        result = cls(result)
-
-        for (i, element) in enumerate([inner, outer]):
-            if isinstance(element, nn.Module):
-                elt_name = element._function.__name__\
-                           if isinstance(element, cls) else 'element%d' % i
-                result.add_module(elt_name, element)
-
-        return result
-
-    @classmethod
-    def partial(cls, func, *arguments, **keywords):
-        def wrapper(*args, **kwargs):
-            kwargs = {**kwargs, **keywords}
-            return func(*arguments, *args, **kwargs)
-        result = cls(wrapper)
-        if isinstance(func, Model):
-            result.add_module(func.name, func)
-        for arg in arguments:
-            if isinstance(arg, cls):
-                result.add_module(arg.name, arg)
-        for k, v in keywords.items():
-            if isinstance(v, cls):
-                result.add_module(k, v)
-        return result
-
-    @classmethod
-    def map_iid(cls, func, items, **kwargs):
-        return cls(lambda **kws: [func(item, **kws, **kwargs) for item in items])
-
-    @classmethod
-    def reduce(cls, func, items, initializer=None, **kwargs):
-        def wrapper(*args, items=items, initializer=initializer, **kws):
-            return functools.reduce(
-                functools.partial(func, *args, **kws, **kwargs), items,
-                initializer
-            )
-        result = cls(wrapper)
-        if isinstance(func, Model):
-            result.add_module(func.name, func)
-        return result
-
-    @classmethod
-    def sequence(cls, step, T, *args, **kwargs):
-        return cls.reduce(step, range(T), initializer=args, **kwargs)
-
     @property
     def name(self):
         return self._function.__name__
@@ -347,3 +284,65 @@ class Model(nn.Module):
 
         result = self.forward(*args, **kwargs)
         return self.trace.log_proper_weight(), result
+
+class Composition(Model):
+    def __init__(self, outer, inner, name=None, intermediate_name=None):
+        super(Composition, self).__init__(self._forward)
+        self.add_module('_outer', outer)
+        self.add_module('_inner', inner)
+        if name is not None:
+            self.__name__ = name
+        self._intermediate = intermediate_name
+
+    def _forward(self, *args, **kwargs):
+        this = kwargs['this']
+        temp = self._inner(*args, **kwargs)
+        if self._intermediate:
+            kws = {'this': this, self._intermediate: temp}
+            return self._outer(**kws)
+        return self._outer(*temp, this=this) if isinstance(temp, tuple) else\
+               self._outer(temp, this=this)
+
+class Partial(Model):
+    def __init__(self, func, *arguments, **keywords):
+        super(Partial, self).__init__(self._forward)
+        self.add_module('_curried', func)
+        self._curry_arguments = arguments
+        self._curry_kwargs = keywords
+
+    def _forward(self, *args, **kwargs):
+        kwargs = {**kwargs, **self._curry_kwargs}
+        return self._curried(*self._curry_arguments, *args, **kwargs)
+
+class MapIid(Model):
+    def __init__(self, func, items, **kwargs):
+        super(MapIid, self).__init__(self._forward)
+        self.add_module('_map_func', func)
+        self._map_items = items
+        self._map_kwargs = kwargs
+
+    def _forward(self, *args, **kwargs):
+        return [self._map_func(item, **kwargs, **self._map_kwargs)
+                for item in self._map_items]
+
+class Reduce(Model):
+    def __init__(self, func, items, initializer=None, **kwargs):
+        super(Reduce, self).__init__(self._forward)
+        self.add_module('_associative', func)
+        self.add_module('_initializer', initializer)
+        self._items = items
+        self._associative_kwargs = kwargs
+
+    def _forward(self, *args, **kwargs):
+        if self._initializer is not None:
+            accumulator = self._initializer()
+        else:
+            accumulator = None
+        for item in self._items:
+            accumulator = self._associative(accumulator, item, *args, **kwargs,
+                                            **self._associative_kwargs)
+        return accumulator
+
+    @classmethod
+    def sequence(cls, step, T, **kwargs):
+        return cls(step, range(T), **kwargs)
