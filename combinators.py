@@ -216,33 +216,6 @@ class Model(nn.Module):
         self.register_args(hyper, False)
 
     @classmethod
-    def _bind(cls, outer, inner, intermediate_name=None):
-        def result(*args, **kwargs):
-            this = kwargs['this']
-            temp = inner(*args, **kwargs)
-            if intermediate_name:
-                kws = {'this': this, intermediate_name: temp}
-                return outer(**kws)
-            return outer(*temp, this=this) if isinstance(temp, tuple) else\
-                   outer(temp, this=this)
-        return result
-
-    @classmethod
-    def compose(cls, outer, inner, name=None, intermediate_name=None):
-        result = cls._bind(outer, inner, intermediate_name)
-        if name is not None:
-            result.__name__ = name
-        result = cls(result)
-
-        for (i, element) in enumerate([inner, outer]):
-            if isinstance(element, nn.Module):
-                elt_name = element._function.__name__\
-                           if isinstance(element, cls) else 'element%d' % i
-                result.add_module(elt_name, element)
-
-        return result
-
-    @classmethod
     def partial(cls, func, *arguments, **keywords):
         def wrapper(*args, **kwargs):
             kwargs = {**kwargs, **keywords}
@@ -347,3 +320,21 @@ class Model(nn.Module):
 
         result = self.forward(*args, **kwargs)
         return self.trace.log_proper_weight(), result
+
+class Composition(Model):
+    def __init__(self, outer, inner, name=None, intermediate_name=None):
+        super(Composition, self).__init__(self._forward)
+        self.add_module('_outer', outer)
+        self.add_module('_inner', inner)
+        if name is not None:
+            self.__name__ = name
+        self._intermediate = intermediate_name
+
+    def _forward(self, *args, **kwargs):
+        this = kwargs['this']
+        temp = self._inner(*args, **kwargs)
+        if self._intermediate:
+            kws = {'this': this, self._intermediate: temp}
+            return self._outer(**kws)
+        return self._outer(*temp, this=this) if isinstance(temp, tuple) else\
+               self._outer(temp, this=this)
