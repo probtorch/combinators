@@ -215,10 +215,6 @@ class Model(nn.Module):
         self.register_args(trainable, True)
         self.register_args(hyper, False)
 
-    @classmethod
-    def sequence(cls, step, T, *args, **kwargs):
-        return cls.reduce(step, range(T), initializer=args, **kwargs)
-
     @property
     def name(self):
         return self._function.__name__
@@ -346,3 +342,7 @@ class Reduce(Model):
             accumulator = self._associative(accumulator, item, *args, **kwargs,
                                             **self._associative_kwargs)
         return accumulator
+
+    @classmethod
+    def sequence(cls, step, T, **kwargs):
+        return cls(step, range(T), **kwargs)
