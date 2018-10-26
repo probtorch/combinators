@@ -216,22 +216,6 @@ class Model(nn.Module):
         self.register_args(hyper, False)
 
     @classmethod
-    def partial(cls, func, *arguments, **keywords):
-        def wrapper(*args, **kwargs):
-            kwargs = {**kwargs, **keywords}
-            return func(*arguments, *args, **kwargs)
-        result = cls(wrapper)
-        if isinstance(func, Model):
-            result.add_module(func.name, func)
-        for arg in arguments:
-            if isinstance(arg, cls):
-                result.add_module(arg.name, arg)
-        for k, v in keywords.items():
-            if isinstance(v, cls):
-                result.add_module(k, v)
-        return result
-
-    @classmethod
     def map_iid(cls, func, items, **kwargs):
         return cls(lambda **kws: [func(item, **kws, **kwargs) for item in items])
 
@@ -338,3 +322,14 @@ class Composition(Model):
             return self._outer(**kws)
         return self._outer(*temp, this=this) if isinstance(temp, tuple) else\
                self._outer(temp, this=this)
+
+class Partial(Model):
+    def __init__(self, func, *arguments, **keywords):
+        super(Partial, self).__init__(self._forward)
+        self.add_module('_curried', func)
+        self._curry_arguments = arguments
+        self._curry_kwargs = keywords
+
+    def _forward(self, *args, **kwargs):
+        kwargs = {**kwargs, **self._curry_kwargs}
+        return self._curried(*self._curry_arguments, *args, **kwargs)
