@@ -2,6 +2,7 @@
 
 import probtorch
 import torch
+from torch.distributions import Normal
 from torch.nn.functional import softplus
 
 import combinators
@@ -15,13 +16,13 @@ def init_ssm(this=None):
     z0 = this.trace.normal(mu, softplus(sigma), name='Z_0')
     return z0, mu, sigma, delta
 
-def ssm_step(theta, t, this=None):
+def ssm_step(theta, t, trace=None):
     z_prev, mu, sigma, delta = theta
     t += 1
-    z_current = this.trace.normal(z_prev + delta, softplus(sigma),
-                                  name='Z_%d' % t)
-    this.trace.normal(
-        z_current, torch.ones(*z_current.shape, device=z_current.device),
-        name='X_%d' % t,
+    z_current = trace.sample(Normal, z_prev + delta, softplus(sigma),
+                             name='Z_%d' % t)
+    trace.sample(
+        Normal, z_current,
+        torch.ones(*z_current.shape, device=z_current.device), name='X_%d' % t,
     )
     return z_current, mu, sigma, delta
