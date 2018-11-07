@@ -111,3 +111,12 @@ class HierarchicalTrace(MutableMapping):
 
     def normalized_log_weight(self):
         return self.log_weight() - self.marginal_log_likelihood()
+
+    def effective_sample_size(self):
+        return (self.log_weight()*2).exp().sum(dim=0).pow(-1)
+
+    def map(self, f):
+        result = HierarchicalTrace(proposal=self._proposal)
+        for var in self:
+            result[var] = f(var, self[var])
+        return result
