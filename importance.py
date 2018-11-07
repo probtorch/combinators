@@ -33,7 +33,7 @@ class PopulationResampler(combinators.Population):
         trace_resampler = lambda rv: index_select_rv(rv, 0, ancestor_indices)
         return tuple(results), trace.map(trace_resampler)
 
-def variational_importance(num_particles, sampler, num_iterations, data,
+def variational_importance(sampler, num_iterations, data,
                            use_cuda=True, lr=1e-6, inclusive_kl=False,
                            patience=50):
     optimizer = torch.optim.Adam(list(sampler.parameters()), lr=lr)
@@ -50,9 +50,7 @@ def variational_importance(num_particles, sampler, num_iterations, data,
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        sampler.simulate(trace=ResamplerTrace(num_particles, data=data),
-                         proposal_guides=not inclusive_kl)
-        inference = sampler.trace
+        _, inference = sampler.simulate()
 
         bound = -inference.marginal_log_likelihood()
         bound_name = 'EUBO' if inclusive_kl else 'ELBO'
@@ -67,6 +65,6 @@ def variational_importance(num_particles, sampler, num_iterations, data,
         sampler.cpu()
     sampler.eval()
 
-    trained_params = sampler.proposal.args_vardict(inference.batch_shape)
+    trained_params = sampler.args_vardict()
 
     return inference, trained_params, bounds
