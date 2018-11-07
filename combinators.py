@@ -232,3 +232,23 @@ class Population(InferenceSampler):
         if not self.before:
             results = self._expand_args(*results)
         return results, trace
+
+class HyperPopulation(PrimitiveCall):
+    def __init__(self, primitive, particle_shape, name=None, trainable={},
+                 hyper={}):
+        super(HyperPopulation, self).__init__(primitive, name, trainable, hyper)
+        self._particle_shape = particle_shape
+
+    @property
+    def particle_shape(self):
+        return self._particle_shape
+
+    @property
+    def name(self):
+        formats = (super(HyperPopulation, self).name, self.particle_shape)
+        return 'HyperPopulation(%s, %s)' % formats
+
+    def args_vardict(self):
+        original = super(HyperPopulation, self).args_vardict()
+        expander = lambda v: utils.batch_expand(v, self.particle_shape)
+        return utils.vardict_map(original, expander)
