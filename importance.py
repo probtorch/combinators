@@ -38,9 +38,8 @@ def smc(stepwise, particle_shape, step_generator, initializer=None):
     resampler = PopulationResampler(stepwise, particle_shape)
     return combinators.Reduce(resampler, step_generator, initializer)
 
-def variational_importance(sampler, num_iterations, data,
-                           use_cuda=True, lr=1e-6, inclusive_kl=False,
-                           patience=50):
+def variational_importance(sampler, num_iterations, data, use_cuda=True,
+                           lr=1e-6, inclusive_kl=False, patience=50):
     optimizer = torch.optim.Adam(list(sampler.parameters()), lr=lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, factor=0.5, min_lr=1e-6, patience=patience, verbose=True,
@@ -55,7 +54,7 @@ def variational_importance(sampler, num_iterations, data,
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        lookup = lambda name, dist: data[name]
+        lookup = lambda name, dist: data.get(name, None)
         trace = trace_tries.HierarchicalTrace(observations=lookup)
         _, inference = sampler.simulate(trace=trace)
 
