@@ -34,6 +34,7 @@ class ModelSampler(Sampler):
 
 class PrimitiveCall(ModelSampler):
     def __init__(self, primitive, name=None, trainable={}, hyper={}):
+        super(PrimitiveCall, self).__init__()
         self.register_args(trainable, True)
         self.register_args(hyper, False)
         assert not isinstance(primitive, Sampler)
@@ -66,6 +67,7 @@ class PrimitiveCall(ModelSampler):
 
 class InferenceSampler(Sampler):
     def __init__(self, sampler):
+        super(InferenceSampler, self).__init__()
         assert isinstance(sampler, Sampler)
         self.add_module('sampler', sampler)
 
@@ -157,7 +159,7 @@ class MapIid(ModelSampler):
 
 class Reduce(ModelSampler):
     def __init__(self, func, generator, initializer=None, **kwargs):
-        super(Reduce, self).__init__(self._forward)
+        super(Reduce, self).__init__()
         assert isinstance(func, Sampler)
         self.add_module('associative', func)
         if initializer is not None:
