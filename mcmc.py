@@ -9,11 +9,9 @@ from probtorch.util import log_mean_exp
 import torch
 
 import combinators
-from combinators import BroadcastingTrace
 import importance
-from importance import ResamplerTrace
 
-class IndependentMH(combinators.Model):
+class IndependentMH(combinators.InferenceSampler):
     def __init__(self, model, proposal, num_iterations=1, trainable={},
                  hyper={}):
         super(IndependentMH, self).__init__(model, trainable, hyper)
