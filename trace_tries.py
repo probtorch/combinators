@@ -6,7 +6,7 @@ import flatdict
 import torch
 
 from probtorch.stochastic import RandomVariable
-from probtorch.util import batch_sum, log_mean_exp
+from probtorch.util import log_mean_exp
 
 class Provision(Enum):
     SAMPLED = 0
@@ -102,15 +102,14 @@ class HierarchicalTrace(MutableMapping):
     def log_joint(self, nodes=None, reparameterized=True):
         if nodes is None:
             nodes = list(self.keys())
-        log_prob = torch.zeros(()).to(self.device)
+        log_prob = torch.zeros(1).to(self.device)
         for n in nodes:
             if n in self._trie:
                 node = self._trie[n]
                 if isinstance(node, RandomVariable) and reparameterized and\
                    not node.reparameterized:
                     raise ValueError('All random variables must be sampled by reparameterization.')
-                log_p = batch_sum(node.log_prob, None, None)
-                log_prob = log_prob + log_p
+                log_prob = log_prob + node.log_prob
         return log_prob
 
     def log_weight(self):
