@@ -156,7 +156,7 @@ class MapIid(ModelSampler):
         return self.iterate(kwargs.pop('trace', None), **kwargs)
 
 class Reduce(ModelSampler):
-    def __init__(self, func, items, initializer=None, **kwargs):
+    def __init__(self, func, generator, initializer=None, **kwargs):
         super(Reduce, self).__init__(self._forward)
         assert isinstance(func, Sampler)
         self.add_module('associative', func)
@@ -165,7 +165,7 @@ class Reduce(ModelSampler):
             self.add_module('initializer', initializer)
         else:
             self.initializer = None
-        self._items = items
+        self._generator = generator
         self._associative_kwargs = kwargs
 
     @property
@@ -177,7 +177,8 @@ class Reduce(ModelSampler):
             accumulator, kwargs['trace'] = self.initializer(**kwargs)
         else:
             accumulator = None
-        for item in self._items:
+        items = self._generator()
+        for item in items:
             accumulator, kwargs['trace'] = self.associative(
                 accumulator, item,
                 *args, **kwargs, **self._associative_kwargs
