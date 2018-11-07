@@ -32,17 +32,17 @@ def batch_expand(tensor, shape):
         return batch_expand(tensor, shape[:-1])
     return tensor
 
-def vardict_particle_index(vdict, indices):
+def vardict_map(vdict, func):
     result = vardict()
     for k, v in vdict.items():
-        result[k] = particle_index(v, indices)
+        result[k] = func(v)
     return result
 
+def vardict_particle_index(vdict, indices):
+    return vardict_map(vdict, lambda v: particle_index(v, indices))
+
 def vardict_index_select(vdict, indices, dim=0):
-    result = vardict()
-    for k, v in vdict.items():
-        result[k] = v.index_select(dim, indices)
-    return result
+    return vardict_map(vdict, lambda v: v.index_select(dim, indices))
 
 def counterfactual_log_joint(p, q, rvs):
     return sum([p[rv].dist.log_prob(q[rv].value.to(p[rv].value)) for rv in rvs
