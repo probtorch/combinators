@@ -10,6 +10,7 @@ import torch.distributions as dists
 from torch.nn.functional import log_softmax
 
 import combinators
+import trace_tries
 import utils
 
 def index_select_rv(rv, dim, indices):
@@ -50,7 +51,9 @@ def variational_importance(sampler, num_iterations, data,
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        _, inference = sampler.simulate()
+        lookup = lambda name, dist: data[name]
+        trace = trace_tries.HierarchicalTrace(observations=lookup)
+        _, inference = sampler.simulate(trace=trace)
 
         bound = -inference.marginal_log_likelihood()
         bound_name = 'EUBO' if inclusive_kl else 'ELBO'
