@@ -60,9 +60,16 @@ class PrimitiveCall(ModelSampler):
                 self.register_buffer(k, v)
 
     def args_vardict(self):
-        return utils.vardict(self.state_dict(keep_vars=True))
+        result = utils.vardict(self.state_dict(keep_vars=True))
+        # PyTorch BUG: Parameter's don't get counted as Tensors in Normal
+        for k, v in result.items():
+            result[k] = v.clone()
+        return result
 
     def _forward(self, *args, **kwargs):
+        params = self.args_vardict()
+        if len(params):
+            kwargs['params'] = params
         return self.primitive(*args, **kwargs)
 
 class InferenceSampler(Sampler):
