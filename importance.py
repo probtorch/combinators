@@ -31,7 +31,7 @@ class PopulationResampler(combinators.Population):
         resampler = dists.Categorical(logits=weights)
         ancestor_indices = resampler.sample(self.particle_shape)
         results = [val.index_select(0, ancestor_indices) for val in results]
-        trace_resampler = lambda rv: index_select_rv(rv, 0, ancestor_indices)
+        trace_resampler = lambda k, rv: index_select_rv(rv, 0, ancestor_indices)
         return tuple(results), trace.map(trace_resampler)
 
 def smc(stepwise, particle_shape, step_generator, initializer=None):
