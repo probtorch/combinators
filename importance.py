@@ -30,7 +30,7 @@ class PopulationResampler(combinators.Population):
 def variational_importance(num_particles, sampler, num_iterations, data,
                            use_cuda=True, lr=1e-6, inclusive_kl=False,
                            patience=50):
-    optimizer = torch.optim.Adam(list(sampler.proposal.parameters()), lr=lr)
+    optimizer = torch.optim.Adam(list(sampler.parameters()), lr=lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, factor=0.5, min_lr=1e-6, patience=patience, verbose=True,
         mode='min' if inclusive_kl else 'max',
