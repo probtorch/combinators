@@ -187,10 +187,6 @@ class Reduce(ModelSampler):
             )
         return accumulator
 
-    @classmethod
-    def sequence(cls, step, T, **kwargs):
-        return cls(step, range(T), **kwargs)
-
 class Population(InferenceSampler):
     def __init__(self, sampler, particle_shape, before=True):
         super(Population, self).__init__(sampler)
