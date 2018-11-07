@@ -11,250 +11,44 @@ from probtorch.util import log_mean_exp
 import torch
 import torch.nn as nn
 
+import trace_tries
 import utils
 
-class BroadcastingTrace(probtorch.stochastic.Trace):
-    def __init__(self, num_particles=1):
-        super(BroadcastingTrace, self).__init__()
-        self._modules = collections.defaultdict(lambda: {})
-        self._stack = []
-        self._particle_stack = [num_particles]
-
+class Sampler(nn.Module):
     @property
-    def device(self):
-        for v in self.variables():
-            return self[v].value.device
-        return 'cpu'
+    def name(self):
+        raise NotImplementedError()
 
-    @property
-    def batch_shape(self):
-        return tuple(self._particle_stack)
+    def simulate(self, *args, **kwargs):
+        result, trace = self.forward(*args, **kwargs)
+        return trace.log_proper_weight(), result
 
-    def push_batch(self, n):
-        self._particle_stack = [n] + self._particle_stack
+class ModelSampler(Sampler):
+    def forward(self, *args, **kwargs):
+        if 'trace' not in kwargs:
+            kwargs['trace'] = trace_tries.HierarchicalTrace()
+        return self._forward(*args, **kwargs)
 
-    def pop_batch(self):
-        result = self._particle_stack[1:]
-        self._particle_stack = result
-        return result
+    def _forward(self, *args, **kwargs):
+        raise NotImplementedError()
 
-    @property
-    def num_particles(self, i=-1):
-        if i >= 0:
-            return self._particle_stack[i]
-        return int(np.product(self._particle_stack))
-
-    def log_joint(self, *args, **kwargs):
-        return super(BroadcastingTrace, self).log_joint(*args, sample_dim=0,
-                                                        **kwargs)
-
-    def variable(self, Dist, *args, **kwargs):
-        to_shape = kwargs.pop('to', None)
-        args = [utils.batch_expand(arg, to_shape)
-                if isinstance(arg, torch.Tensor) and to_shape
-                else arg for arg in args]
-        kwargs = {k: utils.batch_expand(v, to_shape)
-                     if isinstance(v, torch.Tensor) and to_shape else v
-                  for k, v in kwargs.items()}
-        result = super(BroadcastingTrace, self).variable(Dist, *args, **kwargs)
-        if self._stack:
-            module_name = self._stack[-1]._function.__name__
-            self._modules[module_name][kwargs['name']] = {
-                'variable': self[kwargs['name']]
-            }
-        return result
-
-    def squeeze(self):
-        result = self.__class__()
-        result._modules = self._modules
-        result._stack = self._stack
-
-        for i, key in enumerate(self.variables()):
-            if key is not None:
-                rv = self[key]
-                result[key] = RandomVariable(rv.dist, rv.value.median(dim=0)[0],
-                                             rv.observed, rv.mask,
-                                             rv.reparameterized)
-            else:
-                rv = self[i]
-                result[i] = RandomVariable(rv.dist, rv.value.median(dim=0)[0],
-                                           rv.observed, rv.mask,
-                                           rv.reparameterized)
-
-        return result
-
-    def unwrap(self, predicate=lambda k, rv: True):
-        result = collections.OrderedDict()
-
-        for i, key in enumerate(self.variables()):
-            if key is not None:
-                if predicate(key, self[key]):
-                    result[key] = self[key].value.median(dim=0)[0]
-            elif predicate(i, self[i]):
-                result[i] = self[i].value.median(dim=0)[0]
-
-        return result
-
-    def push(self, module):
-        self._stack.append(module)
-
-    def pop(self):
-        self._stack.pop()
-
-    def annotation(self, module, variable):
-        return self._modules[module][variable]
-
-    def has_annotation(self, module, variable):
-        return variable in self._modules[module]
-
-    def have_annotation(self, modules, variable):
-        return any([variable in self._modules[module] for module in modules])
-
-    def keys(self):
-        return self._nodes.keys()
-
-    def is_observed(self, name):
-        return self.observed(name) is not None
-
-    def observed(self, name):
-        if name in self._nodes and self._nodes[name].observed:
-            return self._nodes[name]
-        return None
-
-    def clamped(self, name):
-        return self.observed(name)
-
-    @property
-    def observations(self):
-        return [rv for rv in self.variables() if self.is_observed(rv) and\
-                self.have_annotation(self._modules.keys(), rv)]
-
-    @property
-    def latents(self):
-        return [rv for rv in self.variables()\
-                if not self.is_observed(rv) and\
-                self.have_annotation(self._modules.keys(), rv)]
-
-    @property
-    def weighting_variables(self):
-        return self.variables()
-
-    def log_proper_weight(self):
-        nodes = list(self.weighting_variables)
-        log_weight = self.log_joint(nodes=nodes, reparameterized=False)
-        if not isinstance(log_weight, torch.Tensor):
-            return torch.zeros(self.batch_shape).to(self.device)
-        return log_weight
-
-    def marginal_log_likelihood(self):
-        return log_mean_exp(self.log_proper_weight())
-
-class ConditionedTrace(BroadcastingTrace):
-    def __init__(self, num_particles=1, guide=None, data=None):
-        super(ConditionedTrace, self).__init__(num_particles)
-        self._guide = guide
-        self._data = data
-
-    @classmethod
-    def clamp(cls, guide):
-        return guide.__class__(guide.num_particles, guide=guide,
-                               data=guide.data)
-
-    @property
-    def guide(self):
-        return self._guide
-
-    @property
-    def data(self):
-        return self._data
-
-    def observed(self, name):
-        if self._data and name in self._data:
-            return self._data[name]
-        return None
-
-    def guided(self, name):
-        if self._guide and name in self._guide:
-            return self._guide[name].value
-        return None
-
-    def clamped(self, name):
-        observed = self.observed(name)
-        guided = self.guided(name)
-        if observed is not None:
-            return observed
-        elif guided is not None:
-            return guided
-        return None
-
-    def variable(self, Dist, *args, **kwargs):
-        if 'name' in kwargs and not kwargs.get('value', None):
-            name = kwargs['name']
-            clamped = self.clamped(name)
-            to_shape = kwargs.get('to', None)
-            if isinstance(clamped, torch.Tensor) and not to_shape and\
-               self.observed(name) is not None:
-                clamped = utils.batch_expand(clamped, self.batch_shape)
-            if clamped is not None:
-                kwargs['value'] = clamped
-
-        tensors = [arg for arg in args if isinstance(arg, torch.Tensor)]
-        if tensors and 'value' in kwargs and kwargs['value'] is not None:
-            kwargs['value'] = kwargs['value'].to(device=tensors[0].device)
-        return super(ConditionedTrace, self).variable(Dist, *args, **kwargs)
-
-class Model(nn.Module):
-    def __init__(self, f, trainable={}, hyper={}):
-        super(Model, self).__init__()
-        if isinstance(f, Model):
-            self.add_module('_function', f)
-        else:
-            self._function = f
-        self._trace = None
-        self._parent = collections.defaultdict(lambda: None)
+class PrimitiveCall(ModelSampler):
+    def __init__(self, primitive, name=None, trainable={}, hyper={}):
         self.register_args(trainable, True)
         self.register_args(hyper, False)
+        assert not isinstance(primitive, Sampler)
+        if isinstance(primitive, nn.Module):
+            self.add_module('primitive', primitive)
+            self._name = name
+        else:
+            self.primitive = primitive
+            self._name = primitive.__name__
 
     @property
     def name(self):
-        return self._function.__name__
-
-    @property
-    def __name__(self):
-        return self.name
-
-    def add_module(self, name, module):
-        super(Model, self).add_module(name, module)
-        if isinstance(module, Model):
-            module._parent['parent'] = self
-
-    @property
-    def parent(self):
-        return self._parent['parent']
-
-    @property
-    def ancestor(self):
-        result = self.parent
-        while result.parent is not None:
-            result = result.parent
-        return result
-
-    def _condition(self, trace):
-        if trace is not None:
-            self._trace = trace
-
-    def _condition_all(self, trace=None):
-        if trace is None:
-            trace = BroadcastingTrace()
-        self.apply(lambda m: m._condition(trace))
-
-    @property
-    def trace(self):
-        return self._trace
-
-    @property
-    def guided(self):
-        return isinstance(self._trace, ConditionedTrace)
+        if isinstance(self.primitive, nn.Module):
+            return self._name
+        return self.primitive.__name__
 
     def register_args(self, args, trainable=True):
         for k, v in utils.vardict(args).items():
@@ -267,82 +61,168 @@ class Model(nn.Module):
     def args_vardict(self, to, keep_vars=True):
         return utils.vardict(self.state_dict(keep_vars=keep_vars), to=to)
 
+    def _forward(self, *args, **kwargs):
+        return self.primitive(*args, **kwargs)
+
+class InferenceSampler(Sampler):
+    def __init__(self, sampler):
+        assert isinstance(sampler, Sampler)
+        self.add_module('sampler', sampler)
+
+    @property
+    def name(self):
+        return self.sampler.name
+
     def forward(self, *args, **kwargs):
-        kwargs = {**kwargs, 'this': self}
-        if kwargs.pop('separate_traces', False) or not self.parent:
-            self._condition_all(trace=kwargs.pop('trace', None))
-        if isinstance(self.trace, BroadcastingTrace):
-            self.trace.push(self)
-        result = self._function(*args, **kwargs)
-        if isinstance(self.trace, BroadcastingTrace):
-            self.trace.pop()
-        return result
+        result, trace = self.sampler(*args, **kwargs)
+        return self.infer(result, trace)
 
-    def simulate(self, *args, **kwargs):
-        if 'trace' not in kwargs:
-            kwargs['trace'] = BroadcastingTrace()
+    def infer(self, results, trace):
+        raise NotImplementedError()
 
-        result = self.forward(*args, **kwargs)
-        return self.trace.log_proper_weight(), result
+class ProposalScore(InferenceSampler):
+    def __init__(self, proposal, model):
+        super(ProposalScore, self).__init__(model)
+        assert isinstance(proposal, Sampler)
+        self.add_module('proposal', proposal)
 
-class Composition(Model):
-    def __init__(self, outer, inner, name=None, intermediate_name=None):
-        super(Composition, self).__init__(self._forward)
-        self.add_module('_outer', outer)
-        self.add_module('_inner', inner)
-        if name is not None:
-            self.__name__ = name
+    @property
+    def name(self):
+        return self.sampler.name + '_' + self.proposal.name
+
+    def forward(self, *args, **kwargs):
+        _, trace = self.proposal(*args, **kwargs)
+        kwargs['trace'] = trace_tries.HierarchicalTrace(proposal=trace)
+        return super(ProposalScore, self).forward(*args, **kwargs)
+
+    def infer(self, results, trace):
+        return results, trace
+
+class Composition(ModelSampler):
+    def __init__(self, outer, inner, intermediate_name=None):
+        super(Composition, self).__init__()
+        assert isinstance(outer, Sampler)
+        assert isinstance(inner, Sampler)
+        self.add_module('outer', outer)
+        self.add_module('inner', inner)
         self._intermediate = intermediate_name
 
-    def _forward(self, *args, **kwargs):
-        this = kwargs['this']
-        temp = self._inner(*args, **kwargs)
-        if self._intermediate:
-            kws = {'this': this, self._intermediate: temp}
-            return self._outer(**kws)
-        return self._outer(*temp, this=this) if isinstance(temp, tuple) else\
-               self._outer(temp, this=this)
+    @property
+    def name(self):
+        return self.outer.name + '.' + self.inner.name
 
-class Partial(Model):
+    def _forward(self, *args, **kwargs):
+        temp, trace = self._inner(*args, **kwargs)
+        if self._intermediate:
+            kws = {'trace': trace, self._intermediate: temp}
+            return self._outer(**kws)
+        return self._outer(*temp, trace=trace) if isinstance(temp, tuple) else\
+               self._outer(temp, trace=trace)
+
+class Partial(ModelSampler):
     def __init__(self, func, *arguments, **keywords):
-        super(Partial, self).__init__(self._forward)
-        self.add_module('_curried', func)
+        super(Partial, self).__init__()
+        self.add_module('curried', func)
         self._curry_arguments = arguments
         self._curry_kwargs = keywords
 
+    @property
+    def name(self):
+        return 'partial(%s, ...)' % self.curried.name
+
     def _forward(self, *args, **kwargs):
         kwargs = {**kwargs, **self._curry_kwargs}
-        return self._curried(*self._curry_arguments, *args, **kwargs)
+        return self.curried(*self._curry_arguments, *args, **kwargs)
 
-class MapIid(Model):
+class MapIid(ModelSampler):
     def __init__(self, func, items, **kwargs):
-        super(MapIid, self).__init__(self._forward)
-        self.add_module('_map_func', func)
-        self._map_items = items
-        self._map_kwargs = kwargs
+        super(MapIid, self).__init__()
+        assert isinstance(func, Sampler)
+        self.add_module('func', func)
+        self.map_items = items
+        self.map_kwargs = kwargs
+
+    @property
+    def name(self):
+        return 'map_iid(%s, ...)' % self.func.name
+
+    def iterate(self, trace, **kwargs):
+        for item in self.map_items:
+            kwargs = {**self.map_kwargs, **kwargs, 'trace': trace}
+            result, trace = self.map_func(item, **kwargs)
+            yield result
 
     def _forward(self, *args, **kwargs):
-        return [self._map_func(item, **kwargs, **self._map_kwargs)
-                for item in self._map_items]
+        return self.iterate(kwargs.pop('trace', None), **kwargs)
 
-class Reduce(Model):
+class Reduce(ModelSampler):
     def __init__(self, func, items, initializer=None, **kwargs):
         super(Reduce, self).__init__(self._forward)
-        self.add_module('_associative', func)
-        self.add_module('_initializer', initializer)
+        assert isinstance(func, Sampler)
+        self.add_module('associative', func)
+        if initializer is not None:
+            assert isinstance(initializer, Sampler)
+            self.add_module('initializer', initializer)
+        else:
+            self.initializer = None
         self._items = items
         self._associative_kwargs = kwargs
 
+    @property
+    def name(self):
+        return 'reduce(%s, ...)' % self.associative.name
+
     def _forward(self, *args, **kwargs):
-        if self._initializer is not None:
-            accumulator = self._initializer()
+        if self.initializer is not None:
+            accumulator, kwargs['trace'] = self.initializer(**kwargs)
         else:
             accumulator = None
         for item in self._items:
-            accumulator = self._associative(accumulator, item, *args, **kwargs,
-                                            **self._associative_kwargs)
+            accumulator, kwargs['trace'] = self.associative(
+                accumulator, item,
+                *args, **kwargs, **self._associative_kwargs
+            )
         return accumulator
 
     @classmethod
     def sequence(cls, step, T, **kwargs):
         return cls(step, range(T), **kwargs)
+
+class Population(InferenceSampler):
+    def __init__(self, sampler, particle_shape, before=True):
+        super(Population, self).__init__(sampler)
+        self._particle_shape = particle_shape
+        self._before = before
+
+    @property
+    def particle_shape(self):
+        return self._particle_shape
+
+    @property
+    def before(self):
+        return self._before
+
+    @property
+    def name(self):
+        formats = (self.sampler.name, self.particle_shape, self.before)
+        return 'Population(%s, %s, before=%s)' % formats
+
+    def _expand_args(self, *args, **kwargs):
+        args = list(args)
+        for i, arg in enumerate(args):
+            if isinstance(arg, torch.Tensor):
+                args[i] = utils.batch_expand(arg, self.particle_shape)
+        for k, v in kwargs.items():
+            if isinstance(v, torch.Tensor):
+                kwargs[k] = utils.batch_expand(v, self.particle_shape)
+        return tuple(args), kwargs
+
+    def forward(self, *args, **kwargs):
+        if self.before:
+            args, kwargs = self._expand_args(*args, **kwargs)
+        return super(Population, self).forward(*args, **kwargs)
+
+    def infer(self, results, trace):
+        if not self.before:
+            results = self._expand_args(*results)
+        return results, trace
