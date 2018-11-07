@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 
 from collections import MutableMapping
+from enum import Enum
 import flatdict
+import torch
 
-import numpy as np
-import probtorch
 from probtorch.stochastic import RandomVariable
 from probtorch.util import batch_sum, log_mean_exp
-import torch
-import torch.nn as nn
 
-import utils
 
 class HierarchicalTrace(MutableMapping):
     def __init__(self, proposal={}):
