@@ -65,8 +65,6 @@ class HierarchicalTrace(MutableMapping):
             if value is not None:
                 value = value.value
                 prov = Provision.PROPOSED
-            else:
-                prov = Provision.SAMPLED
         if prov is Provision.SAMPLED:
             if dist.has_rsample:
                 value = dist.rsample()
@@ -79,6 +77,10 @@ class HierarchicalTrace(MutableMapping):
     def sample(self, Dist, *args, **kwargs):
         assert 'value' not in kwargs
         return self.variable(Dist, *args, **kwargs)
+
+    def param_sample(self, Dist, params, name):
+        kwargs = {**params[name], 'name': name}
+        return self.sample(Dist, **kwargs)
 
     def observe(self, Dist, value, *args, **kwargs):
         assert 'value' not in kwargs
@@ -140,3 +142,8 @@ class HierarchicalTrace(MutableMapping):
         for var in self:
             result[var] = f(var, self[var])
         return result
+
+    def filter(self, predicate):
+        for var in self:
+            if predicate(var, self[var]):
+                yield (var, self[var])
