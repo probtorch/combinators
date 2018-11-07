@@ -18,7 +18,8 @@ class HierarchicalTrace(MutableMapping):
         self._trie = flatdict.FlatDict(delimiter='/')
         self._var_list = []
         self._proposal = proposal
-        self._observations = observations
+        self._observations = self._proposal._observations if self._proposal\
+                             else observations
 
     def extract(self, prefix):
         result = HierarchicalTrace()
