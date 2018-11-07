@@ -21,7 +21,7 @@ class Sampler(nn.Module):
 
     def simulate(self, *args, **kwargs):
         result, trace = self.forward(*args, **kwargs)
-        return trace.log_proper_weight(), result
+        return trace.log_weight(), trace, result
 
 class ModelSampler(Sampler):
     def forward(self, *args, **kwargs):
