@@ -56,7 +56,7 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
 
         lookup = lambda name, dist: data.get(name, None)
         trace = trace_tries.HierarchicalTrace(observations=lookup)
-        _, inference = sampler.simulate(trace=trace)
+        _, inference, _ = sampler.simulate(trace=trace)
 
         bound = -inference.marginal_log_likelihood()
         bound_name = 'EUBO' if inclusive_kl else 'ELBO'
