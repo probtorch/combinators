@@ -13,6 +13,14 @@ from torch.nn.functional import log_softmax
 import combinators
 import utils
 
+def index_select_rv(rv, dim, indices):
+    result = rv
+    if not rv.observed:
+        value = rv.value.index_select(dim, indices)
+        result = RandomVariable(rv.dist, value, rv.observed, rv.mask,
+                                rv.reparameterized)
+    return result
+
 class PopulationResampler(combinators.Population):
     def __init__(self, sampler, particle_shape):
         super(PopulationResampler, self).__init__(self, sampler, particle_shape,
@@ -24,7 +32,7 @@ class PopulationResampler(combinators.Population):
         resampler = dists.Categorical(logits=weights)
         ancestor_indices = resampler.sample(self.particle_shape)
         results = [val.index_select(0, ancestor_indices) for val in results]
-        trace_resampler = lambda k, v: (k, v.index_select(0, ancestor_indices))
+        trace_resampler = lambda rv: index_select_rv(rv, 0, ancestor_indices)
         return tuple(results), trace.map(trace_resampler)
 
 def variational_importance(num_particles, sampler, num_iterations, data,
