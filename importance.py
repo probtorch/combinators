@@ -3,7 +3,6 @@
 import collections
 import logging
 
-import probtorch
 from probtorch.stochastic import RandomVariable
 from probtorch.util import log_mean_exp
 import torch
