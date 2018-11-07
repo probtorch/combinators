@@ -58,8 +58,8 @@ class PrimitiveCall(ModelSampler):
             else:
                 self.register_buffer(k, v)
 
-    def args_vardict(self, to, keep_vars=True):
-        return utils.vardict(self.state_dict(keep_vars=keep_vars), to=to)
+    def args_vardict(self):
+        return utils.vardict(self.state_dict(keep_vars=True))
 
     def _forward(self, *args, **kwargs):
         return self.primitive(*args, **kwargs)
