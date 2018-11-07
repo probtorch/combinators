@@ -8,12 +8,17 @@ import torch
 from probtorch.stochastic import RandomVariable
 from probtorch.util import batch_sum, log_mean_exp
 
+class Provision(Enum):
+    SAMPLED = 0
+    OBSERVED = 1
+    PROPOSED = 2
 
 class HierarchicalTrace(MutableMapping):
-    def __init__(self, proposal={}):
+    def __init__(self, proposal={}, observations=lambda *args: None):
         self._trie = flatdict.FlatDict(delimiter='/')
         self._var_list = []
         self._proposal = proposal
+        self._observations = observations
 
     def extract(self, prefix):
         result = HierarchicalTrace()
@@ -47,19 +52,25 @@ class HierarchicalTrace(MutableMapping):
         name = kwargs.pop('name', str(len(self._var_list)))
         value = kwargs.pop('value', None)
         dist = Dist(*args, **kwargs)
-        if value is None:
-            value = self._proposal.get(name, None)
-            if value is None:
-                if dist.has_rsample:
-                    value = dist.rsample()
-                else:
-                    value = dist.sample()
-            observed = False
-        else:
-            observed = True
+
+        prov = Provision.OBSERVED if value is not None else Provision.SAMPLED
+        if prov is Provision.SAMPLED:
+            value = self._observations(name, dist)
             if isinstance(value, RandomVariable):
                 value = value.value
-        self[name] = RandomVariable(dist, value, observed)
+            prov = Provision.OBSERVED if value is not None\
+                   else Provision.SAMPLED
+        if prov is Provision.SAMPLED:
+            value = self._proposal.get(name, None)
+            prov = Provision.PROPOSED if value is not None\
+                   else Provision.SAMPLED
+        if prov is Provision.SAMPLED:
+            if dist.has_rsample:
+                value = dist.rsample()
+            else:
+                value = dist.sample()
+
+        self[name] = RandomVariable(dist, value, prov is Provision.OBSERVED)
         return value
 
     def proposed(self, name):
