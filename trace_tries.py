@@ -62,8 +62,11 @@ class HierarchicalTrace(MutableMapping):
                    else Provision.SAMPLED
         if prov is Provision.SAMPLED:
             value = self._proposal.get(name, None)
-            prov = Provision.PROPOSED if value is not None\
-                   else Provision.SAMPLED
+            if value is not None:
+                value = value.value
+                prov = Provision.PROPOSED
+            else:
+                prov = Provision.SAMPLED
         if prov is Provision.SAMPLED:
             if dist.has_rsample:
                 value = dist.rsample()
@@ -72,6 +75,15 @@ class HierarchicalTrace(MutableMapping):
 
         self[name] = RandomVariable(dist, value, prov is Provision.OBSERVED)
         return value
+
+    def sample(self, Dist, *args, **kwargs):
+        assert 'value' not in kwargs
+        return self.variable(Dist, *args, **kwargs)
+
+    def observe(self, Dist, value, *args, **kwargs):
+        assert 'value' not in kwargs
+        kwargs['value'] = value
+        return self.variable(Dist, *args, **kwargs)
 
     def proposed(self, name):
         rv = self._proposal.get(name, None)
@@ -88,7 +100,7 @@ class HierarchicalTrace(MutableMapping):
     def log_joint(self, nodes=None, reparameterized=True):
         if nodes is None:
             nodes = list(self.keys())
-        log_prob = torch.zeros().to(self.device)
+        log_prob = torch.zeros(()).to(self.device)
         for n in nodes:
             if n in self._trie:
                 node = self._trie[n]
@@ -101,7 +113,7 @@ class HierarchicalTrace(MutableMapping):
 
     def log_weight(self):
         generative_joint = self.log_joint(reparameterized=False)
-        latents = [rv for rv in self._trie if not rv.observed]
+        latents = [rv for rv in self._trie if not self[rv].observed]
         unproposed = filter(lambda rv: self.proposed(rv) is None, latents)
         proposed = filter(lambda rv: self.proposed(rv) is not None, latents)
 
