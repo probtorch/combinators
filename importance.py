@@ -27,8 +27,7 @@ class PopulationResampler(combinators.Population):
                                                   before=True)
 
     def infer(self, results, trace):
-        # TODO: figure out how to log-softmax over multiple particle dimensions
-        weights = log_softmax(trace.log_weight(), dim=0)
+        weights = trace.normalized_log_weight()
         resampler = dists.Categorical(logits=weights)
         ancestor_indices = resampler.sample(self.particle_shape)
         results = [val.index_select(0, ancestor_indices) for val in results]
