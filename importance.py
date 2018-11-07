@@ -23,7 +23,7 @@ def index_select_rv(rv, dim, indices):
 
 class PopulationResampler(combinators.Population):
     def __init__(self, sampler, particle_shape):
-        super(PopulationResampler, self).__init__(self, sampler, particle_shape,
+        super(PopulationResampler, self).__init__(sampler, particle_shape,
                                                   before=True)
 
     def infer(self, results, trace):
