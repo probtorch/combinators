@@ -34,6 +34,10 @@ class PopulationResampler(combinators.Population):
         trace_resampler = lambda rv: index_select_rv(rv, 0, ancestor_indices)
         return tuple(results), trace.map(trace_resampler)
 
+def smc(stepwise, particle_shape, step_generator, initializer=None):
+    resampler = PopulationResampler(stepwise, particle_shape)
+    return combinators.Reduce(resampler, step_generator, initializer)
+
 def variational_importance(sampler, num_iterations, data,
                            use_cuda=True, lr=1e-6, inclusive_kl=False,
                            patience=50):
