@@ -23,6 +23,13 @@ class Sampler(nn.Module):
         result, trace = self.forward(*args, **kwargs)
         return trace.log_weight(), trace, result
 
+    def args_vardict(self):
+        result = utils.vardict(self.state_dict(keep_vars=True))
+        # PyTorch BUG: Parameter's don't get counted as Tensors in Normal
+        for k, v in result.items():
+            result[k] = v.clone()
+        return result
+
 class ModelSampler(Sampler):
     def forward(self, *args, **kwargs):
         if 'trace' not in kwargs:
@@ -58,13 +65,6 @@ class PrimitiveCall(ModelSampler):
                 self.register_parameter(k, nn.Parameter(v))
             else:
                 self.register_buffer(k, v)
-
-    def args_vardict(self):
-        result = utils.vardict(self.state_dict(keep_vars=True))
-        # PyTorch BUG: Parameter's don't get counted as Tensors in Normal
-        for k, v in result.items():
-            result[k] = v.clone()
-        return result
 
     def _forward(self, *args, **kwargs):
         params = self.args_vardict()
