@@ -101,7 +101,9 @@ class ProposalScore(InferenceSampler):
 
     def forward(self, *args, **kwargs):
         _, trace = self.proposal(*args, **kwargs)
-        kwargs['trace'] = trace_tries.HierarchicalTrace(proposal=trace)
+        kwargs['trace'] = trace_tries.HierarchicalTrace(
+            proposal=trace, observations=trace.observations
+        )
         return super(ProposalScore, self).forward(*args, **kwargs)
 
     def infer(self, results, trace):
