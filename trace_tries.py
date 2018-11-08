@@ -155,3 +155,8 @@ class HierarchicalTrace(MutableMapping):
         for var in self:
             if predicate(var, self[var]):
                 yield (var, self[var])
+
+    def find(self, predicate):
+        for var in self:
+            if predicate(var, self[var]):
+                return (var, self[var])
