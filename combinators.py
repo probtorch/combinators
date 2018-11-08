@@ -187,7 +187,7 @@ class Reduce(ModelSampler):
 
     @property
     def name(self):
-        return 'reduce(%s, ...)' % self.associative.name
+        return 'Reduce(%s, ...)' % self.associative.name
 
     def _forward(self, *args, **kwargs):
         if self.initializer is not None:
