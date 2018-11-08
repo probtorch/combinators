@@ -162,12 +162,15 @@ class MapIid(ModelSampler):
 
     def iterate(self, trace, **kwargs):
         for item in self.map_items:
-            kwargs = {**self.map_kwargs, **kwargs, 'trace': trace}
-            result, trace = self.map_func(item, **kwargs)
+            kwargs = {**self.map_kwargs, **kwargs}
+            result, step_trace = self.map_func(item, **kwargs)
+            trace.insert(self.map_func.name + str(item), step_trace)
             yield result
 
     def _forward(self, *args, **kwargs):
-        return self.iterate(kwargs.pop('trace', None), **kwargs)
+        trace = kwargs.pop('trace', trace_tries.HierarchicalTrace())
+        result = list(self.iterate(trace, **kwargs))
+        return result, trace
 
 class Reduce(ModelSampler):
     def __init__(self, func, generator, initializer=None, **kwargs):
