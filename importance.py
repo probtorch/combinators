@@ -27,6 +27,7 @@ class PopulationResampler(combinators.Population):
                                                   before=True)
 
     def infer(self, results, trace):
+        results, trace = super(PopulationResampler, self).infer(results, trace)
         weights = trace.normalized_log_weight()
         resampler = dists.Categorical(logits=weights)
         ancestor_indices = resampler.sample(self.particle_shape)
