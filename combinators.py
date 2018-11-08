@@ -123,14 +123,17 @@ class Composition(ModelSampler):
         return self.outer.name + '.' + self.inner.name
 
     def _forward(self, *args, **kwargs):
-        final_trace = trace_tries.HierarchicalTrace()
+        final_trace = kwargs.pop('trace')
+        kwargs['trace'] = final_trace.extract(self._inner.name)
         temp, inner_trace = self._inner(*args, **kwargs)
+        kws = {'trace': final_trace.extract(self._outer.name)}
         if self._intermediate:
-            kws = {self._intermediate: temp}
+            kws[self._intermediate] = temp
             result, outer_trace = self._outer(**kws)
+        elif isinstance(temp, tuple):
+            result, outer_trace = self._outer(*temp, **kws)
         else:
-            result, outer_trace = self._outer(*temp) if isinstance(temp, tuple)\
-                                  else self._outer(temp)
+            result, outer_trace = self._outer(temp, **kws)
         final_trace.insert(self._inner.name, inner_trace)
         final_trace.insert(self._outer.name, outer_trace)
         return result, final_trace
