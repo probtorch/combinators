@@ -34,7 +34,7 @@ class ModelSampler(Sampler):
     def forward(self, *args, **kwargs):
         if 'trace' not in kwargs:
             kwargs['trace'] = trace_tries.HierarchicalTrace()
-        return self._forward(*args, **kwargs), kwargs['trace']
+        return self._forward(*args, **kwargs)
 
     def _forward(self, *args, **kwargs):
         raise NotImplementedError()
