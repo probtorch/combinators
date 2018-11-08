@@ -94,21 +94,39 @@ class InferenceSampler(Sampler):
     def sample_hook(self, results, trace):
         raise NotImplementedError()
 
-class ProposalScore(InferenceSampler):
+class Score(InferenceSampler):
+    def sample_prehook(self, trace, *args, **kwargs):
+        trace = trace_tries.HierarchicalTrace(
+            proposal=trace, observations=trace.observations,
+        )
+        return trace, args, kwargs
+
+    def sample_hook(self, results, trace):
+        return results, trace
+
+class Proposal(InferenceSampler):
     def __init__(self, proposal, model):
-        super(ProposalScore, self).__init__(model)
+        super(Proposal, self).__init__(model)
         assert isinstance(proposal, Sampler)
         self.add_module('proposal', proposal)
 
-    def forward(self, *args, **kwargs):
+    def sample_prehook(self, trace, *args, **kwargs):
+        kwargs['trace'] = trace
         _, trace = self.proposal(*args, **kwargs)
-        kwargs['trace'] = trace_tries.HierarchicalTrace(
-            proposal=trace, observations=trace.observations
-        )
-        return super(ProposalScore, self).forward(*args, **kwargs)
+        kwargs.pop('trace')
+        return trace, args, kwargs
 
-    def infer(self, results, trace):
+    def sample_hook(self, results, trace):
         return results, trace
+
+def proposal_score(proposal, model):
+    return Proposal(proposal, Score(model))
+
+# TODO: Ultimately, I want to decompose this somehow to help me implement Trace
+# MCMC.  In specific, I want to be able to:
+# * Run a program, extracting a trace
+# * Run a program clamped to a trace, properly weighting the new trace (Score)
+# * Generate new traces from old
 
 class Composition(ModelSampler):
     def __init__(self, outer, inner, intermediate_name=None):
