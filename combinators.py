@@ -246,7 +246,8 @@ class Population(InferenceSampler):
 class HyperPopulation(PrimitiveCall):
     def __init__(self, primitive, particle_shape, name=None, trainable={},
                  hyper={}):
-        super(HyperPopulation, self).__init__(primitive, name, trainable, hyper)
+        super(HyperPopulation, self).__init__(primitive, name, trainable,
+                                              hyper)
         self._particle_shape = particle_shape
 
     @property
