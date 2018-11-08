@@ -9,41 +9,50 @@ from probtorch.util import log_mean_exp
 import torch
 
 import combinators
-import importance
 
-class IndependentMH(combinators.InferenceSampler):
-    def __init__(self, model, proposal, num_iterations=1, trainable={},
-                 hyper={}):
-        super(IndependentMH, self).__init__(model, trainable, hyper)
-        self._proposal = proposal
-        self._num_iterations = num_iterations
+class Collection(combinators.ModelSampler):
+    def __init__(self, sampler, num_samples, acceptance):
+        super(Collection, self).__init__()
+        self._sampler = sampler
+        self._num_samples = num_samples
+        self._acceptance = acceptance
 
-    def forward(self, *args, **kwargs):
-        elbos = torch.zeros(self._num_iterations)
-        samples = list(range(self._num_iterations))
-        original_trace = kwargs.get('trace', None)
+    @property
+    def name(self):
+        return 'Collection(%s, %d)' % (self.sampler.name, self.num_samples)
 
-        for i in range(self._num_iterations):
-            self._proposal.simulate(
-                trace=ResamplerTrace(ancestor=original_trace),
-            )
-            kwargs['trace'] = ResamplerTrace(original_trace.num_particles,
-                                             guide=self._proposal.trace,
-                                             data=original_trace.data)
-            sample = super(IndependentMH, self).forward(*args, **kwargs)
+    @property
+    def sampler(self):
+        return self._sampler
 
-            elbo = self._function.trace.marginal_log_likelihood()
-            acceptance = torch.min(torch.zeros(1), elbo - elbos[i-1])
-            if torch.bernoulli(torch.exp(acceptance)) == 1 or i == 0:
-                elbos[i] = elbo
-                samples[i] = sample
-            else:
-                elbos[i] = elbos[i-1]
-                samples[i] = samples[i-1]
+    @property
+    def num_samples(self):
+        return self._num_samples
 
-        result = []
-        for i in range(self._num_iterations):
-            particle = np.random.randint(0, self.trace.num_particles)
-            result.append([v[particle] for v in samples[i]])
-        return [torch.stack([result[i][j] for i in range(self._num_iterations)],
-                            dim=0) for j, _ in enumerate(samples[0])], elbos
+    @property
+    def acceptance(self):
+        return self._acceptance
+
+    def _forward(self, *args, **kwargs):
+        samples = []
+        trace = kwargs.pop('trace')
+        while len(samples) < self.num_samples:
+            kwargs['trace'] = trace.extract(self.sampler.name)
+            sample, sample_trace = self._sampler(*args, **kwargs)
+            if self._acceptance(sample, sample_trace):
+                trace.insert(str(len(samples)) + '/' + self.sampler.name,
+                             sample_trace)
+                samples.append(sample)
+        return samples, trace
+
+def independent_mh(model, num_samples):
+    weight = 0.0
+    def acceptance(_, trace):
+        nonlocal weight
+        candidate = trace.marginal_log_likelihood()
+        alpha = torch.min(torch.zeros(1), candidate - weight)
+        result = weight == 0.0 or torch.bernoulli(torch.exp(alpha)) == 1
+        if result:
+            weight = candidate
+        return result
+    return Collection(model, num_samples, acceptance)
