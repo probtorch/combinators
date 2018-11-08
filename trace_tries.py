@@ -18,22 +18,22 @@ class HierarchicalTrace(MutableMapping):
         self._trie = flatdict.FlatDict(delimiter='/')
         self._var_list = []
         self._proposal = proposal
-        self._observations = self._proposal._observations if self._proposal\
-                             else observations
+        self._observations = observations
 
     def extract(self, prefix):
         if len(self._proposal):
             extracted_proposal = self._proposal.extract(prefix)
         else:
             extracted_proposal = {}
-        subtrace = HierarchicalTrace(proposal=extracted_proposal)
-        for k, v in self[prefix].items():
+        subtrace = HierarchicalTrace(proposal=extracted_proposal,
+                                     observations=self._observations)
+        for k, v in self.get(prefix, {}).items():
             subtrace[k] = v
         return subtrace
 
     def insert(self, name, trace):
-        for k, v in trace.variables():
-            self[name + '/' + k] = v
+        for k in trace:
+            self[name + '/' + k] = trace[k]
 
     def __setitem__(self, key, value):
         self._trie[key] = value
@@ -103,6 +103,10 @@ class HierarchicalTrace(MutableMapping):
         for v in self:
             return self[v].value.device
         return 'cpu'
+
+    @property
+    def observations(self):
+        return self._observations
 
     def log_joint(self, nodes=None, reparameterized=True):
         if nodes is None:
