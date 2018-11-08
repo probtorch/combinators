@@ -256,12 +256,12 @@ class Population(InferenceSampler):
                 kwargs[k] = utils.batch_expand(v, self.particle_shape)
         return tuple(args), kwargs
 
-    def forward(self, *args, **kwargs):
+    def sample_prehook(self, trace, *args, **kwargs):
         if self.before:
             args, kwargs = self._expand_args(*args, **kwargs)
-        return super(Population, self).forward(*args, **kwargs)
+        return trace, args, kwargs
 
-    def infer(self, results, trace):
+    def sample_hook(self, results, trace):
         if not self.before:
             results = self._expand_args(*results)
         return results, trace
