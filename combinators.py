@@ -83,10 +83,15 @@ class InferenceSampler(Sampler):
         return self.sampler.name
 
     def forward(self, *args, **kwargs):
-        result, trace = self.sampler(*args, **kwargs)
-        return self.infer(result, trace)
+        trace = kwargs.pop('trace')
+        trace, args, kwargs = self.sample_prehook(trace, *args, **kwargs)
+        kwargs['trace'] = trace
+        return self.sample_hook(*self.sampler(*args, **kwargs))
 
-    def infer(self, results, trace):
+    def sample_prehook(self, trace, *args, **kwargs):
+        raise NotImplementedError()
+
+    def sample_hook(self, results, trace):
         raise NotImplementedError()
 
 class ProposalScore(InferenceSampler):
