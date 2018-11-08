@@ -22,10 +22,14 @@ class HierarchicalTrace(MutableMapping):
                              else observations
 
     def extract(self, prefix):
-        result = HierarchicalTrace()
+        if len(self._proposal):
+            extracted_proposal = self._proposal.extract(prefix)
+        else:
+            extracted_proposal = {}
+        subtrace = HierarchicalTrace(proposal=extracted_proposal)
         for k, v in self[prefix].items():
-            result[k] = v
-        return result
+            subtrace[k] = v
+        return subtrace
 
     def insert(self, name, trace):
         for k, v in trace.variables():
