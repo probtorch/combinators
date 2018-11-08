@@ -95,10 +95,6 @@ class ProposalScore(InferenceSampler):
         assert isinstance(proposal, Sampler)
         self.add_module('proposal', proposal)
 
-    @property
-    def name(self):
-        return self.sampler.name + '_' + self.proposal.name
-
     def forward(self, *args, **kwargs):
         _, trace = self.proposal(*args, **kwargs)
         kwargs['trace'] = trace_tries.HierarchicalTrace(
@@ -147,7 +143,7 @@ class Partial(ModelSampler):
 
     @property
     def name(self):
-        return 'partial(%s, ...)' % self.curried.name
+        return 'Partial(%s)' % self.curried.name
 
     def _forward(self, *args, **kwargs):
         kwargs = {**kwargs, **self._curry_kwargs}
@@ -163,7 +159,7 @@ class MapIid(ModelSampler):
 
     @property
     def name(self):
-        return 'map_iid(%s, ...)' % self.func.name
+        return 'MapIid(%s)' % self.func.name
 
     def iterate(self, trace, **kwargs):
         for item in self.map_items:
@@ -193,7 +189,7 @@ class Reduce(ModelSampler):
 
     @property
     def name(self):
-        return 'Reduce(%s, ...)' % self.associative.name
+        return 'Reduce(%s)' % self.associative.name
 
     def _forward(self, *args, **kwargs):
         trace = kwargs.pop('trace')
@@ -226,11 +222,6 @@ class Population(InferenceSampler):
     @property
     def before(self):
         return self._before
-
-    @property
-    def name(self):
-        formats = (self.sampler.name, self.particle_shape, self.before)
-        return 'Population(%s, %s, before=%s)' % formats
 
     def _expand_args(self, *args, **kwargs):
         args = list(args)
