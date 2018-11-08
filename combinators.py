@@ -70,7 +70,7 @@ class PrimitiveCall(ModelSampler):
         params = self.args_vardict()
         if len(params):
             kwargs['params'] = params
-        return self.primitive(*args, **kwargs)
+        return self.primitive(*args, **kwargs), kwargs.pop('trace')
 
 class InferenceSampler(Sampler):
     def __init__(self, sampler):
