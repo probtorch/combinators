@@ -191,16 +191,19 @@ class Reduce(ModelSampler):
 
     def _forward(self, *args, **kwargs):
         if self.initializer is not None:
-            accumulator, kwargs['trace'] = self.initializer(**kwargs)
+            accumulator, trace = self.initializer(**kwargs)
+            kwargs.pop('trace')
         else:
             accumulator = None
+            trace = kwargs.pop('trace')
         items = self._generator()
         for item in items:
-            accumulator, kwargs['trace'] = self.associative(
+            accumulator, step_trace = self.associative(
                 accumulator, item,
                 *args, **kwargs, **self._associative_kwargs
             )
-        return accumulator
+            trace.insert(self.name + '/' + str(item), step_trace)
+        return accumulator, trace
 
 class Population(InferenceSampler):
     def __init__(self, sampler, particle_shape, before=True):
