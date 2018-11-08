@@ -54,7 +54,7 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        lookup = lambda name, dist: data.get(name, None)
+        lookup = utils.dict_lookup(data)
         trace = trace_tries.HierarchicalTrace(observations=lookup)
         _, inference, _ = sampler.simulate(trace=trace)
 
