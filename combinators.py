@@ -121,12 +121,17 @@ class Composition(ModelSampler):
         return self.outer.name + '.' + self.inner.name
 
     def _forward(self, *args, **kwargs):
-        temp, trace = self._inner(*args, **kwargs)
+        final_trace = trace_tries.HierarchicalTrace()
+        temp, inner_trace = self._inner(*args, **kwargs)
         if self._intermediate:
-            kws = {'trace': trace, self._intermediate: temp}
-            return self._outer(**kws)
-        return self._outer(*temp, trace=trace) if isinstance(temp, tuple) else\
-               self._outer(temp, trace=trace)
+            kws = {self._intermediate: temp}
+            result, outer_trace = self._outer(**kws)
+        else:
+            result, outer_trace = self._outer(*temp) if isinstance(temp, tuple)\
+                                  else self._outer(temp)
+        final_trace.insert(self._inner.name, inner_trace)
+        final_trace.insert(self._outer.name, outer_trace)
+        return result, final_trace
 
 class Partial(ModelSampler):
     def __init__(self, func, *arguments, **keywords):
