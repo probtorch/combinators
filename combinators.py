@@ -168,12 +168,13 @@ class MapIid(ModelSampler):
     def iterate(self, trace, **kwargs):
         for item in self.map_items:
             kwargs = {**self.map_kwargs, **kwargs}
+            kwargs['trace'] = trace.extract(self.map_func.name + str(item))
             result, step_trace = self.map_func(item, **kwargs)
             trace.insert(self.map_func.name + str(item), step_trace)
             yield result
 
     def _forward(self, *args, **kwargs):
-        trace = kwargs.pop('trace', trace_tries.HierarchicalTrace())
+        trace = kwargs.pop('trace')
         result = list(self.iterate(trace, **kwargs))
         return result, trace
 
