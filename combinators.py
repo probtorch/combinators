@@ -104,23 +104,24 @@ class Score(InferenceSampler):
     def sample_hook(self, results, trace):
         return results, trace
 
-class Proposal(InferenceSampler):
-    def __init__(self, proposal, model):
-        super(Proposal, self).__init__(model)
-        assert isinstance(proposal, Sampler)
-        self.add_module('proposal', proposal)
+class SideEffect(ModelSampler):
+    def __init__(self, first, second):
+        super(SideEffect, self).__init__()
+        assert isinstance(first, Sampler)
+        assert isinstance(second, Sampler)
+        self.add_module('first', first)
+        self.add_module('second', second)
 
-    def sample_prehook(self, trace, *args, **kwargs):
-        kwargs['trace'] = trace
-        _, trace = self.proposal(*args, **kwargs)
-        kwargs.pop('trace')
-        return trace, args, kwargs
+    @property
+    def name(self):
+        return 'SideEffect(%s, %s)' % (self.first.name, self.second.name)
 
-    def sample_hook(self, results, trace):
-        return results, trace
+    def _forward(self, *args, **kwargs):
+        _, kwargs['trace'] = self.first(*args, **kwargs)
+        return self.second(*args, **kwargs)
 
-def proposal_score(proposal, model):
-    return Proposal(proposal, Score(model))
+def score_under_proposal(proposal, model):
+    return SideEffect(proposal, Score(model))
 
 # TODO: Ultimately, I want to decompose this somehow to help me implement Trace
 # MCMC.  In specific, I want to be able to:
