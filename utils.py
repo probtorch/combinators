@@ -10,8 +10,26 @@ import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
-def dict_lookup(dict):
-    return lambda name, dist: dict.get(name, None)
+def shared_shape(a, b):
+    result = ()
+    for (dim, dimb) in zip(a.shape, b.shape):
+        if dim == dimb or dim == 1 or dimb == 1:
+            result += (dim,)
+        else:
+            break
+    return result
+
+def conjunct_event_shape(tensor, batch_dims):
+    while len(tensor.shape) > batch_dims:
+        tensor = tensor.sum(dim=batch_dims)
+    return tensor
+
+def conjunct_events(conjunct_log_prob, log_prob):
+    batch_dims = len(shared_shape(conjunct_log_prob, log_prob))
+    return conjunct_log_prob + conjunct_event_shape(log_prob, batch_dims)
+
+def dict_lookup(d):
+    return lambda name, dist: d.get(name, None)
 
 def plot_evidence_bounds(bounds, lower=True, figsize=(10, 10)):
     epochs = range(len(bounds))
