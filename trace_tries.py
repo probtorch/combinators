@@ -8,6 +8,8 @@ import torch
 from probtorch.stochastic import RandomVariable
 from probtorch.util import log_mean_exp
 
+import utils
+
 class Provision(Enum):
     SAMPLED = 0
     OBSERVED = 1
@@ -118,7 +120,7 @@ class HierarchicalTrace(MutableMapping):
                 if isinstance(node, RandomVariable) and reparameterized and\
                    not node.reparameterized:
                     raise ValueError('All random variables must be sampled by reparameterization.')
-                log_prob = log_prob + node.log_prob
+                log_prob = utils.conjunct_events(log_prob, node.log_prob)
         return log_prob
 
     def log_weight(self):
@@ -126,10 +128,19 @@ class HierarchicalTrace(MutableMapping):
         latents = [rv for rv in self._trie if not self[rv].observed]
         unproposed = filter(lambda rv: self.proposed(rv) is None, latents)
         proposed = filter(lambda rv: self.proposed(rv) is not None, latents)
+        proposed = list(proposed)
 
         unproposed_joint = self.log_joint(nodes=unproposed,
                                           reparameterized=False)
-        proposed_joint = self.log_joint(nodes=proposed, reparameterized=False)
+        if proposed:
+            # BUG: note that we here assume that log_joint correctly
+            # marginalizes out the proposal's nodes besides proposed, or that
+            # the proposal has only the same random variables as the generative
+            # trace.
+            proposed_joint = self._proposal.log_joint(nodes=proposed,
+                                                      reparameterized=False)
+        else:
+            proposed_joint = torch.zeros(1).to(self.device)
         return generative_joint - (unproposed_joint + proposed_joint)
 
     def marginal_log_likelihood(self):
