@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 
-import probtorch
 import torch
 from torch.distributions import Normal
 from torch.nn.functional import softplus
-
-import combinators
-import utils
 
 def init_ssm(trace=None, params=None):
     mu = trace.param_sample(Normal, params, name='mu')
