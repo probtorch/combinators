@@ -9,6 +9,10 @@ import torch
 
 import combinators
 
+def stack_samples(samples):
+    for i in len(samples[0]):
+        yield torch.stack([sample[i] for sample in samples], dim=0)
+
 class Collection(combinators.InferenceSampler):
     def __init__(self, sampler, num_samples):
         super(Collection, self).__init__(sampler)
