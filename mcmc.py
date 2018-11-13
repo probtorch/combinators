@@ -25,6 +25,9 @@ class Collection(combinators.InferenceSampler):
     def accept(self, results, trace):
         raise NotImplementedError()
 
+    def sample_prehook(self, trace, *args, **kwargs):
+        return trace, args, kwargs
+
     def forward(self, *args, **kwargs):
         samples = []
         trace = kwargs.pop('trace')
@@ -37,8 +40,8 @@ class Collection(combinators.InferenceSampler):
                 samples.append(sample)
         return samples, trace
 
-    def infer(self, results, trace):
-        return results, trace
+    def sample_hook(self, results, trace):
+        return list(stack_samples(results)), trace
 
 class IndependentMH(Collection):
     def __init__(self, sampler, num_samples):
