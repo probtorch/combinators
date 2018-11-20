@@ -64,6 +64,8 @@ class HierarchicalTrace(MutableMapping):
             if value is not None:
                 value = value.value
                 prov = Provision.PROPOSED
+            else:
+                raise ValueError('Attempting to rescore variable %s without proposal' % name)
         if prov is Provision.SAMPLED:
             if dist.has_rsample:
                 value = dist.rsample()
@@ -121,10 +123,6 @@ class HierarchicalTrace(MutableMapping):
         unproposed_joint = self.log_joint(nodes=unproposed,
                                           reparameterized=False)
         if proposed:
-            # BUG: note that we here assume that log_joint correctly
-            # marginalizes out the proposal's nodes besides proposed, or that
-            # the proposal has only the same random variables as the generative
-            # trace.
             proposed_joint = self._proposal.log_joint(nodes=proposed,
                                                       reparameterized=False)
         else:
