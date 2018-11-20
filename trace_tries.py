@@ -16,19 +16,17 @@ class Provision(Enum):
     PROPOSED = 2
 
 class HierarchicalTrace(MutableMapping):
-    def __init__(self, proposal={}, observations=lambda *args: None):
+    def __init__(self, proposal={}):
         self._trie = flatdict.FlatDict(delimiter='/')
         self._var_list = []
         self._proposal = proposal
-        self._observations = observations
 
     def extract(self, prefix):
         if len(self._proposal):
             extracted_proposal = self._proposal.extract(prefix)
         else:
             extracted_proposal = {}
-        subtrace = HierarchicalTrace(proposal=extracted_proposal,
-                                     observations=self._observations)
+        subtrace = HierarchicalTrace(proposal=extracted_proposal)
         for k, v in self.get(prefix, {}).items():
             subtrace[k] = v
         return subtrace
@@ -61,12 +59,6 @@ class HierarchicalTrace(MutableMapping):
         dist = Dist(*args, **kwargs)
 
         prov = Provision.OBSERVED if value is not None else Provision.SAMPLED
-        if prov is Provision.SAMPLED:
-            value = self._observations(name, dist)
-            if isinstance(value, RandomVariable):
-                value = value.value
-            prov = Provision.OBSERVED if value is not None\
-                   else Provision.SAMPLED
         if prov is Provision.SAMPLED:
             value = self._proposal.get(name, None)
             if value is not None:
@@ -105,10 +97,6 @@ class HierarchicalTrace(MutableMapping):
         for v in self:
             return self[v].value.device
         return 'cpu'
-
-    @property
-    def observations(self):
-        return self._observations
 
     def log_joint(self, nodes=None, reparameterized=True):
         if nodes is None:
