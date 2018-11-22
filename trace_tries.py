@@ -67,10 +67,7 @@ class HierarchicalTrace(MutableMapping):
             else:
                 raise ValueError('Attempting to rescore variable %s without proposal' % name)
         if prov is Provision.SAMPLED:
-            if dist.has_rsample:
-                value = dist.rsample()
-            else:
-                value = dist.sample()
+            value = utils.try_rsample(dist)
 
         self[name] = RandomVariable(dist, value, prov is Provision.OBSERVED)
         return value
