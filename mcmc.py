@@ -10,7 +10,18 @@ import torch
 import combinators
 
 class MHMove(combinators.InferenceSampler):
+    def __init__(self, sampler):
+        super(MHMove, self).__init__(sampler)
+        self._args = ()
+        self._kwargs = {}
+
+    def sample_prehook(self, trace, *args, **kwargs):
+        self._args = args
+        self._kwargs = kwargs
+
     def propose(self, results, trace):
+        self._args = ()
+        self._kwargs = {}
         raise NotImplementedError()
 
     def sample_hook(self, results, trace):
