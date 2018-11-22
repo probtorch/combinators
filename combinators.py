@@ -96,9 +96,7 @@ class InferenceSampler(Sampler):
 
 class Score(InferenceSampler):
     def sample_prehook(self, trace, *args, **kwargs):
-        trace = trace_tries.HierarchicalTrace(
-            proposal=trace, observations=trace.observations,
-        )
+        trace = trace_tries.HierarchicalTrace(proposal=trace)
         return trace, args, kwargs
 
     def sample_hook(self, results, trace):
