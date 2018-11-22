@@ -10,6 +10,11 @@ import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def try_rsample(dist):
+    if dist.has_rsample:
+        return dist.rsample()
+    return dist.sample()
+
 def shared_shape(a, b):
     result = ()
     for (dim, dimb) in zip(a.shape, b.shape):
