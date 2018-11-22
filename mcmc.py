@@ -8,6 +8,8 @@ import probtorch
 import torch
 
 import combinators
+import trace_tries
+import utils
 
 class MHMove(combinators.InferenceSampler):
     def __init__(self, sampler):
@@ -35,3 +37,17 @@ class MHMove(combinators.InferenceSampler):
         if torch.bernoulli(torch.exp(log_alpha)) == 1:
             return candidate, candidate_trace
         return results, trace
+
+class LightweightMH(MHMove):
+    def propose(self, results, trace):
+        rv_index = np.random.randint(len(trace))
+        candidate = trace[0:rv_index]
+        move_current = trace[rv_index].log_prob
+        candidate.variable(trace[rv_index].dist, name=trace[rv_index].name,
+                           value=utils.try_rsample(trace[rv_index].dist))
+        move_candidate = candidate[-1].log_prob
+        results, candidate = self.sampler(*self._args, **self._kwargs,
+                                          trace=candidate)
+        self._args = ()
+        self._kwargs = {}
+        return results, candidate, move_candidate, move_current
