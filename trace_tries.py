@@ -15,11 +15,17 @@ class Provision(Enum):
     OBSERVED = 1
     PROPOSED = 2
 
+NO_PROPOSAL_MSG = 'Attempting to rescore variable %s without proposal in %s'
+
 class HierarchicalTrace(MutableMapping):
-    def __init__(self, proposal={}):
+    def __init__(self, proposal={}, proposal_slice=None):
         self._trie = flatdict.FlatDict(delimiter='/')
         self._var_list = []
         self._proposal = proposal
+        if isinstance(proposal_slice, slice):
+            self._proposal_slice = (proposal_slice.start, proposal_slice.stop)
+        else:
+            self._proposal_slice = (0, len(self._proposal))
 
     def extract(self, prefix):
         if len(self._proposal):
@@ -39,8 +45,12 @@ class HierarchicalTrace(MutableMapping):
         self._trie[key] = value
         self._var_list.append(key)
 
-    def __getitem__(self, name):
-        return self._trie[name]
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            return HierarchicalTrace(proposal=self, proposal_slice=key)
+        elif isinstance(key, int):
+            return self._trie[self._var_list[key]]
+        return self._trie[key]
 
     def __delitem__(self, name):
         raise NotImplementedError('Cannot delete item from a trace')
@@ -58,14 +68,20 @@ class HierarchicalTrace(MutableMapping):
         value = kwargs.pop('value', None)
         dist = Dist(*args, **kwargs)
 
-        prov = Provision.OBSERVED if value is not None else Provision.SAMPLED
-        if prov is Provision.SAMPLED:
-            value = self._proposal.get(name, None)
-            if value is not None:
-                value = value.value
+        prov = Provision.SAMPLED
+        if value is not None:
+            if kwargs.get('proposed', False):
                 prov = Provision.PROPOSED
             else:
-                raise ValueError('Attempting to rescore variable %s without proposal' % name)
+                prov = Provision.OBSERVED
+        if prov is Provision.SAMPLED:
+            if self._proposal_slice[0] <= len(self) and len(self) < self._proposal_slice[1]:
+                value = self._proposal.get(name, None)
+                if value is None:
+                    msg = NO_PROPOSAL_MSG % (name, list(self._proposal.keys()))
+                    raise ValueError(msg)
+                value = value.value
+                prov = Provision.PROPOSED
         if prov is Provision.SAMPLED:
             value = utils.try_rsample(dist)
 
