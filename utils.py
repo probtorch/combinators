@@ -5,10 +5,16 @@ import flatdict
 
 import matplotlib.pyplot as plt
 import probtorch
+from probtorch.util import log_mean_exp
 import torch
 import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
+
+def marginalize_all(log_prob):
+    for _ in range(len(log_prob.shape)):
+        log_prob = log_mean_exp(log_prob, dim=0)
+    return log_prob
 
 def try_rsample(dist):
     if dist.has_rsample:
