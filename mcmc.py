@@ -43,12 +43,13 @@ class LightweightMH(MHMove):
     def propose(self, results, trace):
         rv_index = np.random.randint(len(trace))
         candidate = trace[0:rv_index]
-        move_current = trace[rv_index].log_prob
-        candidate.variable(trace[rv_index].dist, name=trace[rv_index].name,
-                           value=utils.try_rsample(trace[rv_index].dist))
-        move_candidate = candidate[-1].log_prob
+        move_current = utils.marginalize_all(trace[rv_index].log_prob)
+        dist = trace[rv_index].dist
+        rv = probtorch.RandomVariable(dist, utils.try_rsample(dist), False)
+        candidate[trace.name(rv_index)] = rv
         results, candidate = self.sampler(*self._args, **self._kwargs,
                                           trace=candidate)
+        move_candidate = utils.marginalize_all(rv.log_prob)
         self._args = ()
         self._kwargs = {}
         return results, candidate, move_candidate, move_current
