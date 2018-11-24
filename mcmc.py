@@ -19,7 +19,8 @@ class MHMove(combinators.InferenceSampler):
 
     def sample_prehook(self, trace, *args, **kwargs):
         self._args = args
-        self._kwargs = kwargs
+        self._kwargs = {k: v for (k, v) in kwargs.items() if k != 'trace'}
+        return trace, args, kwargs
 
     def propose(self, results, trace):
         self._args = ()
