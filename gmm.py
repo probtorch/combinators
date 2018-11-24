@@ -15,12 +15,14 @@ def init_gmm(pi_name='Pi', trace=None, params=None):
     sigma = torch.sqrt(trace.param_sample(Normal, params, name='sigma')**2)
     return mu, sigma, pi
 
-def gmm(mu, sigma, pi, latent_name='Z', observable_name='X', trace=None):
+def gmm(mu, sigma, pi, latent_name='Z', observable_name='X', trace=None,
+        data={}):
     z = trace.sample(Categorical, softplus(pi), name=latent_name)
     if observable_name:
-        x = trace.sample(Normal, utils.particle_index(mu, z),
-                         softplus(utils.particle_index(sigma, z)),
-                         name=observable_name)
+        x = trace.variable(Normal, utils.particle_index(mu, z),
+                           softplus(utils.particle_index(sigma, z)),
+                           name=observable_name,
+                           value=data.get(observable_name))
     else:
         x = None
     return z, x
