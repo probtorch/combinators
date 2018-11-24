@@ -6,7 +6,6 @@ import flatdict
 import torch
 
 from probtorch.stochastic import RandomVariable
-from probtorch.util import log_mean_exp
 
 import utils
 
@@ -145,8 +144,7 @@ class HierarchicalTrace(MutableMapping):
     def marginal_log_likelihood(self):
         weight = self.log_weight()
         if isinstance(weight, torch.Tensor):
-            for _ in range(len(weight.shape)):
-                weight = log_mean_exp(weight, dim=0)
+            weight = utils.marginalize_all(weight)
         return weight
 
     def normalized_log_weight(self):
