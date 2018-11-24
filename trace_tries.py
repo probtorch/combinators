@@ -44,6 +44,9 @@ class HierarchicalTrace(MutableMapping):
         self._trie[key] = value
         self._var_list.append(key)
 
+    def name(self, key):
+        return self._var_list[key]
+
     def __getitem__(self, key):
         if isinstance(key, slice):
             return HierarchicalTrace(proposal=self, proposal_slice=key)
