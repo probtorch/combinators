@@ -2,6 +2,8 @@
 
 import numpy as np
 import torch
+from torch.distributions import Beta, Categorical, Dirichlet, MultivariateNormal
+from torch.distributions import Normal
 from torch.distributions.transforms import LowerCholeskyTransform
 
 import utils
@@ -19,29 +21,26 @@ def reflect_directions(angle):
         result = result.squeeze(0)
     return result
 
-def init_bouncing_ball(this=None):
-    params = this.args_vardict(this.trace.batch_shape)
-
-    initial_alpha = this.trace.param_dirichlet(params, name='alpha_0')
+def init_bouncing_ball(params=None, trace=None, data={}):
+    initial_alpha = trace.param_sample(Dirichlet, params, name='alpha_0')
     transition_alpha = torch.stack([
-        this.trace.param_dirichlet(params, name='alpha_%d' % (d+1))
+        trace.param_sample(Dirichlet, params, name='alpha_%d' % (d+1))
         for d in range(4)
     ], dim=-1)
-    initial_position = this.trace.param_normal(params, name='position_0')
-    pi = this.trace.dirichlet(initial_alpha, name='Pi')
-    initial_z = this.trace.variable(torch.distributions.Categorical, pi,
-                                    name='direction_0')
+    initial_position = trace.param_sample(Normal, params, name='position_0')
+    pi = trace.sample(Dirichlet, initial_alpha, name='Pi')
+    initial_z = trace.variable(Categorical, pi, name='direction_0')
     transition = torch.stack([
-        this.trace.dirichlet(transition_alpha[:, d], name='A_%d' % (d+1))
+        trace.sample(Dirichlet, transition_alpha[:, d], name='A_%d' % (d+1))
         for d in range(4)
     ], dim=-1)
-    dir_angle = this.trace.param_beta(params, name='directions__angle') * np.pi/2
+    dir_angle = trace.param_sample(Beta, params, name='directions__angle') * np.pi/2
     dir_locs = reflect_directions(dir_angle)
-    dir_covs = this.trace.param_normal(params, name='directions__scale')
+    dir_covs = trace.param_sample(Normal, params, name='directions__scale')
 
     return initial_position, initial_z, transition, dir_locs, dir_covs
 
-def bouncing_ball_step(theta, t, this=None):
+def bouncing_ball_step(theta, t, trace=None, data={}):
     position, z_prev, transition, dir_locs, dir_covs = theta
     directions = {
         'loc': dir_locs,
@@ -50,14 +49,14 @@ def bouncing_ball_step(theta, t, this=None):
     t += 1
 
     transition_prev = utils.particle_index(transition, z_prev)
-    z_current = this.trace.variable(torch.distributions.Categorical,
-                                    transition_prev, name='direction_%d' % t)
+    z_current = trace.variable(Categorical, transition_prev,
+                               name='direction_%d' % t)
     direction = utils.vardict_particle_index(directions, z_current)
     direction_covariance = direction['covariance_matrix']
-    velocity = this.trace.multivariate_normal(
-        direction['loc'],
+    velocity = trace.observe(
+        MultivariateNormal, data.get('displacement_%d' % t), direction['loc'],
         scale_tril=LowerCholeskyTransform()(direction_covariance),
-        name='displacement_%d' % t
+        name='displacement_%d' % t,
     )
     position = position + velocity
 
