@@ -218,13 +218,11 @@ class Reduce(ModelSampler):
         return 'Reduce(%s)' % self.associative.name
 
     def _forward(self, *args, **kwargs):
-        trace = kwargs.pop('trace')
         if self.initializer is not None:
-            kwargs['trace'] = trace.extract(self.initializer.name)
-            accumulator, init_trace = self.initializer(**kwargs)
-            trace.insert(self.initializer.name, init_trace)
+            accumulator, trace = self.initializer(**kwargs)
         else:
             accumulator = None
+            trace = kwargs.pop('trace')
         items = self._generator()
         for item in items:
             kwargs['trace'] = trace.extract(self.name + '/' + str(item))
