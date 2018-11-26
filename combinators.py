@@ -146,18 +146,18 @@ class Composition(ModelSampler):
 
     def _forward(self, *args, **kwargs):
         final_trace = kwargs.pop('trace')
-        kwargs['trace'] = final_trace.extract(self._inner.name)
-        temp, inner_trace = self._inner(*args, **kwargs)
-        kws = {'trace': final_trace.extract(self._outer.name)}
+        kwargs['trace'] = final_trace.extract(self.inner.name)
+        temp, inner_trace = self.inner(*args, **kwargs)
+        kws = {'trace': final_trace.extract(self.outer.name)}
         if self._intermediate:
             kws[self._intermediate] = temp
-            result, outer_trace = self._outer(**kws)
+            result, outer_trace = self.outer(**kws)
         elif isinstance(temp, tuple):
-            result, outer_trace = self._outer(*temp, **kws)
+            result, outer_trace = self.outer(*temp, **kws)
         else:
-            result, outer_trace = self._outer(temp, **kws)
-        final_trace.insert(self._inner.name, inner_trace)
-        final_trace.insert(self._outer.name, outer_trace)
+            result, outer_trace = self.outer(temp, **kws)
+        final_trace.insert(self.inner.name, inner_trace)
+        final_trace.insert(self.outer.name, outer_trace)
         return result, final_trace
 
 class Partial(ModelSampler):
