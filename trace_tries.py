@@ -26,6 +26,9 @@ class HierarchicalTrace(MutableMapping):
         else:
             self._proposal_slice = (0, len(self._proposal))
 
+    def __str__(self):
+        return str(self._trie)
+
     def extract(self, prefix):
         if len(self._proposal):
             extracted_proposal = self._proposal.extract(prefix)
