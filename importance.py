@@ -21,14 +21,19 @@ def index_select_rv(rv, dim, indices):
                                 rv.reparameterized)
     return result
 
-class PopulationResampler(combinators.Population):
+class ImportanceResampler(combinators.InferenceSampler):
     def __init__(self, sampler, particle_shape):
-        super(PopulationResampler, self).__init__(sampler, particle_shape,
-                                                  before=True)
+        super(ImportanceResampler, self).__init__(sampler)
+        self._particle_shape = particle_shape
+
+    @property
+    def particle_shape(self):
+        return self._particle_shape
+
+    def sample_prehook(self, trace, *args, **kwargs):
+        return trace, args, kwargs
 
     def sample_hook(self, results, trace):
-        results, trace = super(PopulationResampler, self).sample_hook(results,
-                                                                      trace)
         weights = trace.normalized_log_weight()
         resampler = dists.Categorical(logits=weights)
         ancestor_indices = resampler.sample(self.particle_shape)
@@ -37,7 +42,7 @@ class PopulationResampler(combinators.Population):
         return tuple(results), trace.map(trace_resampler)
 
 def smc(stepwise, particle_shape, step_generator, initializer=None):
-    resampler = PopulationResampler(stepwise, particle_shape)
+    resampler = ImportanceResampler(stepwise, particle_shape)
     return combinators.Reduce(resampler, step_generator, initializer)
 
 def variational_importance(sampler, num_iterations, data, use_cuda=True,
