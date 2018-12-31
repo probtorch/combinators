@@ -216,39 +216,6 @@ class MapIid(ModelSampler):
         result = list(self.iterate(trace, **kwargs))
         return result, trace
 
-class Reduce(ModelSampler):
-    def __init__(self, func, generator, initializer=None, **kwargs):
-        super(Reduce, self).__init__()
-        assert isinstance(func, Sampler)
-        self.add_module('associative', func)
-        if initializer is not None:
-            assert isinstance(initializer, Sampler)
-            self.add_module('initializer', initializer)
-        else:
-            self.initializer = None
-        self._generator = generator
-        self._associative_kwargs = kwargs
-
-    @property
-    def name(self):
-        return 'Reduce(%s)' % self.associative.name
-
-    def _forward(self, *args, **kwargs):
-        if self.initializer is not None:
-            accumulator, trace = self.initializer(**kwargs)
-        else:
-            accumulator = None
-            trace = kwargs.pop('trace')
-        items = self._generator()
-        for item in items:
-            kwargs['trace'] = trace.extract(self.name + '/' + str(item))
-            accumulator, step_trace = self.associative(
-                accumulator, item,
-                *args, **kwargs, **self._associative_kwargs
-            )
-            trace.insert(self.name + '/' + str(item), step_trace)
-        return accumulator, trace
-
 class Population(InferenceSampler):
     def __init__(self, sampler, particle_shape, before=True):
         super(Population, self).__init__(sampler)
