@@ -125,11 +125,27 @@ class SideEffect(ModelSampler):
 def score_under_proposal(proposal, model):
     return SideEffect(proposal, Score(model))
 
-# TODO: Ultimately, I want to decompose this somehow to help me implement Trace
-# MCMC.  In specific, I want to be able to:
-# * Run a program, extracting a trace
-# * Run a program clamped to a trace, properly weighting the new trace (Score)
-# * Generate new traces from old
+class Lambda(ModelSampler):
+    def __init__(self, body, nargs=0, kwargs=[]):
+        super(Lambda, self).__init__()
+        assert isinstance(body, Sampler)
+        self.add_module('body', body)
+        self._nargs = nargs
+        assert 'trace' not in kwargs
+        self._kwargs = kwargs
+
+    @property
+    def name(self):
+        return 'Lambda(%s, %d, %s)' % (self.body.name, self._nargs, self._kwargs)
+
+    def _forward(self, *args, **kwargs):
+        args = list(args)
+        for _ in range(self._nargs):
+            args = args.pop(0)
+        args = tuple(args)
+        for k in self._kwargs:
+            kwargs.pop(k)
+        return self.body(*args, **kwargs)
 
 class Composition(ModelSampler):
     def __init__(self, outer, inner, intermediate_name=None):
