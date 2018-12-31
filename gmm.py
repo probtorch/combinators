@@ -3,26 +3,26 @@
 import probtorch
 from probtorch.util import log_sum_exp
 import torch
-from torch.distributions import Categorical, Normal
+from torch.distributions import Categorical, Dirichlet, Normal
 from torch.nn.functional import softplus
 
 import combinators
 import utils
 
-def init_gmm(pi_name='Pi', this=None):
-    params = this.args_vardict(this.trace.batch_shape)
-    pi = this.trace.param_dirichlet(params, name=pi_name)
-    mu = this.trace.param_normal(params, name='mu')
-    sigma = torch.sqrt(this.trace.param_normal(params, name='sigma')**2)
+def init_gmm(pi_name='Pi', trace=None, params=None):
+    pi = trace.param_sample(Dirichlet, params, name=pi_name)
+    mu = trace.param_sample(Normal, params, name='mu')
+    sigma = torch.sqrt(trace.param_sample(Normal, params, name='sigma')**2)
     return mu, sigma, pi
 
-def gmm(mu, sigma, pi, latent_name='Z', observable_name='X', this=None):
-    z = this.trace.variable(Categorical, softplus(pi), name=latent_name)
+def gmm(mu, sigma, pi, latent_name='Z', observable_name='X', trace=None,
+        data={}):
+    z = trace.sample(Categorical, softplus(pi), name=latent_name)
     if observable_name:
-        x = this.trace.normal(
-            utils.particle_index(mu, z),
-            softplus(utils.particle_index(sigma, z)), name=observable_name,
-        )
+        x = trace.variable(Normal, utils.particle_index(mu, z),
+                           softplus(utils.particle_index(sigma, z)),
+                           name=observable_name,
+                           value=data.get(observable_name))
     else:
         x = None
     return z, x

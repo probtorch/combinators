@@ -5,47 +5,55 @@ import logging
 
 import numpy as np
 import probtorch
-from probtorch.util import log_mean_exp
 import torch
 
 import combinators
-from combinators import BroadcastingTrace
-import importance
-from importance import ResamplerTrace
+import trace_tries
+import utils
 
-class IndependentMH(combinators.Model):
-    def __init__(self, model, proposal, num_iterations=1, trainable={},
-                 hyper={}):
-        super(IndependentMH, self).__init__(model, trainable, hyper)
-        self._proposal = proposal
-        self._num_iterations = num_iterations
+class MHMove(combinators.InferenceSampler):
+    def __init__(self, sampler, moves=1):
+        super(MHMove, self).__init__(sampler)
+        self._args = ()
+        self._kwargs = {}
+        self._moves = moves
 
-    def forward(self, *args, **kwargs):
-        elbos = torch.zeros(self._num_iterations)
-        samples = list(range(self._num_iterations))
-        original_trace = kwargs.get('trace', None)
+    def sample_prehook(self, trace, *args, **kwargs):
+        self._args = args
+        self._kwargs = {k: v for (k, v) in kwargs.items() if k != 'trace'}
+        return trace, args, kwargs
 
-        for i in range(self._num_iterations):
-            self._proposal.simulate(
-                trace=ResamplerTrace(ancestor=original_trace),
-            )
-            kwargs['trace'] = ResamplerTrace(original_trace.num_particles,
-                                             guide=self._proposal.trace,
-                                             data=original_trace.data)
-            sample = super(IndependentMH, self).forward(*args, **kwargs)
+    def propose(self, results, trace):
+        raise NotImplementedError()
 
-            elbo = self._function.trace.marginal_log_likelihood()
-            acceptance = torch.min(torch.zeros(1), elbo - elbos[i-1])
-            if torch.bernoulli(torch.exp(acceptance)) == 1 or i == 0:
-                elbos[i] = elbo
-                samples[i] = sample
-            else:
-                elbos[i] = elbos[i-1]
-                samples[i] = samples[i-1]
+    def sample_hook(self, results, trace):
+        marginal = trace.marginal_log_likelihood()
+        for _ in range(self._moves):
+            candidate, candidate_trace, move_candidate, move_current =\
+                self.propose(results, trace)
+            candidate_marginal = candidate_trace.marginal_log_likelihood()
+            mh_ratio = (candidate_marginal - move_candidate) -\
+                       (marginal - move_current)
+            log_alpha = torch.min(torch.zeros(1), mh_ratio)
+            if torch.bernoulli(torch.exp(log_alpha)) == 1:
+                results = candidate
+                trace = candidate_trace
+                marginal = candidate_marginal
+        self._args = ()
+        self._kwargs = {}
+        return results, trace
 
-        result = []
-        for i in range(self._num_iterations):
-            particle = np.random.randint(0, self.trace.num_particles)
-            result.append([v[particle] for v in samples[i]])
-        return [torch.stack([result[i][j] for i in range(self._num_iterations)],
-                            dim=0) for j, _ in enumerate(samples[0])], elbos
+class LightweightMH(MHMove):
+    def propose(self, results, trace):
+        rv_index = np.random.randint(len(trace))
+        while trace[rv_index].observed:
+            rv_index = np.random.randint(len(trace))
+        candidate = trace[0:rv_index]
+        move_current = utils.marginalize_all(trace[rv_index].log_prob)
+        dist = trace[rv_index].dist
+        rv = probtorch.RandomVariable(dist, utils.try_rsample(dist), False)
+        candidate[trace.name(rv_index)] = rv
+        results, candidate = self.sampler(*self._args, **self._kwargs,
+                                          trace=candidate)
+        move_candidate = utils.marginalize_all(rv.log_prob)
+        return results, candidate, move_candidate, move_current

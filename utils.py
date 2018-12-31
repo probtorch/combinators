@@ -5,10 +5,42 @@ import flatdict
 
 import matplotlib.pyplot as plt
 import probtorch
+from probtorch.util import log_mean_exp
 import torch
 import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
+
+def marginalize_all(log_prob):
+    for _ in range(len(log_prob.shape)):
+        log_prob = log_mean_exp(log_prob, dim=0)
+    return log_prob
+
+def try_rsample(dist):
+    if dist.has_rsample:
+        return dist.rsample()
+    return dist.sample()
+
+def shared_shape(a, b):
+    result = ()
+    for (dim, dimb) in zip(a.shape, b.shape):
+        if dim == dimb or dim == 1 or dimb == 1:
+            result += (dim,)
+        else:
+            break
+    return result
+
+def conjunct_event_shape(tensor, batch_dims):
+    while len(tensor.shape) > batch_dims:
+        tensor = tensor.sum(dim=batch_dims)
+    return tensor
+
+def conjunct_events(conjunct_log_prob, log_prob):
+    batch_dims = len(shared_shape(conjunct_log_prob, log_prob))
+    return conjunct_log_prob + conjunct_event_shape(log_prob, batch_dims)
+
+def dict_lookup(d):
+    return lambda name, dist: d.get(name, None)
 
 def plot_evidence_bounds(bounds, lower=True, figsize=(10, 10)):
     epochs = range(len(bounds))
@@ -32,17 +64,17 @@ def batch_expand(tensor, shape):
         return batch_expand(tensor, shape[:-1])
     return tensor
 
-def vardict_particle_index(vdict, indices):
+def vardict_map(vdict, func):
     result = vardict()
     for k, v in vdict.items():
-        result[k] = particle_index(v, indices)
+        result[k] = func(v)
     return result
 
+def vardict_particle_index(vdict, indices):
+    return vardict_map(vdict, lambda v: particle_index(v, indices))
+
 def vardict_index_select(vdict, indices, dim=0):
-    result = vardict()
-    for k, v in vdict.items():
-        result[k] = v.index_select(dim, indices)
-    return result
+    return vardict_map(vdict, lambda v: v.index_select(dim, indices))
 
 def counterfactual_log_joint(p, q, rvs):
     return sum([p[rv].dist.log_prob(q[rv].value.to(p[rv].value)) for rv in rvs

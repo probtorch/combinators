@@ -1,32 +1,27 @@
 #!/usr/bin/env python3
 
-import probtorch
-from probtorch.util import log_sum_exp
 import torch
-from torch.distributions import Categorical, Normal
-from torch.nn.functional import softplus
+from torch.distributions import Dirichlet
 
-import filtering
 import gmm
 import utils
 
-def init_hmm(this=None):
-    params = this.args_vardict(this.trace.batch_shape)
-    mu, sigma, pi0 = gmm.init_gmm('Pi_0', this)
+def init_hmm(trace=None, params=None, data={}):
+    mu, sigma, pi0 = gmm.init_gmm('Pi_0', trace=trace, params=params)
 
-    pi = torch.zeros(this.trace.num_particles, pi0.shape[1], pi0.shape[1])
+    pi = torch.zeros(pi0.shape[0], pi0.shape[1], pi0.shape[1])
     for k in range(pi0.shape[1]):
-        pi[:, k] = this.trace.param_dirichlet(params, name='Pi_%d' % (k+1))
+        pi[:, k] = trace.param_sample(Dirichlet, params, name='Pi_%d' % (k+1))
 
     z0, _ = gmm.gmm(mu, sigma, pi0, latent_name='Z_0', observable_name=None,
-                    this=this)
+                    trace=trace)
     return z0, mu, sigma, pi, pi0
 
-def hmm_step(theta, t, this=None):
+def hmm_step(theta, t, trace=None, data={}):
     z_prev, mu, sigma, pi, pi0 = theta
     t += 1
     pi_prev = utils.particle_index(pi, z_prev)
 
     z_current, _ = gmm.gmm(mu, sigma, pi_prev, latent_name='Z_%d' % t,
-                           observable_name='X_%d' % t, this=this)
+                           observable_name='X_%d' % t, trace=trace, data=data)
     return z_current, mu, sigma, pi, pi0
