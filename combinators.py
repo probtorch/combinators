@@ -39,6 +39,18 @@ class ModelSampler(Sampler):
     def _forward(self, *args, **kwargs):
         raise NotImplementedError()
 
+class ReturnModel(ModelSampler):
+    def __init__(self, *args):
+        super(ReturnModel, self).__init__()
+        self._args = args
+
+    @property
+    def name(self):
+        return "Return(%s)" % str(self._args)
+
+    def _forward(self, *args, **kwargs):
+        return self._args, kwargs.pop('trace')
+
 class PrimitiveCall(ModelSampler):
     def __init__(self, primitive, name=None, trainable={}, hyper={}):
         super(PrimitiveCall, self).__init__()
