@@ -10,8 +10,8 @@ import torch.distributions as dists
 from torch.nn.functional import log_softmax
 
 import combinators
+import foldable
 import trace_tries
-import utils
 
 def index_select_rv(rv, dim, indices):
     result = rv
@@ -41,9 +41,13 @@ class ImportanceResampler(combinators.InferenceSampler):
         trace_resampler = lambda k, rv: index_select_rv(rv, 0, ancestor_indices)
         return tuple(results), trace.map(trace_resampler)
 
-def smc(stepwise, particle_shape, step_generator, initializer=None):
-    resampler = ImportanceResampler(stepwise, particle_shape)
-    return combinators.Reduce(resampler, step_generator, initializer)
+def smc(sampler, particle_shape, initializer=None):
+    resampler = ImportanceResampler(sampler, particle_shape)
+    return foldable.Foldable(resampler, initializer=initializer)
+
+def reduce_smc(stepwise, particle_shape, step_generator, initializer=None):
+    smc_foldable = smc(stepwise, particle_shape, initializer)
+    return foldable.Reduce(smc_foldable, step_generator)
 
 def variational_importance(sampler, num_iterations, data, use_cuda=True,
                            lr=1e-6, inclusive_kl=False, patience=50):
