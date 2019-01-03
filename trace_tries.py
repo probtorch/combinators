@@ -106,6 +106,10 @@ class HierarchicalTrace(MutableMapping):
         kwargs['value'] = value
         return self.variable(Dist, *args, **kwargs)
 
+    def param_observe(self, Dist, params, name, value):
+        kwargs = {**params[name], 'name': name}
+        return self.observe(Dist, value, **kwargs)
+
     def proposed(self, name):
         rv = self._proposal.get(name, None)
         if rv is not None:
