@@ -1,25 +1,11 @@
 #!/usr/bin/env python3
 
-import numpy as np
 import torch
-from torch.distributions import Beta, Categorical, Dirichlet, MultivariateNormal
+from torch.distributions import Categorical, Dirichlet, MultivariateNormal
 from torch.distributions import Normal
 from torch.distributions.transforms import LowerCholeskyTransform
 
 import utils
-
-REFLECTIONS = torch.tensor([[1., 1.], [1., -1.], [-1., -1.], [-1., 1.]],
-                           requires_grad=False)
-
-def reflect_directions(angle):
-    unsqueeze = len(angle.shape) < 1
-    if unsqueeze:
-        angle = angle.unsqueeze(0)
-    unit = torch.stack((torch.cos(angle), torch.sin(angle)), dim=-1)
-    result = REFLECTIONS.to(unit).unsqueeze(0) * unit.unsqueeze(1)
-    if unsqueeze:
-        result = result.squeeze(0)
-    return result
 
 def init_bouncing_ball(params=None, trace=None, data={}):
     initial_alpha = trace.param_sample(Dirichlet, params, name='alpha_0')
@@ -36,8 +22,7 @@ def init_bouncing_ball(params=None, trace=None, data={}):
         trace.sample(Dirichlet, transition_alpha[:, d], name='A_%d' % (d+1))
         for d in range(4)
     ], dim=-1)
-    dir_angle = trace.param_sample(Beta, params, name='directions__angle') * np.pi/2
-    dir_locs = reflect_directions(dir_angle)
+    dir_locs = trace.param_sample(Normal, params, name='directions__loc')
     dir_covs = trace.param_sample(Normal, params, name='directions__scale')
 
     return initial_position, initial_z, transition, dir_locs, dir_covs
