@@ -98,7 +98,11 @@ class HierarchicalTrace(MutableMapping):
         return self.variable(Dist, *args, **kwargs)
 
     def param_sample(self, Dist, params, name):
-        kwargs = {**params[name], 'name': name}
+        kwargs = {**params[name].copy(), 'name': name}
+        for arg, val in kwargs.items():
+            matches = [k for k in utils.PARAM_TRANSFORMS if k in arg]
+            if matches:
+                kwargs[arg] = utils.PARAM_TRANSFORMS[matches[0]](val)
         return self.sample(Dist, **kwargs)
 
     def observe(self, Dist, value, *args, **kwargs):
