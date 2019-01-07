@@ -142,6 +142,16 @@ class HierarchicalTrace(MutableMapping):
         proposed = filter(lambda rv: self.proposed(rv) is not None, latents)
         proposed = list(proposed)
 
+        if isinstance(self._proposal, HierarchicalTrace):
+            unused_proposals = [var for var, rv in self._proposal.filter(
+                lambda v, rv: not rv.observed and self.proposed(v) is not None
+            )]
+            unused_proposal_joint = self._proposal.log_joint(
+                nodes=unused_proposals, reparameterized=False
+            )
+        else:
+            unused_proposal_joint = torch.zeros(1).to(self.device)
+
         unproposed_joint = self.log_joint(nodes=unproposed,
                                           reparameterized=False)
         if proposed:
@@ -149,7 +159,11 @@ class HierarchicalTrace(MutableMapping):
                                                       reparameterized=False)
         else:
             proposed_joint = torch.zeros(1).to(self.device)
-        return generative_joint - (unproposed_joint + proposed_joint)
+
+        extended_generative_joint = generative_joint + unused_proposal_joint
+        extended_guide_joint = unproposed_joint + proposed_joint
+
+        return extended_generative_joint - extended_guide_joint
 
     def marginal_log_likelihood(self):
         weight = self.log_weight()
