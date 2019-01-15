@@ -8,6 +8,8 @@ import probtorch
 import torch
 
 import combinators
+import foldable
+import importance
 import trace_tries
 import utils
 
@@ -57,3 +59,17 @@ class LightweightMH(MHMove):
                                           trace=candidate)
         move_candidate = utils.marginalize_all(rv.log_prob)
         return results, candidate, move_candidate, move_current
+
+def resample_move_smc(sampler, particle_shape, initializer=None, moves=1,
+                      mcmc=LightweightMH):
+    resampler_mover = mcmc(importance.ImportanceResampler(sampler,
+                                                          particle_shape),
+                           moves)
+    return foldable.Foldable(resampler_mover, initializer=initializer)
+
+def reduce_resample_move_smc(stepwise, particle_shape, step_generator,
+                             initializer=None, moves=1, mcmc=LightweightMH):
+    rmsmc_foldable = resample_move_smc(stepwise, particle_shape,
+                                       initializer=initializer, moves=moves,
+                                       mcmc=mcmc)
+    return foldable.Reduce(rmsmc_foldable, step_generator)
