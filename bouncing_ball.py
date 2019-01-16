@@ -9,23 +9,25 @@ import utils
 
 def init_bouncing_ball(params=None, trace=None, data={}):
     initial_alpha = trace.param_sample(Dirichlet, params, name='alpha_0')
+    pi = trace.sample(Dirichlet, initial_alpha, name='Pi')
+    initial_z = trace.variable(Categorical, pi, name='direction_0')
+
     transition_alpha = torch.stack([
         trace.param_sample(Dirichlet, params, name='alpha_%d' % (d+1))
         for d in range(4)
-    ], dim=-1)
-    initial_position = trace.param_observe(
-        Normal, params, name='position_0',
-        value=data['position_0'].expand(params['position_0']['loc'].shape))
-    pi = trace.sample(Dirichlet, initial_alpha, name='Pi')
-    initial_z = trace.variable(Categorical, pi, name='direction_0')
+    ], dim=1)
     transition = torch.stack([
         trace.sample(Dirichlet, transition_alpha[:, d], name='A_%d' % (d+1))
         for d in range(4)
-    ], dim=-1)
+    ], dim=1)
+
     dir_locs = trace.param_sample(Normal, params, name='directions__loc')
     dir_covs = trace.param_sample(Normal, params, name='directions__scale')
 
-    initial_position = trace.param_observe(Normal, params, name='position_0')
+    initial_position = trace.param_observe(
+        Normal, params, name='position_0',
+        value=data['position_0'].expand(params['position_0']['loc'].shape)
+    )
 
     return initial_position, initial_z, transition, dir_locs, dir_covs
 
