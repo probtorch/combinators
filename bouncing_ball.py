@@ -25,6 +25,8 @@ def init_bouncing_ball(params=None, trace=None, data={}):
     dir_locs = trace.param_sample(Normal, params, name='directions__loc')
     dir_covs = trace.param_sample(Normal, params, name='directions__scale')
 
+    initial_position = trace.param_observe(Normal, params, name='position_0')
+
     return initial_position, initial_z, transition, dir_locs, dir_covs
 
 def bouncing_ball_step(theta, t, trace=None, data={}):
