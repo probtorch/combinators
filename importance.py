@@ -70,11 +70,10 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
 
         bound = -inference.marginal_log_likelihood()
         bound_name = 'EUBO' if inclusive_kl else 'ELBO'
-        signed_bound = bound if inclusive_kl else -bound
-        logging.info('%s=%.8e at epoch %d', bound_name, signed_bound, t + 1)
+        bounds[t] = bound if inclusive_kl else -bound
+        logging.info('%s=%.8e at epoch %d', bound_name, bounds[t], t + 1)
         bound.backward()
         optimizer.step()
-        bounds[t] = bound if inclusive_kl else -bound
         scheduler.step(bounds[t])
 
     if torch.cuda.is_available() and use_cuda:
