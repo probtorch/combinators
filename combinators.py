@@ -255,14 +255,22 @@ class Population(InferenceSampler):
     def before(self):
         return self._before
 
+    @property
+    def expander(self):
+        return lambda v: utils.batch_expand(v, self.particle_shape)
+
     def _expand_args(self, *args, **kwargs):
         args = list(args)
         for i, arg in enumerate(args):
             if isinstance(arg, torch.Tensor):
                 args[i] = utils.batch_expand(arg, self.particle_shape)
+            elif isinstance(arg, collections.Mapping):
+                args[i] = utils.vardict_map(arg, self.expander)
         for k, v in kwargs.items():
             if isinstance(v, torch.Tensor):
                 kwargs[k] = utils.batch_expand(v, self.particle_shape)
+            elif isinstance(v, collections.Mapping):
+                kwargs[k] = utils.vardict_map(v, self.expander)
         return tuple(args), kwargs
 
     def sample_prehook(self, trace, *args, **kwargs):
