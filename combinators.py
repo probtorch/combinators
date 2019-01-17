@@ -52,10 +52,8 @@ class ReturnModel(ModelSampler):
         return self._args, kwargs.pop('trace')
 
 class PrimitiveCall(ModelSampler):
-    def __init__(self, primitive, name=None, trainable={}, hyper={}):
+    def __init__(self, primitive, name=None):
         super(PrimitiveCall, self).__init__()
-        self.register_args(trainable, True)
-        self.register_args(hyper, False)
         assert not isinstance(primitive, Sampler)
         if isinstance(primitive, nn.Module):
             self.add_module('primitive', primitive)
@@ -70,18 +68,7 @@ class PrimitiveCall(ModelSampler):
             return self._name
         return self.primitive.__name__
 
-    def register_args(self, args, trainable=True):
-        for k, v in utils.vardict(args).items():
-            v = torch.tensor(v)
-            if trainable:
-                self.register_parameter(k, nn.Parameter(v))
-            else:
-                self.register_buffer(k, v)
-
     def _forward(self, *args, **kwargs):
-        params = self.args_vardict()
-        if len(params):
-            kwargs['params'] = params
         trace = kwargs['trace']
         kwargs['trace'] = trace.extract(self.name)
         result = self.primitive(*args, **kwargs)
@@ -109,6 +96,29 @@ class InferenceSampler(Sampler):
 
     def sample_hook(self, results, trace):
         raise NotImplementedError()
+
+class ParamCall(InferenceSampler):
+    def __init__(self, sampler, trainable={}, hyper={}):
+        super(ParamCall, self).__init__(sampler)
+        self.register_args(trainable, True)
+        self.register_args(hyper, False)
+
+    def register_args(self, args, trainable=True):
+        for k, v in utils.vardict(args).items():
+            v = torch.tensor(v)
+            if trainable:
+                self.register_parameter(k, nn.Parameter(v))
+            else:
+                self.register_buffer(k, v)
+
+    def sample_prehook(self, trace, *args, **kwargs):
+        params = self.args_vardict()
+        if params:
+            kwargs['params'] = params
+        return trace, args, kwargs
+
+    def sample_hook(self, results, trace):
+        return results, trace
 
 class Score(InferenceSampler):
     def sample_prehook(self, trace, *args, **kwargs):
