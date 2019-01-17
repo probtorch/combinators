@@ -86,7 +86,10 @@ class InferenceSampler(Sampler):
         return self.sampler.name
 
     def forward(self, *args, **kwargs):
-        trace = kwargs.pop('trace')
+        if 'trace' in kwargs:
+            trace = kwargs.pop('trace')
+        else:
+            trace = trace_tries.HierarchicalTrace()
         trace, args, kwargs = self.sample_prehook(trace, *args, **kwargs)
         kwargs['trace'] = trace
         return self.sample_hook(*self.sampler(*args, **kwargs))
