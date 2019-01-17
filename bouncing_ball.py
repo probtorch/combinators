@@ -52,3 +52,6 @@ def bouncing_ball_step(theta, t, trace=None, data={}):
     position = position + velocity
 
     return position, z_current, transition, dir_locs, dir_covs
+
+def identity_step(theta, t, trace=None, data={}):
+    return theta
