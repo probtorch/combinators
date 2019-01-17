@@ -140,6 +140,7 @@ class HierarchicalTrace(MutableMapping):
                 if isinstance(node, RandomVariable) and reparameterized and\
                    not node.reparameterized:
                     raise ValueError('All random variables must be sampled by reparameterization.')
+                assert torch.isnan(node.log_prob).sum() == 0.0
                 log_prob = utils.conjunct_events(log_prob, node.log_prob)
         return log_prob
 
