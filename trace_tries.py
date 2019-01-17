@@ -112,6 +112,10 @@ class HierarchicalTrace(MutableMapping):
 
     def param_observe(self, Dist, params, name, value):
         kwargs = {**params[name], 'name': name}
+        for arg, val in kwargs.items():
+            matches = [k for k in utils.PARAM_TRANSFORMS if k in arg]
+            if matches:
+                kwargs[arg] = utils.PARAM_TRANSFORMS[matches[0]](val)
         return self.observe(Dist, value, **kwargs)
 
     def proposed(self, name):
