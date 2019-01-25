@@ -57,6 +57,7 @@ class PrimitiveCall(ModelSampler):
         assert not isinstance(primitive, Sampler)
         if isinstance(primitive, nn.Module):
             self.add_module('primitive', primitive)
+            assert name is not None
             self._name = name
         else:
             self.primitive = primitive
