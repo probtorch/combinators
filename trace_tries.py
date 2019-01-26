@@ -14,8 +14,6 @@ class Provision(Enum):
     OBSERVED = 1
     PROPOSED = 2
 
-NO_PROPOSAL_MSG = 'Attempting to rescore variable %s without proposal in %s'
-
 class HierarchicalTrace(MutableMapping):
     def __init__(self, proposal={}, proposal_slice=None):
         self._trie = flatdict.FlatDict(delimiter='/')
@@ -82,11 +80,11 @@ class HierarchicalTrace(MutableMapping):
         if prov is Provision.SAMPLED:
             if self._proposal_slice[0] <= len(self) and len(self) < self._proposal_slice[1]:
                 value = self._proposal.get(name, None)
-                if value is None:
-                    msg = NO_PROPOSAL_MSG % (name, list(self._proposal.keys()))
-                    raise ValueError(msg)
-                value = value.value
-                prov = Provision.PROPOSED
+                if value is not None:
+                    value = value.value
+                    prov = Provision.PROPOSED
+                else:
+                    prov = Provision.SAMPLED
         if prov is Provision.SAMPLED:
             value = utils.try_rsample(dist)
 
