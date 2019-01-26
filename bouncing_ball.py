@@ -81,11 +81,14 @@ class ProposalStep(nn.Module):
         direction_predictions = direction_predictions.expand(
             position.shape[0], 4
         )
-        z_current = trace.variable(
+        z_prev = trace.variable(
             Categorical,
             logits=direction_predictions,
-            name='direction_%d' % t
         )
+        transition_prev = utils.particle_index(transition, z_prev)
+        z_current = trace.variable(Categorical, transition_prev,
+                                   name='direction_%d' % t)
+
         direction = utils.vardict_particle_index(directions, z_current)
         direction_covariance = direction['covariance_matrix']
         velocity = trace.sample(
