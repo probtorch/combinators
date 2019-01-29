@@ -23,6 +23,7 @@ def init_bouncing_ball(params=None, trace=None, data={}):
     ], dim=1)
 
     dir_locs = trace.param_sample(Normal, params, name='directions__loc')
+    dir_locs = dir_locs / (dir_locs**2).sum(dim=-1).unsqueeze(-1).sqrt()
     dir_covs = trace.param_sample(Normal, params, name='directions__scale')
 
     initial_position = trace.param_observe(
