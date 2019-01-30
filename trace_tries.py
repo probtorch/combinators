@@ -4,6 +4,7 @@ from collections import MutableMapping
 from enum import Enum
 import flatdict
 import torch
+from torch.nn.functional import log_softmax
 
 from probtorch.stochastic import RandomVariable
 
@@ -179,7 +180,7 @@ class HierarchicalTrace(MutableMapping):
         return weight
 
     def normalized_log_weight(self):
-        return self.log_weight() - self.marginal_log_likelihood()
+        return log_softmax(self.log_weight(), dim=0)
 
     def effective_sample_size(self):
         return (self.log_weight()*2).exp().sum(dim=0).pow(-1)
