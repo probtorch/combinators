@@ -8,6 +8,13 @@ from torch.distributions.transforms import LowerCholeskyTransform
 
 import utils
 
+def reflect_directions(dir_loc):
+    dir_locs = dir_loc.unsqueeze(-2).repeat(1, 4, 1)
+    dir_locs[:, 1, 1] *= -1
+    dir_locs[:, 2, :] *= -1
+    dir_locs[:, 3, 0] *= -1
+    return dir_locs / (dir_locs**2).sum(dim=-1).unsqueeze(-1).sqrt()
+
 def init_bouncing_ball(params=None, trace=None, data={}):
     initial_alpha = trace.param_sample(Dirichlet, params, name='alpha_0')
     pi = trace.sample(Dirichlet, initial_alpha, name='Pi')
@@ -23,8 +30,8 @@ def init_bouncing_ball(params=None, trace=None, data={}):
     ], dim=1)
 
     dir_locs = trace.param_sample(Normal, params, name='directions__loc')
-    dir_locs = dir_locs / (dir_locs**2).sum(dim=-1).unsqueeze(-1).sqrt()
-    dir_covs = trace.param_sample(Normal, params, name='directions__scale')
+    dir_locs = reflect_directions(dir_locs)
+    dir_covs = trace.param_sample(Normal, params, name='directions__cov')
 
     initial_position = trace.param_observe(
         Normal, params, name='position_0',
