@@ -82,10 +82,7 @@ class ProposalStep(nn.Module):
         direction_predictions = direction_predictions.expand(
             position.shape[0], 4
         )
-        z_prev = trace.variable(
-            Categorical,
-            logits=direction_predictions,
-        )
+        z_prev = Categorical(logits=direction_predictions).sample()
         transition_prev = utils.particle_index(transition, z_prev)
         z_current = trace.variable(Categorical, transition_prev,
                                    name='direction_%d' % t)
