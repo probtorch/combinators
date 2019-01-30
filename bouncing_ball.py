@@ -6,6 +6,9 @@ from torch.distributions import Categorical, Dirichlet, MultivariateNormal
 from torch.distributions import Normal
 from torch.distributions.transforms import LowerCholeskyTransform
 
+import combinators
+import foldable
+import mcmc
 import utils
 
 def reflect_directions(dir_loc):
@@ -103,3 +106,27 @@ class ProposalStep(nn.Module):
         )
         position = position + velocity
         return position, z_current, transition, dir_locs, dir_covs
+
+def generative_model(data, params, particle_shape, step_generator):
+    params['position_0']['loc'] = data['position_0']
+    init_population = combinators.hyper_population(
+        combinators.PrimitiveCall(init_bouncing_ball), particle_shape,
+        hyper=params
+    )
+    return mcmc.reduce_resample_move_smc(
+        combinators.PrimitiveCall(bouncing_ball_step), particle_shape,
+        step_generator, initializer=init_population
+    )
+
+def proposal_step():
+    return combinators.PrimitiveCall(ProposalStep(), name='bouncing_ball_step')
+
+def proposal_model(data, params, particle_shape, step_generator):
+    params['position_0']['loc'] = data['position_0']
+    init_proposal = combinators.hyper_population(
+        combinators.PrimitiveCall(init_bouncing_ball), particle_shape,
+        trainable=params
+    )
+    return foldable.Reduce(foldable.Foldable(proposal_step(),
+                                             initializer=init_proposal),
+                           step_generator)
