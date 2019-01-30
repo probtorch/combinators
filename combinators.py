@@ -109,7 +109,7 @@ class ParamCall(InferenceSampler):
 
     def register_args(self, args, trainable=True):
         for k, v in utils.vardict(args).items():
-            v = torch.tensor(v)
+            v = v.clone().detach()
             if trainable:
                 self.register_parameter(k, nn.Parameter(v))
             else:
