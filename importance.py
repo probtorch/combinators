@@ -41,6 +41,10 @@ class ImportanceResampler(combinators.InferenceSampler):
         trace_resampler = lambda k, rv: index_select_rv(rv, 0, ancestor_indices)
         return tuple(results), trace.map(trace_resampler)
 
+def importance_with_proposal(proposal, model, particle_shape):
+    scored_sampler = combinators.score_under_proposal(proposal, model)
+    return ImportanceResampler(scored_sampler, particle_shape)
+
 def smc(sampler, particle_shape, initializer=None):
     resampler = ImportanceResampler(sampler, particle_shape)
     return foldable.Foldable(resampler, initializer=initializer)
