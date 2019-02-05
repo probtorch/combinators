@@ -90,17 +90,24 @@ class Model(Sampler):
     def get_model(self):
         return self
 
-class ReturnModel(ModelSampler):
-    def __init__(self, *args):
-        super(ReturnModel, self).__init__()
-        self._args = args
+class Deterministic(Model):
+    def __init__(self, *args, batch_shape=(1,)):
+        super(Deterministic, self).__init__(batch_shape=batch_shape)
+        self._args, _ = self._expand_args(*args)
 
     @property
     def name(self):
-        return "Return(%s)" % str(self._args)
+        return 'Deterministic'
 
-    def _forward(self, *args, **kwargs):
-        return self._args, kwargs.pop('trace')
+    def forward(self, *args, **kwargs):
+        empty_trace = traces.Traces(traces={self.name: probtorch.Trace()})
+        return self._args, empty_trace, torch.zeros(self.batch_shape)
+
+    def cond(self, qs):
+        return Deterministic(*self._args)
+
+    def walk(self, f):
+        return f(self)
 
 class PrimitiveCall(ModelSampler):
     def __init__(self, primitive, name=None):
