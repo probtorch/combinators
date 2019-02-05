@@ -11,7 +11,7 @@ from torch.nn.functional import log_softmax
 
 import combinators
 import foldable
-import trace_tries
+import utils
 
 def index_select_rv(rv, dim, indices):
     result = rv
