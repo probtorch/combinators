@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 
 import collections
-import functools
-import inspect
 
-import numpy as np
 import probtorch
-from probtorch.stochastic import RandomVariable
-from probtorch.util import log_mean_exp
+from probtorch.stochastic import Provenance
+import pygtrie
 import torch
 import torch.nn as nn
 
-import trace_tries
+import traces
 import utils
 
 class Sampler(nn.Module):
