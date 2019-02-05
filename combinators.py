@@ -109,30 +109,74 @@ class Deterministic(Model):
     def walk(self, f):
         return f(self)
 
-class PrimitiveCall(ModelSampler):
-    def __init__(self, primitive, name=None):
-        super(PrimitiveCall, self).__init__()
-        assert not isinstance(primitive, Sampler)
-        if isinstance(primitive, nn.Module):
-            self.add_module('primitive', primitive)
-            assert name is not None
-            self._name = name
-        else:
-            self.primitive = primitive
-            self._name = primitive.__name__
+class Primitive(Model):
+    def __init__(self, params={}, trainable=True, batch_shape=(1,), q=None):
+        super(Primitive, self).__init__(batch_shape=batch_shape)
+        self._hyperparams_trainable = trainable
+        self.register_args(params, trainable)
+        self.p = None
+        self.q = q if q else probtorch.Trace()
 
     @property
     def name(self):
-        if isinstance(self.primitive, nn.Module):
-            return self._name
-        return self.primitive.__name__
+        return self.__class__.__name__
+
+    def sample(self, Dist, *args, name=None, value=None, **kwargs):
+        if name in self.q:
+            assert value is None or (value == self.q[name].value).all()
+            value = self.q[name].value
+        if value is not None:
+            if name in self.q:
+                provenance = Provenance.REUSED
+            else:
+                provenance = Provenance.OBSERVED
+        else:
+            provenance = Provenance.SAMPLED
+        return self.p.variable(Dist, *args, **kwargs, name=name, value=value,
+                               provenance=provenance)
+
+    def param_sample(self, Dist, name):
+        params = self.args_vardict()[name]
+        for arg, val in params.items():
+            matches = [k for k in utils.PARAM_TRANSFORMS if k in arg]
+            if matches:
+                params[arg] = utils.PARAM_TRANSFORMS[matches[0]](val)
+        return self.sample(Dist, name=name, **params)
+
+    def observe(self, name, value, Dist, *args, **kwargs):
+        assert name not in self.q or self.q[name].observed
+        return self.sample(Dist, *args, name=name, value=value, **kwargs)
+
+    def walk(self, f):
+        return f(self)
+
+    def cond(self, qs):
+        return self.__class__(params=self.args_vardict(False),
+                              trainable=self._hyperparams_trainable,
+                              batch_shape=self.batch_shape, q=qs[self.name])
+
+    def forward(self, *args, **kwargs):
+        self.p = probtorch.Trace()
+        result = self._forward(*args, **kwargs)
+        priors = [k for k in self.p if k in self.q]
+        log_weight = torch.zeros(self.batch_shape)
+        likelihoods = [k for k in self.p if k in self.p.conditioned() and\
+                       k not in self.q]
+        sample_dims = tuple(range(len(self.batch_shape)))
+        log_weight += self.p.log_joint(sample_dims=sample_dims,
+                                       nodes=likelihoods,
+                                       reparameterized=False) +\
+                      self.p.log_joint(sample_dims=sample_dims, nodes=priors,
+                                       reparameterized=False) -\
+                      self.q.log_joint(sample_dims=sample_dims, nodes=priors,
+                                       reparameterized=False)
+        ps = traces.Traces(traces={self.name: self.p})
+        self.p = None
+        assert log_weight.shape == self.batch_shape
+        return result, ps, log_weight
 
     def _forward(self, *args, **kwargs):
-        trace = kwargs['trace']
-        kwargs['trace'] = trace.extract(self.name)
-        result = self.primitive(*args, **kwargs)
-        trace.insert(self.name, kwargs.pop('trace'))
-        return result, trace
+        raise NotImplementedError()
 
 class InferenceSampler(Sampler):
     def __init__(self, sampler):
