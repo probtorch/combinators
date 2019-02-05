@@ -178,61 +178,25 @@ class Primitive(Model):
     def _forward(self, *args, **kwargs):
         raise NotImplementedError()
 
-class InferenceSampler(Sampler):
+class Inference(Sampler):
     def __init__(self, sampler):
-        super(InferenceSampler, self).__init__()
+        super(Inference, self).__init__()
         assert isinstance(sampler, Sampler)
         self.add_module('sampler', sampler)
 
     @property
     def name(self):
-        return self.sampler.name
+        return self.get_model().name
 
-    def forward(self, *args, **kwargs):
-        if 'trace' in kwargs:
-            trace = kwargs.pop('trace')
-        else:
-            trace = trace_tries.HierarchicalTrace()
-        trace, args, kwargs = self.sample_prehook(trace, *args, **kwargs)
-        kwargs['trace'] = trace
-        return self.sample_hook(*self.sampler(*args, **kwargs))
+    @property
+    def batch_shape(self):
+        return self.sampler.batch_shape
 
-    def sample_prehook(self, trace, *args, **kwargs):
+    def get_model(self):
+        return self.sampler.get_model()
+
+    def walk(self, f):
         raise NotImplementedError()
-
-    def sample_hook(self, results, trace):
-        raise NotImplementedError()
-
-class ParamCall(InferenceSampler):
-    def __init__(self, sampler, trainable={}, hyper={}):
-        super(ParamCall, self).__init__(sampler)
-        self.register_args(trainable, True)
-        self.register_args(hyper, False)
-
-    def register_args(self, args, trainable=True):
-        for k, v in utils.vardict(args).items():
-            v = v.clone().detach()
-            if trainable:
-                self.register_parameter(k, nn.Parameter(v))
-            else:
-                self.register_buffer(k, v)
-
-    def sample_prehook(self, trace, *args, **kwargs):
-        params = self.args_vardict()
-        if params:
-            kwargs['params'] = params
-        return trace, args, kwargs
-
-    def sample_hook(self, results, trace):
-        return results, trace
-
-class Score(InferenceSampler):
-    def sample_prehook(self, trace, *args, **kwargs):
-        trace = trace_tries.HierarchicalTrace(proposal=trace)
-        return trace, args, kwargs
-
-    def sample_hook(self, results, trace):
-        return results, trace
 
 class SideEffect(ModelSampler):
     def __init__(self, first, second):
