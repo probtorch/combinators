@@ -237,34 +237,42 @@ class Lambda(ModelSampler):
             kwargs.pop(k)
         return self.body(*args, **kwargs)
 
-class Composition(ModelSampler):
-    def __init__(self, outer, inner, intermediate_name=None):
-        super(Composition, self).__init__()
-        assert isinstance(outer, Sampler)
-        assert isinstance(inner, Sampler)
-        self.add_module('outer', outer)
-        self.add_module('inner', inner)
+class Composition(Model):
+    def __init__(self, f, g, intermediate_name=None):
+        assert isinstance(f, Sampler)
+        assert isinstance(g, Sampler)
+        assert f.batch_shape == g.batch_shape
+        super(Composition, self).__init__(batch_shape=f.batch_shape)
+        self.add_module('f', f)
+        self.add_module('g', g)
         self._intermediate = intermediate_name
 
     @property
     def name(self):
-        return self.outer.name + '.' + self.inner.name
+        return '%s.%s' % (self.f.name, self.g.name)
 
-    def _forward(self, *args, **kwargs):
-        final_trace = kwargs.pop('trace')
-        kwargs['trace'] = final_trace.extract(self.inner.name)
-        temp, inner_trace = self.inner(*args, **kwargs)
-        kws = {'trace': final_trace.extract(self.outer.name)}
+    def forward(self, *args, **kwargs):
+        zg, xi_g, w_g = self.g(*args, **kwargs)
+        kws = {}
         if self._intermediate:
-            kws[self._intermediate] = temp
-            result, outer_trace = self.outer(**kws)
-        elif isinstance(temp, tuple):
-            result, outer_trace = self.outer(*temp, **kws)
-        else:
-            result, outer_trace = self.outer(temp, **kws)
-        final_trace.insert(self.inner.name, inner_trace)
-        final_trace.insert(self.outer.name, outer_trace)
-        return result, final_trace
+            kws[self._intermediate] = zg
+        elif not isinstance(zg, tuple):
+            zg = (zg,)
+        zf, xi_f, w_f = self.f(*zg, **kws)
+        xi = traces.Traces()
+        xi.insert(self.name, xi_g)
+        xi.insert(self.name, xi_f)
+        return zf, xi, w_g + w_f
+
+    def cond(self, qs):
+        fq = self.f.cond(qs[self.name:])
+        gq = self.g.cond(qs[self.name:])
+        return Composition(fq, gq, self._intermediate)
+
+    def walk(self, f):
+        walk_f = self.f.walk(f)
+        walk_g = self.g.walk(f)
+        return f(Composition(walk_f, walk_g, self._intermediate))
 
 class Partial(ModelSampler):
     def __init__(self, func, *arguments, **keywords):
