@@ -17,29 +17,45 @@ def index_select_rv(rv, dim, indices):
     result = rv
     if not rv.observed:
         value = rv.value.index_select(dim, indices)
-        result = RandomVariable(rv.dist, value, rv.observed, rv.mask,
+        result = RandomVariable(rv.dist, value, rv.provenance, rv.mask,
                                 rv.reparameterized)
     return result
 
-class ImportanceResampler(combinators.InferenceSampler):
-    def __init__(self, sampler, particle_shape):
-        super(ImportanceResampler, self).__init__(sampler)
-        self._particle_shape = particle_shape
-
+class ImportanceResampler(combinators.Inference):
     @property
     def particle_shape(self):
-        return self._particle_shape
+        return self.sampler.batch_shape
 
-    def sample_prehook(self, trace, *args, **kwargs):
-        return trace, args, kwargs
+    def forward(self, *args, **kwargs):
+        zs, xi, weights = self.sampler(*args, **kwargs)
+        multiple_zs = isinstance(zs, tuple)
+        if not multiple_zs:
+            zs = (zs,)
 
-    def sample_hook(self, results, trace):
-        weights = trace.normalized_log_weight()
+        for _ in range(len(self.particle_shape)):
+            weights = log_softmax(weights, dim=0)
         resampler = dists.Categorical(logits=weights)
-        ancestor_indices = resampler.sample(self.particle_shape)
-        results = [val.index_select(0, ancestor_indices) for val in results]
-        trace_resampler = lambda k, rv: index_select_rv(rv, 0, ancestor_indices)
-        return tuple(results), trace.map(trace_resampler)
+        ancestors = resampler.sample(self.particle_shape)
+
+        for i in range(len(self.particle_shape)):
+            zs = tuple([z.index_select(i, ancestors) for z in zs])
+        if not multiple_zs:
+            zs = zs[0]
+
+        resampler = lambda rv: index_select_rv(rv, 0, ancestors)
+        trace_resampler = lambda _, trace: utils.trace_map(trace, resampler)
+        xi = xi.map(trace_resampler)
+
+        weight = utils.batch_expand(utils.marginalize_all(weights),
+                                    weights.shape)
+
+        return zs, xi, weight
+
+    def walk(self, f):
+        return ImportanceResampler(self.sampler.walk(f))
+
+    def cond(self, qs):
+        return ImportanceResampler(self.sampler.cond(qs))
 
 def importance_with_proposal(proposal, model, particle_shape):
     scored_sampler = combinators.score_under_proposal(proposal, model)
