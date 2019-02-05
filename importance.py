@@ -84,10 +84,9 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        trace = trace_tries.HierarchicalTrace()
-        _, inference, _ = sampler.simulate(data=data, trace=trace)
+        _, inference, weight = sampler(data=data)
 
-        bound = -inference.marginal_log_likelihood()
+        bound = -utils.marginalize_all(weight)
         bound_name = 'EUBO' if inclusive_kl else 'ELBO'
         bounds[t] = bound if inclusive_kl else -bound
         logging.info('%s=%.8e at epoch %d', bound_name, bounds[t], t + 1)
@@ -99,6 +98,6 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
         sampler.cpu()
     sampler.eval()
 
-    trained_params = sampler.args_vardict()
+    trained_params = sampler.args_vardict(False)
 
     return inference, trained_params, bounds
