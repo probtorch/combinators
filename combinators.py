@@ -78,14 +78,17 @@ class Sampler(nn.Module):
             else:
                 self.register_buffer(k, v)
 
-class ModelSampler(Sampler):
-    def forward(self, *args, **kwargs):
-        if 'trace' not in kwargs:
-            kwargs['trace'] = trace_tries.HierarchicalTrace()
-        return self._forward(*args, **kwargs)
+class Model(Sampler):
+    def __init__(self, batch_shape=(1,)):
+        super(Model, self).__init__()
+        self._batch_shape = batch_shape
 
-    def _forward(self, *args, **kwargs):
+    @property
+    def name(self):
         raise NotImplementedError()
+
+    def get_model(self):
+        return self
 
 class ReturnModel(ModelSampler):
     def __init__(self, *args):
