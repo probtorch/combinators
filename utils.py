@@ -11,6 +11,12 @@ import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def trace_map(trace, f):
+    p = probtorch.Trace()
+    for k, v in trace.items():
+        p[k] = f(trace[k])
+    return p
+
 def join_traces(first, second):
     p = probtorch.Trace()
     for k, v in first.items():
