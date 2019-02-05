@@ -312,48 +312,34 @@ class MapIid(Model):
         funcq = self.func.cond(qs['/' + self.func.name:])
         return MapIid(funcq, self.map_items, **self.map_kwargs)
 
-class Population(InferenceSampler):
-    def __init__(self, sampler, particle_shape, before=True):
+class Population(Inference):
+    def __init__(self, sampler, batch_shape, before=True):
         super(Population, self).__init__(sampler)
-        self._particle_shape = particle_shape
+        self._batch_shape = batch_shape
         self._before = before
 
     @property
-    def particle_shape(self):
-        return self._particle_shape
+    def batch_shape(self):
+        return self._particle_shape + self.sampler.batch_shape
 
     @property
     def before(self):
         return self._before
 
-    @property
-    def expander(self):
-        return lambda v: utils.batch_expand(v, self.particle_shape)
-
-    def _expand_args(self, *args, **kwargs):
-        args = list(args)
-        for i, arg in enumerate(args):
-            if isinstance(arg, torch.Tensor):
-                args[i] = utils.batch_expand(arg, self.particle_shape)
-            elif isinstance(arg, collections.Mapping):
-                args[i] = utils.vardict_map(arg, self.expander)
-        for k, v in kwargs.items():
-            if isinstance(v, torch.Tensor):
-                kwargs[k] = utils.batch_expand(v, self.particle_shape)
-            elif isinstance(v, collections.Mapping):
-                kwargs[k] = utils.vardict_map(v, self.expander)
-        return tuple(args), kwargs
-
-    def sample_prehook(self, trace, *args, **kwargs):
+    def forward(self, *args, **kwargs):
         if self.before:
             args, kwargs = self._expand_args(*args, **kwargs)
-        return trace, args, kwargs
-
-    def sample_hook(self, results, trace):
+        z, xi, w = self.sampler(*args, **kwargs)
+        if not isinstance(z, tuple):
+            z = (z,)
         if not self.before:
-            results = self._expand_args(*results)
-        return results, trace
+            z = self._expand_args(*z)
+        return z, xi, w
 
-def hyper_population(sampler, particle_shape, trainable={}, hyper={}):
-    return ParamCall(Population(sampler, particle_shape, before=True),
-                     trainable=trainable, hyper=hyper)
+    def walk(self, f):
+        return f(Population(self.sampler.walk(f), batch_shape=self._batch_shape,
+                            before=self.before))
+
+    def cond(self, qs):
+        return Population(self.sampler.cond(qs), batch_shape=self._batch_shape,
+                          before=self.before)
