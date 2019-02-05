@@ -198,24 +198,22 @@ class Inference(Sampler):
     def walk(self, f):
         raise NotImplementedError()
 
-class SideEffect(ModelSampler):
-    def __init__(self, first, second):
-        super(SideEffect, self).__init__()
-        assert isinstance(first, Sampler)
-        assert isinstance(second, Sampler)
-        self.add_module('first', first)
-        self.add_module('second', second)
+class GuidedConditioning(Inference):
+    def __init__(self, sampler, guide):
+        super(GuidedConditioning, self).__init__(sampler)
+        assert isinstance(guide, Sampler)
+        assert guide.batch_shape == sampler.batch_shape
+        self.add_module('guide', guide)
 
-    @property
-    def name(self):
-        return 'SideEffect(%s, %s)' % (self.first.name, self.second.name)
+    def forward(self, *args, **kwargs):
+        _, xi, w = self.guide(*args, **kwargs)
+        return self.sampler.cond(xi)(*args, **kwargs)
 
-    def _forward(self, *args, **kwargs):
-        _, kwargs['trace'] = self.first(*args, **kwargs)
-        return self.second(*args, **kwargs)
+    def walk(self, f):
+        return f(GuidedConditioning(self.sampler.walk(f), self.guide))
 
-def score_under_proposal(proposal, model):
-    return SideEffect(proposal, Score(model))
+    def cond(self, qs):
+        return GuidedConditioning(self.sampler.cond(qs), self.guide)
 
 class Lambda(ModelSampler):
     def __init__(self, body, nargs=0, kwargs=[]):
