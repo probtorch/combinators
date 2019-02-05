@@ -11,6 +11,14 @@ import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def join_traces(first, second):
+    p = probtorch.Trace()
+    for k, v in first.items():
+        p[k] = v
+    for k, v in second.items():
+        p[k] = v
+    return p
+
 def marginalize_all(log_prob):
     for _ in range(len(log_prob.shape)):
         log_prob = log_mean_exp(log_prob, dim=0)
