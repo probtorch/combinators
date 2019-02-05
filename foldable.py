@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 
+import probtorch
+import torch
+
 import combinators
+import traces
+import utils
 
 class Foldable(combinators.ModelSampler):
     def __init__(self, operator, initializer=None, **kwargs):
