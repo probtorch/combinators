@@ -252,20 +252,30 @@ class Composition(Model):
         walk_g = self.g.walk(f)
         return f(Composition(walk_f, walk_g, self._intermediate))
 
-class Partial(ModelSampler):
+class Partial(Model):
     def __init__(self, func, *arguments, **keywords):
-        super(Partial, self).__init__()
+        assert isinstance(func, Sampler)
+        super(Partial, self).__init__(batch_shape=func.batch_shape)
         self.add_module('curried', func)
         self._curry_arguments = arguments
         self._curry_kwargs = keywords
 
     @property
     def name(self):
-        return 'Partial(%s)' % self.curried.name
+        return 'Partial'
 
-    def _forward(self, *args, **kwargs):
-        kwargs = {**kwargs, **self._curry_kwargs}
-        return self.curried(*self._curry_arguments, *args, **kwargs)
+    def forward(self, *args, **kwargs):
+        return self.curried(*self._curry_arguments, *args, **kwargs,
+                            **self._curry_kwargs)
+
+    def walk(self, f):
+        walk_curried = self.curried.walk(f)
+        return f(Partial(walk_curried, *self._curry_arguments,
+                         **self._curry_kwargs))
+
+    def cond(self, qs):
+        curried_q = self.curried.cond(qs[self.name + '/' + self.curried.name:])
+        return Partial(curried_q, *self._curry_arguments, **self._curry_kwargs)
 
 class MapIid(ModelSampler):
     def __init__(self, func, items, **kwargs):
