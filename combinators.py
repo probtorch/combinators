@@ -277,30 +277,40 @@ class Partial(Model):
         curried_q = self.curried.cond(qs[self.name + '/' + self.curried.name:])
         return Partial(curried_q, *self._curry_arguments, **self._curry_kwargs)
 
-class MapIid(ModelSampler):
+class MapIid(Model):
     def __init__(self, func, items, **kwargs):
-        super(MapIid, self).__init__()
         assert isinstance(func, Sampler)
+        super(MapIid, self).__init__(batch_shape=func.batch_shape)
         self.add_module('func', func)
         self.map_items = items
         self.map_kwargs = kwargs
 
     @property
     def name(self):
-        return 'MapIid(%s)' % self.func.name
+        return 'MapIid'
 
-    def iterate(self, trace, **kwargs):
+    def iterate(self, **kwargs):
         for item in self.map_items:
             kwargs = {**self.map_kwargs, **kwargs}
-            kwargs['trace'] = trace.extract(self.map_func.name + str(item))
-            result, step_trace = self.map_func(item, **kwargs)
-            trace.insert(self.map_func.name + str(item), step_trace)
-            yield result
+            z, xi, w = self.map_func(item, **kwargs)
+            yield (z, xi, w)
 
-    def _forward(self, *args, **kwargs):
-        trace = kwargs.pop('trace')
-        result = list(self.iterate(trace, **kwargs))
-        return result, trace
+    def forward(self, *args, **kwargs):
+        results = list(self.iterate(**kwargs))
+        trace = traces.Traces()
+        weight = torch.zeros(self.batch_shape)
+        for (_, xi, w) in results:
+            trace.insert(self.name, xi)
+            weight += w
+        zs = [result[0] for result in results]
+        return zs, trace, weight
+
+    def walk(self, f):
+        return f(MapIid(self.func.walk(f), self.map_items, **self.map_kwargs))
+
+    def cond(self, qs):
+        funcq = self.func.cond(qs['/' + self.func.name:])
+        return MapIid(funcq, self.map_items, **self.map_kwargs)
 
 class Population(InferenceSampler):
     def __init__(self, sampler, particle_shape, before=True):
