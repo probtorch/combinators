@@ -73,6 +73,8 @@ def plot_evidence_bounds(bounds, lower=True, figsize=(10, 10)):
     plt.show()
 
 def batch_expand(tensor, shape):
+    if not shape:
+        return tensor
     tensor = tensor.expand(shape[-1], *tensor.shape)
     if len(shape) > 1:
         return batch_expand(tensor, shape[:-1])
