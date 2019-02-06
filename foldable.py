@@ -58,25 +58,34 @@ class Foldable(combinators.Model):
         return Foldable(self.operator.cond(qs_operator), initializer,
                         **self._kwargs)
 
-class Reduce(combinators.ModelSampler):
+class Reduce(combinators.Model):
     def __init__(self, folder, generator):
-        super(Reduce, self).__init__()
         assert isinstance(folder, Foldable)
+        super(Reduce, self).__init__(batch_shape=folder.batch_shape)
         self.add_module('folder', folder)
         self._generator = generator
 
     @property
     def name(self):
-        return 'Reduce(%s)' % self.folder.name
+        return 'Reduce'
 
-    def _forward(self, *args, **kwargs):
-        trace = kwargs.pop('trace')
+    def forward(self, *args, **kwargs):
         items = self._generator()
         stepper = self.folder
+        trace = traces.Traces()
+        weight = torch.zeros(self.batch_shape)
 
         for item in items:
-            kwargs['trace'] = trace.extract(self.name + '/' + str(item))
-            (step_result, stepper), step_trace = stepper(item, **kwargs)
-            trace.insert(self.name + '/' + str(item), step_trace)
+            (step_result, next_step), step_trace, w = stepper(item, **kwargs)
+            trace.insert(self.name, step_trace)
+            weight += w
+            stepper = next_step
 
-        return step_result, trace
+        return step_result, trace, weight
+
+    def walk(self, f):
+        return f(Reduce(self.folder.walk(f), self._generator))
+
+    def cond(self, qs):
+        qs_folder = qs[self.name:]
+        return Reduce(self.folder.cond(qs_folder), self._generator)
