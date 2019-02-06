@@ -64,8 +64,8 @@ def smc(sampler, initializer=None):
     resampler = ImportanceResampler(sampler)
     return foldable.Foldable(resampler, initializer=initializer)
 
-def reduce_smc(stepwise, particle_shape, step_generator, initializer=None):
-    smc_foldable = smc(stepwise, particle_shape, initializer)
+def reduce_smc(stepwise, step_generator, initializer=None):
+    smc_foldable = smc(stepwise, initializer)
     return foldable.Reduce(smc_foldable, step_generator)
 
 def variational_importance(sampler, num_iterations, data, use_cuda=True,
