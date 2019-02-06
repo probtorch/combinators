@@ -60,8 +60,8 @@ class ImportanceResampler(combinators.Inference):
 def importance_with_proposal(proposal, model):
     return ImportanceResampler(combinators.GuidedConditioning(model, proposal))
 
-def smc(sampler, particle_shape, initializer=None):
-    resampler = ImportanceResampler(sampler, particle_shape)
+def smc(sampler, initializer=None):
+    resampler = ImportanceResampler(sampler)
     return foldable.Foldable(resampler, initializer=initializer)
 
 def reduce_smc(stepwise, particle_shape, step_generator, initializer=None):
