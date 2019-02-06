@@ -10,40 +10,36 @@ import torch
 import combinators
 import foldable
 import importance
-import trace_tries
 import utils
 
-class MHMove(combinators.InferenceSampler):
+class MHMove(combinators.Inference):
     def __init__(self, sampler, moves=1):
         super(MHMove, self).__init__(sampler)
-        self._args = ()
-        self._kwargs = {}
         self._moves = moves
 
-    def sample_prehook(self, trace, *args, **kwargs):
-        self._args = args
-        self._kwargs = {k: v for (k, v) in kwargs.items() if k != 'trace'}
-        return trace, args, kwargs
-
-    def propose(self, results, trace):
+    def propose(self, results, trace, *args, **kwargs):
         raise NotImplementedError()
 
-    def sample_hook(self, results, trace):
-        marginal = trace.marginal_log_likelihood()
+    def forward(self, *args, **kwargs):
+        zs, xi, w = self.sampler(*args, **kwargs)
+        original_traces = xi
+        multiple_zs = isinstance(zs, tuple)
+        if not multiple_zs:
+            zs = (zs,)
+        marginal = utils.marginalize_all(w)
         for _ in range(self._moves):
-            candidate, candidate_trace, move_candidate, move_current =\
-                self.propose(results, trace)
-            candidate_marginal = candidate_trace.marginal_log_likelihood()
-            mh_ratio = (candidate_marginal - move_candidate) -\
-                       (marginal - move_current)
-            log_alpha = torch.min(torch.zeros(1), mh_ratio)
+            zsq, xiq, wq, move_proposed, move_current =\
+                self.propose(zs, xi, original_traces, *args, **kwargs)
+            marginal_q = utils.marginalize_all(wq)
+            mh_ratio = (marginal_q - move_proposed) - (marginal - move_current)
+            log_alpha = torch.min(torch.zeros(mh_ratio.shape), mh_ratio)
             if torch.bernoulli(torch.exp(log_alpha)) == 1:
-                results = candidate
-                trace = candidate_trace
-                marginal = candidate_marginal
-        self._args = ()
-        self._kwargs = {}
-        return results, trace
+                zs = zsq
+                xi = xiq
+                w = wq
+        if not multiple_zs:
+            zs = zs[0]
+        return zs, xi, w
 
 class LightweightMH(MHMove):
     def propose(self, results, trace):
