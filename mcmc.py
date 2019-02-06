@@ -42,19 +42,32 @@ class MHMove(combinators.Inference):
         return zs, xi, w
 
 class LightweightMH(MHMove):
-    def propose(self, results, trace):
-        rv_index = np.random.randint(len(trace))
-        while trace[rv_index].observed:
-            rv_index = np.random.randint(len(trace))
-        candidate = trace[0:rv_index]
-        move_current = utils.marginalize_all(trace[rv_index].log_prob)
-        dist = trace[rv_index].dist
-        rv = probtorch.RandomVariable(dist, utils.try_rsample(dist), False)
-        candidate[trace.name(rv_index)] = rv
-        results, candidate = self.sampler(*self._args, **self._kwargs,
-                                          trace=candidate)
+    def propose(self, results, traces, originals, *args, **kwargs):
+        t = np.random.randint(len(traces))
+        sampled = list(originals[t].sampled())
+        while not sampled:
+            t = np.random.randint(len(traces))
+            sampled = list(originals[t].sampled())
+
+        address = sampled[np.random.randint(len(sampled))]
+        original = traces[t][address]
+
+        candidate = utils.slice_trace(traces[t], address)
+        move_current = utils.marginalize_all(original.log_prob)
+        dist = original.dist
+        rv = probtorch.RandomVariable(dist, utils.try_rsample(dist),
+                                      probtorch.stochastic.Provenance.SAMPLED)
+        candidate[address] = rv
+        candidates = traces.graft(t, candidate)
+        zs, xi, w = self.sampler.cond(candidates)(*args, **kwargs)
         move_candidate = utils.marginalize_all(rv.log_prob)
-        return results, candidate, move_candidate, move_current
+        return zs, xi, w, move_candidate, move_current
+
+    def walk(self, f):
+        return LightweightMH(self.sampler.walk(f), self._moves)
+
+    def cond(self, qs):
+        return LightweightMH(self.sampler.cond(qs), self._moves)
 
 def resample_move_smc(sampler, particle_shape, initializer=None, moves=1,
                       mcmc=LightweightMH):
