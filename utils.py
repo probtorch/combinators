@@ -11,6 +11,14 @@ import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def slice_trace(trace, key):
+    result = probtorch.Trace()
+    for k, v in trace.items():
+        if k == key:
+            break
+        result[k] = v
+    return result
+
 def trace_map(trace, f):
     p = probtorch.Trace()
     for k, v in trace.items():
