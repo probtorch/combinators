@@ -69,16 +69,12 @@ class LightweightMH(MHMove):
     def cond(self, qs):
         return LightweightMH(self.sampler.cond(qs), self._moves)
 
-def resample_move_smc(sampler, particle_shape, initializer=None, moves=1,
-                      mcmc=LightweightMH):
-    resampler_mover = mcmc(importance.ImportanceResampler(sampler,
-                                                          particle_shape),
-                           moves)
+def resample_move_smc(sampler, initializer=None, moves=1, mcmc=LightweightMH):
+    resampler_mover = mcmc(importance.ImportanceResampler(sampler), moves)
     return foldable.Foldable(resampler_mover, initializer=initializer)
 
-def reduce_resample_move_smc(stepwise, particle_shape, step_generator,
-                             initializer=None, moves=1, mcmc=LightweightMH):
-    rmsmc_foldable = resample_move_smc(stepwise, particle_shape,
-                                       initializer=initializer, moves=moves,
-                                       mcmc=mcmc)
+def reduce_resample_move_smc(stepwise, step_generator, initializer=None,
+                             moves=1, mcmc=LightweightMH):
+    rmsmc_foldable = resample_move_smc(stepwise, initializer=initializer,
+                                       moves=moves, mcmc=mcmc)
     return foldable.Reduce(rmsmc_foldable, step_generator)
