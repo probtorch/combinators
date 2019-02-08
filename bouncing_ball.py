@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
 import torch
-import torch.nn as nn
 from torch.distributions import Categorical, Dirichlet, MultivariateNormal
 from torch.distributions import Normal
 from torch.distributions.transforms import LowerCholeskyTransform
+import torch.nn as nn
+from torch.nn.functional import softplus
 
 import combinators
-import foldable
-import mcmc
 import utils
 
 def reflect_directions(dir_loc):
@@ -18,59 +17,63 @@ def reflect_directions(dir_loc):
     dir_locs[:, 3, 0] *= -1
     return dir_locs / (dir_locs**2).sum(dim=-1).unsqueeze(-1).sqrt()
 
-def init_bouncing_ball(params=None, trace=None, data={}):
-    initial_alpha = trace.param_sample(Dirichlet, params, name='alpha_0')
-    pi = trace.sample(Dirichlet, initial_alpha, name='Pi')
-    initial_z = trace.variable(Categorical, pi, name='direction_0')
+class InitBouncingBall(combinators.Primitive):
+    def _forward(self, data={}):
+        initial_alpha = self.param_sample(Dirichlet, name='alpha_0')
+        pi = self.sample(Dirichlet, initial_alpha, name='Pi')
+        initial_z = self.sample(Categorical, pi, name='direction_0')
 
-    transition_alpha = torch.stack([
-        trace.param_sample(Dirichlet, params, name='alpha_%d' % (d+1))
-        for d in range(4)
-    ], dim=1)
-    transition = torch.stack([
-        trace.sample(Dirichlet, transition_alpha[:, d], name='A_%d' % (d+1))
-        for d in range(4)
-    ], dim=1)
+        transition_alpha = torch.stack([
+            self.param_sample(Dirichlet, name='alpha_%d' % (d+1))
+            for d in range(4)
+        ], dim=1)
+        transition = torch.stack([
+            self.sample(Dirichlet, transition_alpha[:, d], name='A_%d' % (d+1))
+            for d in range(4)
+        ], dim=1)
 
-    dir_locs = trace.param_sample(Normal, params, name='directions__loc')
-    dir_locs = reflect_directions(dir_locs)
-    dir_covs = trace.param_sample(Normal, params, name='directions__cov')
+        dir_locs = self.param_sample(Normal, name='directions__loc')
+        dir_locs = reflect_directions(dir_locs)
+        dir_covs = self.param_sample(Normal, name='directions__cov')
 
-    initial_position = trace.param_observe(
-        Normal, params, name='position_0',
-        value=data['position_0'].expand(params['position_0']['loc'].shape)
-    )
+        params = self.args_vardict()
+        initial_position = data['position_0'].expand(
+            params['position_0']['loc'].shape
+        )
+        initial_position = self.observe('position_0', initial_position,
+                                        Normal, params['position_0']['loc'],
+                                        softplus(params['position_0']['scale']))
 
-    return initial_position, initial_z, transition, dir_locs, dir_covs
+        return initial_position, initial_z, transition, dir_locs, dir_covs
 
-def bouncing_ball_step(theta, t, trace=None, data={}):
-    position, z_prev, transition, dir_locs, dir_covs = theta
-    directions = {
-        'loc': dir_locs,
-        'covariance_matrix': dir_covs,
-    }
-    t += 1
+class BouncingBallStep(combinators.Primitive):
+    def _forward(self, theta, t, data={}):
+        position, z_prev, transition, dir_locs, dir_covs = theta
+        directions = {
+            'loc': dir_locs,
+            'covariance_matrix': dir_covs,
+        }
+        t += 1
 
-    transition_prev = utils.particle_index(transition, z_prev)
-    z_current = trace.variable(Categorical, transition_prev,
-                               name='direction_%d' % t)
-    direction = utils.vardict_particle_index(directions, z_current)
-    direction_covariance = direction['covariance_matrix']
-    velocity = trace.observe(
-        MultivariateNormal, data.get('displacement_%d' % t), direction['loc'],
-        scale_tril=LowerCholeskyTransform()(direction_covariance),
-        name='displacement_%d' % t,
-    )
-    position = position + velocity
+        transition_prev = utils.particle_index(transition, z_prev)
+        z_current = self.sample(Categorical, transition_prev,
+                                name='direction_%d' % t)
+        direction = utils.vardict_particle_index(directions, z_current)
+        direction_covariance = direction['covariance_matrix']
 
-    return position, z_current, transition, dir_locs, dir_covs
+        velocity = self.observe(
+            'displacement_%d' % t, data.get('displacement_%d' % t),
+            MultivariateNormal, direction['loc'],
+            scale_tril=LowerCholeskyTransform()(direction_covariance),
+        )
+        position = position + velocity
 
-def identity_step(theta, t, trace=None, data={}):
-    return theta
+        return position, z_current, transition, dir_locs, dir_covs
 
-class ProposalStep(nn.Module):
-    def __init__(self):
-        super(ProposalStep, self).__init__()
+class ProposalStep(combinators.Primitive):
+    def __init__(self, *args, name=None, **kwargs):
+        super(ProposalStep, self).__init__(*args, **kwargs)
+        self._name = name
         self.direction_predictor = nn.Sequential(
             nn.Linear(2, 4),
             nn.Softsign(),
@@ -78,12 +81,21 @@ class ProposalStep(nn.Module):
             nn.LogSoftmax(dim=-1),
         )
 
-    def forward(self, theta, t, trace=None, data={}):
+    @property
+    def name(self):
+        if self._name:
+            return self._name
+        return super(ProposalStep, self).name
+
+    def cond(self, qs):
+        result = ProposalStep(name=self.name, params=self.args_vardict(False),
+                              trainable=self._hyperparams_trainable,
+                              batch_shape=self.batch_shape, q=qs[self.name])
+        result.direction_predictor = self.direction_predictor
+        return result
+
+    def _forward(self, theta, t, data={}):
         position, _, transition, dir_locs, dir_covs = theta
-        directions = {
-            'loc': dir_locs,
-            'covariance_matrix': dir_covs,
-        }
         t += 1
 
         direction_predictions = self.direction_predictor(
@@ -94,39 +106,9 @@ class ProposalStep(nn.Module):
         )
         z_prev = Categorical(logits=direction_predictions).sample()
         transition_prev = utils.particle_index(transition, z_prev)
-        z_current = trace.variable(Categorical, transition_prev,
-                                   name='direction_%d' % t)
+        z_current = self.sample(Categorical, transition_prev,
+                                name='direction_%d' % t)
 
-        direction = utils.vardict_particle_index(directions, z_current)
-        direction_covariance = direction['covariance_matrix']
-        velocity = trace.sample(
-            MultivariateNormal, direction['loc'],
-            scale_tril=LowerCholeskyTransform()(direction_covariance),
-            name='displacement_%d' % t,
-        )
+        velocity = data['displacement_%d' % t]
         position = position + velocity
         return position, z_current, transition, dir_locs, dir_covs
-
-def generative_model(data, params, particle_shape, step_generator):
-    params['position_0']['loc'] = data['position_0']
-    init_population = combinators.hyper_population(
-        combinators.PrimitiveCall(init_bouncing_ball), particle_shape,
-        hyper=params
-    )
-    return mcmc.reduce_resample_move_smc(
-        combinators.PrimitiveCall(bouncing_ball_step), particle_shape,
-        step_generator, initializer=init_population
-    )
-
-def proposal_step():
-    return combinators.PrimitiveCall(ProposalStep(), name='bouncing_ball_step')
-
-def proposal_model(data, params, particle_shape, step_generator):
-    params['position_0']['loc'] = data['position_0']
-    init_proposal = combinators.hyper_population(
-        combinators.PrimitiveCall(init_bouncing_ball), particle_shape,
-        trainable=params
-    )
-    return foldable.Reduce(foldable.Foldable(proposal_step(),
-                                             initializer=init_proposal),
-                           step_generator)
