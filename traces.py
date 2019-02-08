@@ -126,3 +126,16 @@ class Traces:
         for _, trace in self._trie.iteritems(prefix=prefix):
             for k, v in trace.items():
                 yield (k, v)
+
+    def graft(self, key, val):
+        if isinstance(key, int):
+            key = self._ordering[key]
+        assert isinstance(val, probtorch.Trace)
+        result = Traces(trie=self._trie.copy())
+        result._ordering = self._ordering
+        for i, k in enumerate(result._ordering):
+            if k == key:
+                result._ordering[i] = key
+                break
+        result._trie[key] = val
+        return result
