@@ -100,7 +100,7 @@ class Deterministic(Model):
         return 'Deterministic'
 
     def forward(self, *args, **kwargs):
-        empty_trace = traces.Traces(traces={self.name: probtorch.Trace()})
+        empty_trace = graphs.ModelGraph(traces={self.name: probtorch.Trace()})
         return self._args, empty_trace, torch.zeros(self.batch_shape)
 
     def cond(self, qs):
