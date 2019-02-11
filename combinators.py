@@ -237,7 +237,7 @@ class Composition(Model):
         elif not isinstance(zg, tuple):
             zg = (zg,)
         zf, xi_f, w_f = self.f(*zg, **kws)
-        xi = traces.Traces()
+        xi = graphs.ModelGraph()
         xi.insert(self.name, xi_g)
         xi.insert(self.name, xi_f)
         return zf, xi, w_g + w_f
