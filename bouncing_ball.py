@@ -96,6 +96,10 @@ class ProposalStep(combinators.Primitive):
 
     def _forward(self, theta, t, data={}):
         position, _, transition, dir_locs, dir_covs = theta
+        directions = {
+            'loc': dir_locs,
+            'covariance_matrix': dir_covs,
+        }
         t += 1
 
         direction_predictions = self.direction_predictor(
@@ -109,6 +113,21 @@ class ProposalStep(combinators.Primitive):
         z_current = self.sample(Categorical, transition_prev,
                                 name='direction_%d' % t)
 
-        velocity = data['displacement_%d' % t]
+        direction = utils.vardict_particle_index(directions, z_current)
+        direction_covariance = direction['covariance_matrix']
+        velocity_name = 'displacement' if self.training else 'velocity'
+        velocity_name += '_%d' % t
+        if self.training:
+            velocity = self.sample(
+                MultivariateNormal, loc=direction['loc'],
+                scale_tril=LowerCholeskyTransform()(direction_covariance),
+                name='displacement_%d' % t,
+            )
+        else:
+            velocity = self.sample(
+                MultivariateNormal, loc=direction['loc'],
+                scale_tril=LowerCholeskyTransform()(direction_covariance),
+                name='velocity_%d' % t
+            )
         position = position + velocity
         return position, z_current, transition, dir_locs, dir_covs
