@@ -72,16 +72,16 @@ class Reduce(combinators.Model):
     def forward(self, *args, **kwargs):
         items = self._generator()
         stepper = self.folder
-        trace = traces.Traces()
+        graph = graphs.ModelGraph()
         weight = torch.zeros(self.batch_shape)
 
         for item in items:
             (step_result, next_step), step_trace, w = stepper(item, **kwargs)
-            trace.insert(self.name, step_trace)
+            graph.insert(self.name, step_trace)
             weight += w
             stepper = next_step
 
-        return step_result, trace, weight
+        return step_result, graph, weight
 
     def walk(self, f):
         return f(Reduce(self.folder.walk(f), self._generator))
