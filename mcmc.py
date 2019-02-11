@@ -44,10 +44,10 @@ class MHMove(combinators.Inference):
 class LightweightMH(MHMove):
     def propose(self, results, graph, originals, *args, **kwargs):
         t = np.random.randint(len(graph))
-        sampled = list(originals[t].sampled())
+        sampled = [k for k in originals[t] if not originals[t][k].observed]
         while not sampled:
             t = np.random.randint(len(graph))
-            sampled = list(originals[t].sampled())
+            sampled = [k for k in originals[t] if not originals[t][k].observed]
 
         address = sampled[np.random.randint(len(sampled))]
         original = graph[t][address]
