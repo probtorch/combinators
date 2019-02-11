@@ -7,7 +7,7 @@ import torch
 
 import utils
 
-class Traces:
+class ModelGraph:
     def __init__(self, trie=None, traces=None):
         self._trie = trie if trie else pygtrie.StringTrie()
         self._ordering = list(trie.keys()) if trie else []
@@ -36,7 +36,7 @@ class Traces:
             assert key[-1] != '/'
             for k, v in self._trie.iteritems(prefix=key):
                 trie[k[len(key)+1:]] = v
-            return Traces(trie)
+            return ModelGraph(trie)
         elif isinstance(key, int):
             return self._trie[self._ordering[key]]
         assert not key or key[-1] != '/'
@@ -52,7 +52,7 @@ class Traces:
         return self.keys()
 
     def __repr__(self):
-        return 'Traces{%s}' % str(self._trie.items())
+        return 'ModelGraph{%s}' % str(self._trie.items())
 
     def keys(self):
         for address in self._ordering:
@@ -67,7 +67,7 @@ class Traces:
             yield (address, self[address])
 
     def map(self, f):
-        result = Traces()
+        result = ModelGraph()
         for address in self:
             result[address] = f(address, self[address])
         return result
@@ -105,7 +105,7 @@ class Traces:
         return log_prob
 
     def __mul__(self, other):
-        result = Traces()
+        result = ModelGraph()
         for k, v in self.items():
             result[k] = v
         for k, v in other.items():
@@ -118,7 +118,7 @@ class Traces:
         return self
 
     def insert(self, prefix, other):
-        assert isinstance(other, Traces)
+        assert isinstance(other, ModelGraph)
         for k, v in other.items():
             self[prefix + '/' + k] = v
 
@@ -131,7 +131,7 @@ class Traces:
         if isinstance(key, int):
             key = self._ordering[key]
         assert isinstance(val, probtorch.Trace)
-        result = Traces(trie=self._trie.copy())
+        result = ModelGraph(trie=self._trie.copy())
         result._ordering = self._ordering
         for i, k in enumerate(result._ordering):
             if k == key:
