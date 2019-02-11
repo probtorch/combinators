@@ -25,10 +25,10 @@ class Foldable(combinators.Model):
         return 'Foldable(%s)' % str(self._iteration)
 
     def forward(self, *args, **kwargs):
-        trace = traces.Traces()
+        graph = graphs.ModelGraph()
         if isinstance(self._initializer, combinators.Sampler):
             seed, init_trace, seed_weight = self._initializer(**kwargs)
-            trace.insert(self.name, init_trace)
+            graph.insert(self.name, init_trace)
         else:
             seed = self._initializer
             seed_weight = torch.zeros(self.batch_shape)
@@ -36,10 +36,10 @@ class Foldable(combinators.Model):
         next_step = Foldable(self.operator, initializer=result,
                              iteration=self._iteration + 1, **self._kwargs)
 
-        trace.insert(self.name, op_trace)
+        graph.insert(self.name, op_trace)
         weight += seed_weight
 
-        return (result, next_step), trace, weight
+        return (result, next_step), graph, weight
 
     def walk(self, f):
         if isinstance(self._initializer, combinators.Sampler):
