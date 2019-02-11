@@ -8,7 +8,7 @@ import pygtrie
 import torch
 import torch.nn as nn
 
-import traces
+import graphs
 import utils
 
 class Sampler(nn.Module):
