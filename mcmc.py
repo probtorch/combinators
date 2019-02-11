@@ -42,23 +42,23 @@ class MHMove(combinators.Inference):
         return zs, xi, w
 
 class LightweightMH(MHMove):
-    def propose(self, results, traces, originals, *args, **kwargs):
-        t = np.random.randint(len(traces))
+    def propose(self, results, graph, originals, *args, **kwargs):
+        t = np.random.randint(len(graph))
         sampled = list(originals[t].sampled())
         while not sampled:
-            t = np.random.randint(len(traces))
+            t = np.random.randint(len(graph))
             sampled = list(originals[t].sampled())
 
         address = sampled[np.random.randint(len(sampled))]
-        original = traces[t][address]
+        original = graph[t][address]
 
-        candidate = utils.slice_trace(traces[t], address)
+        candidate = utils.slice_trace(graph[t], address)
         move_current = utils.marginalize_all(original.log_prob)
         dist = original.dist
         rv = probtorch.RandomVariable(dist, utils.try_rsample(dist),
                                       probtorch.stochastic.Provenance.SAMPLED)
         candidate[address] = rv
-        candidates = traces.graft(t, candidate)
+        candidates = graph.graft(t, candidate)
         zs, xi, w = self.sampler.cond(candidates)(*args, **kwargs)
         move_candidate = utils.marginalize_all(rv.log_prob)
         return zs, xi, w, move_candidate, move_current
