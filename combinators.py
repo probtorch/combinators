@@ -297,13 +297,13 @@ class MapIid(Model):
 
     def forward(self, *args, **kwargs):
         results = list(self.iterate(**kwargs))
-        trace = graphs.ModelGraph()
+        graph = graphs.ModelGraph()
         weight = torch.zeros(self.batch_shape)
         for (_, xi, w) in results:
-            trace.insert(self.name, xi)
+            graph.insert(self.name, xi)
             weight += w
         zs = [result[0] for result in results]
-        return zs, trace, weight
+        return zs, graph, weight
 
     def walk(self, f):
         return f(MapIid(self.func.walk(f), self.map_items, **self.map_kwargs))
