@@ -100,8 +100,8 @@ class Deterministic(Model):
         return 'Deterministic'
 
     def forward(self, *args, **kwargs):
-        empty_trace = graphs.ModelGraph(traces={self.name: probtorch.Trace()})
-        return self._args, empty_trace, torch.zeros(self.batch_shape)
+        empty_graph = graphs.ModelGraph(traces={self.name: probtorch.Trace()})
+        return self._args, empty_graph, torch.zeros(self.batch_shape)
 
     def cond(self, qs):
         return Deterministic(*self._args)
@@ -297,7 +297,7 @@ class MapIid(Model):
 
     def forward(self, *args, **kwargs):
         results = list(self.iterate(**kwargs))
-        trace = traces.Traces()
+        trace = graphs.ModelGraph()
         weight = torch.zeros(self.batch_shape)
         for (_, xi, w) in results:
             trace.insert(self.name, xi)
