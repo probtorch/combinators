@@ -170,7 +170,7 @@ class Primitive(Model):
                                        reparameterized=False) -\
                       self.q.log_joint(sample_dims=sample_dims, nodes=priors,
                                        reparameterized=False)
-        ps = traces.Traces(traces={self.name: self.p})
+        ps = graphs.ModelGraph(traces={self.name: self.p})
         self.p = None
         assert log_weight.shape == self.batch_shape
         return result, ps, log_weight
