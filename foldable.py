@@ -4,7 +4,7 @@ import probtorch
 import torch
 
 import combinators
-import traces
+import graphs
 import utils
 
 class Foldable(combinators.Model):
