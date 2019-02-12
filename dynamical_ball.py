@@ -50,14 +50,13 @@ class StepBallDynamics(combinators.Primitive):
         t += 1
 
         position = position + self.sample(
-            Normal, torch.matmul(dynamics, position), softplus(uncertainty),
-            name='velocity_%d' % t
+            Normal, torch.bmm(dynamics, position.unsqueeze(-1)).squeeze(-1),
+            softplus(uncertainty), name='velocity_%d' % t
         )
 
-        overage = torch.norm(position[:, 0] - boundary[:, 0, 0], dim=-1)
+        overage = softplus(position[:, 0] - boundary)
         position[:, 0] = torch.where(overage > torch.zeros(overage.shape),
-                                     boundary[:, 0, 0] - overage,
-                                     position[:, 0])
+                                     boundary - overage, position[:, 0])
         dynamics[:, 0, :] = torch.where(overage > torch.zeros(overage.shape),
                                         -dynamics[: 0, :], dynamics[:, 0, :])
         overage = torch.norm(boundary[:, 2, 0] - position[:, 0], dim=-1)
