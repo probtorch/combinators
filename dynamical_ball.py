@@ -8,14 +8,40 @@ from torch.nn.functional import softplus
 import combinators
 
 class InitBallDynamics(combinators.Primitive):
+    def __init__(self, params={}, trainable=False, batch_shape=(1,), q=None):
+        params = {
+            'boundary': {
+                'loc': torch.zeros([]),
+                'scale': torch.ones([]),
+            },
+            'dynamics': {
+                'loc': torch.eye(2),
+                'scale': torch.ones(2, 2),
+            },
+            'uncertainty': {
+                'loc': torch.ones(2),
+                'scale': torch.ones(2),
+            },
+            'noise': {
+                'loc': torch.ones(2),
+                'scale': torch.ones(2),
+            },
+            'position_0': {
+                'loc': torch.ones(2),
+                'covariance_matrix': torch.eye(2),
+            },
+        } if not params else params
+        super(InitBallDynamics, self).__init__(params, trainable, batch_shape,
+                                               q)
     def _forward(self, data={}):
-        # Sample a boundary
-        walls = torch.Tensor([[1, 0], [0, -1], [-1, 0], [0, 1]])
-        boundary = self.param_sample(LogNormal, name='boundary') * walls
+        boundary = self.param_sample(LogNormal, name='boundary')
         dynamics = self.param_sample(Normal, name='dynamics')
         uncertainty = self.param_sample(LogNormal, name='uncertainty')
         noise = self.param_sample(LogNormal, name='noise')
-        position = self.param_sample(MultivariateNormal, name='position_0')
+        pos_params = self.args_vardict()['position_0']
+        pos_scale = LowerCholeskyTransform()(pos_params['covariance_matrix'])
+        position = self.sample(MultivariateNormal, loc=pos_params['loc'],
+                               scale_tril=pos_scale, name='position_0')
         return boundary, dynamics, uncertainty, noise, position
 
 class StepBallDynamics(combinators.Primitive):
