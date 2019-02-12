@@ -10,66 +10,71 @@ import torch
 import combinators
 import foldable
 import importance
-import trace_tries
 import utils
 
-class MHMove(combinators.InferenceSampler):
+class MHMove(combinators.Inference):
     def __init__(self, sampler, moves=1):
         super(MHMove, self).__init__(sampler)
-        self._args = ()
-        self._kwargs = {}
         self._moves = moves
 
-    def sample_prehook(self, trace, *args, **kwargs):
-        self._args = args
-        self._kwargs = {k: v for (k, v) in kwargs.items() if k != 'trace'}
-        return trace, args, kwargs
-
-    def propose(self, results, trace):
+    def propose(self, results, graph, *args, **kwargs):
         raise NotImplementedError()
 
-    def sample_hook(self, results, trace):
-        marginal = trace.marginal_log_likelihood()
+    def forward(self, *args, **kwargs):
+        zs, xi, w = self.sampler(*args, **kwargs)
+        original_model_graph = xi
+        multiple_zs = isinstance(zs, tuple)
+        if not multiple_zs:
+            zs = (zs,)
+        marginal = utils.marginalize_all(w)
         for _ in range(self._moves):
-            candidate, candidate_trace, move_candidate, move_current =\
-                self.propose(results, trace)
-            candidate_marginal = candidate_trace.marginal_log_likelihood()
-            mh_ratio = (candidate_marginal - move_candidate) -\
-                       (marginal - move_current)
-            log_alpha = torch.min(torch.zeros(1), mh_ratio)
+            zsq, xiq, wq, move_proposed, move_current =\
+                self.propose(zs, xi, original_model_graph, *args, **kwargs)
+            marginal_q = utils.marginalize_all(wq)
+            mh_ratio = (marginal_q - move_proposed) - (marginal - move_current)
+            log_alpha = torch.min(torch.zeros(mh_ratio.shape), mh_ratio)
             if torch.bernoulli(torch.exp(log_alpha)) == 1:
-                results = candidate
-                trace = candidate_trace
-                marginal = candidate_marginal
-        self._args = ()
-        self._kwargs = {}
-        return results, trace
+                zs = zsq
+                xi = xiq
+                w = wq
+        if not multiple_zs:
+            zs = zs[0]
+        return zs, xi, w
 
 class LightweightMH(MHMove):
-    def propose(self, results, trace):
-        rv_index = np.random.randint(len(trace))
-        while trace[rv_index].observed:
-            rv_index = np.random.randint(len(trace))
-        candidate = trace[0:rv_index]
-        move_current = utils.marginalize_all(trace[rv_index].log_prob)
-        dist = trace[rv_index].dist
-        rv = probtorch.RandomVariable(dist, utils.try_rsample(dist), False)
-        candidate[trace.name(rv_index)] = rv
-        results, candidate = self.sampler(*self._args, **self._kwargs,
-                                          trace=candidate)
-        move_candidate = utils.marginalize_all(rv.log_prob)
-        return results, candidate, move_candidate, move_current
+    def propose(self, results, graph, originals, *args, **kwargs):
+        t = np.random.randint(len(graph))
+        sampled = [k for k in originals[t] if not originals[t][k].observed]
+        while not sampled:
+            t = np.random.randint(len(graph))
+            sampled = [k for k in originals[t] if not originals[t][k].observed]
 
-def resample_move_smc(sampler, particle_shape, initializer=None, moves=1,
-                      mcmc=LightweightMH):
-    resampler_mover = mcmc(importance.ImportanceResampler(sampler,
-                                                          particle_shape),
-                           moves)
+        address = sampled[np.random.randint(len(sampled))]
+        original = graph[t][address]
+
+        candidate = utils.slice_trace(graph[t], address)
+        move_current = utils.marginalize_all(original.log_prob)
+        dist = original.dist
+        rv = probtorch.RandomVariable(dist, utils.try_rsample(dist),
+                                      probtorch.stochastic.Provenance.SAMPLED)
+        candidate[address] = rv
+        candidates = graph.graft(t, candidate)
+        zs, xi, w = self.sampler.cond(candidates)(*args, **kwargs)
+        move_candidate = utils.marginalize_all(rv.log_prob)
+        return zs, xi, w, move_candidate, move_current
+
+    def walk(self, f):
+        return LightweightMH(self.sampler.walk(f), self._moves)
+
+    def cond(self, qs):
+        return LightweightMH(self.sampler.cond(qs), self._moves)
+
+def resample_move_smc(sampler, initializer=None, moves=1, mcmc=LightweightMH):
+    resampler_mover = mcmc(importance.ImportanceResampler(sampler), moves)
     return foldable.Foldable(resampler_mover, initializer=initializer)
 
-def reduce_resample_move_smc(stepwise, particle_shape, step_generator,
-                             initializer=None, moves=1, mcmc=LightweightMH):
-    rmsmc_foldable = resample_move_smc(stepwise, particle_shape,
-                                       initializer=initializer, moves=moves,
-                                       mcmc=mcmc)
+def reduce_resample_move_smc(stepwise, step_generator, initializer=None,
+                             moves=1, mcmc=LightweightMH):
+    rmsmc_foldable = resample_move_smc(stepwise, initializer=initializer,
+                                       moves=moves, mcmc=mcmc)
     return foldable.Reduce(rmsmc_foldable, step_generator)
