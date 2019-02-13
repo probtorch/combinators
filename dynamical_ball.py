@@ -44,6 +44,20 @@ class InitBallDynamics(combinators.Primitive):
                                scale_tril=pos_scale, name='position_0')
         return boundary, dynamics, uncertainty, noise, position
 
+def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
+    sign = 1.0 if positive else -1.0
+    overage = sign * (position[:, d] - boundary)
+    soft_overage = softplus(overage)
+    positions = list(torch.unbind(position, 1))
+    positions[d] = positions[d] + sign * 2 * soft_overage
+    position = torch.stack(positions, dim=-1)
+    overage = overage.unsqueeze(-1).expand(dynamics[:, d].shape)
+    dynamics = list(torch.unbind(dynamics, 1))
+    dynamics[d] = torch.where(overage > torch.zeros(overage.shape),
+                              -dynamics[d], dynamics[d])
+    dynamics = torch.stack(dynamics, dim=1)
+    return position, dynamics
+
 class StepBallDynamics(combinators.Primitive):
     def _forward(self, theta, t, data={}):
         boundary, dynamics, uncertainty, noise, position = theta
@@ -54,32 +68,13 @@ class StepBallDynamics(combinators.Primitive):
             softplus(uncertainty), name='velocity_%d' % t
         )
 
-        overage = softplus(position[:, 0] - boundary)
-        position[:, 0] = torch.where(overage > torch.zeros(overage.shape),
-                                     boundary - overage, position[:, 0])
-        dynamics[:, 0, :] = torch.where(overage > torch.zeros(overage.shape),
-                                        -dynamics[: 0, :], dynamics[:, 0, :])
-        overage = torch.norm(boundary[:, 2, 0] - position[:, 0], dim=-1)
-        position[:, 0] = torch.where(overage > torch.zeros(overage.shape),
-                                     boundary[:, 2, 0] + overage,
-                                     position[:, 0])
-        dynamics[:, 0, :] = torch.where(overage > torch.zeros(overage.shape),
-                                        -dynamics[: 0, :], dynamics[:, 0, :])
-
-        overage = torch.norm(position[:, 1] - boundary[:, 3, 1], dim=-1)
-        position[:, 1] = torch.where(overage > torch.zeros(overage.shape),
-                                     boundary[:, 3, 1] - overage,
-                                     position[:, 1])
-        dynamics[:, 1, :] = torch.where(overage > torch.zeros(overage.shape),
-                                        -dynamics[: 1, :], dynamics[:, 1, :])
-        overage = torch.norm(boundary[:, 1, 1] - position[:, 1], dim=-1)
-        position[:, 1] = torch.where(overage > torch.zeros(overage.shape),
-                                     boundary[:, 1, 1] + overage,
-                                     position[:, 1])
-        dynamics[:, 1, :] = torch.where(overage > torch.zeros(overage.shape),
-                                        -dynamics[: 1, :], dynamics[:, 1, :])
-
-        self.observe('position_%d' % t, data.get('position_%d' % t, None),
-                     Normal, loc=position, scale=softplus(noise))
+        for i in range(2):
+            for pos in [True, False]:
+                position, dynamics = reflect_on_boundary(position, dynamics,
+                                                         boundary, d=i,
+                                                         positive=pos)
+        position = self.observe('position_%d' % t,
+                                data.get('position_%d' % t, None), Normal,
+                                loc=position, scale=softplus(noise))
 
         return boundary, dynamics, uncertainty, noise, position
