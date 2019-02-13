@@ -47,16 +47,12 @@ class InitBallDynamics(combinators.Primitive):
 def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
     sign = 1.0 if positive else -1.0
     overage = sign * (position[:, d] - boundary)
-    soft_overage = softplus(overage)
-    positions = list(torch.unbind(position, 1))
-    positions[d] = positions[d] + sign * 2 * soft_overage
-    position = torch.stack(positions, dim=-1)
     overage = overage.unsqueeze(-1).expand(dynamics[:, d].shape)
     dynamics = list(torch.unbind(dynamics, 1))
     dynamics[d] = torch.where(overage > torch.zeros(overage.shape),
                               -dynamics[d], dynamics[d])
     dynamics = torch.stack(dynamics, dim=1)
-    return position, dynamics
+    return dynamics
 
 class StepBallDynamics(combinators.Primitive):
     def _forward(self, theta, t, data={}):
@@ -66,14 +62,13 @@ class StepBallDynamics(combinators.Primitive):
             Normal, torch.bmm(dynamics, position.unsqueeze(-1)).squeeze(-1),
             softplus(uncertainty), name='velocity_%d' % t
         )
-
-        for i in range(2):
-            for pos in [True, False]:
-                position, dynamics = reflect_on_boundary(position, dynamics,
-                                                         boundary, d=i,
-                                                         positive=pos)
         position = self.observe('position_%d' % (t+1),
                                 data.get('position_%d' % (t+1), None), Normal,
                                 loc=position, scale=softplus(noise))
+
+        for i in range(2):
+            for pos in [True, False]:
+                dynamics = reflect_on_boundary(position, dynamics, boundary,
+                                               d=i, positive=pos)
 
         return boundary, dynamics, uncertainty, noise, position
