@@ -29,6 +29,9 @@ class ModelGraph:
             return self[key]
         return default
 
+    def contains_model(self, prefix=''):
+        return self._trie.has_subtrie(prefix)
+
     def __getitem__(self, key):
         if isinstance(key, slice):
             trie = pygtrie.StringTrie()
