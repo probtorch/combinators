@@ -46,7 +46,7 @@ class Foldable(combinators.Model):
             initializer = self._initializer.walk(f)
         else:
             initializer = self._initializer
-        return f(Foldable(self.operator.walk(f), initializer, **self._kwargs))
+        return Foldable(self.operator.walk(f), initializer, **self._kwargs)
 
     def cond(self, qs):
         qs_operator = qs[self.name:]
