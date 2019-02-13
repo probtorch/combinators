@@ -64,7 +64,7 @@ class Foldable(combinators.Model):
 
 class Reduce(combinators.Model):
     def __init__(self, folder, generator):
-        assert isinstance(folder, Foldable)
+        assert isinstance(folder.get_model(), Foldable)
         super(Reduce, self).__init__(batch_shape=folder.batch_shape)
         self.add_module('folder', folder)
         self._generator = generator
