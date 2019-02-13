@@ -70,8 +70,8 @@ class LightweightMH(MHMove):
         return LightweightMH(self.sampler.cond(qs), self._moves)
 
 def resample_move_smc(sampler, initializer=None, moves=1, mcmc=LightweightMH):
-    resampler_mover = mcmc(importance.ImportanceResampler(sampler), moves)
-    return foldable.Foldable(resampler_mover, initializer=initializer)
+    fold = foldable.Foldable(sampler, initializer=initializer)
+    return mcmc(fold.walk(importance.ImportanceResampler), moves)
 
 def reduce_resample_move_smc(stepwise, step_generator, initializer=None,
                              moves=1, mcmc=LightweightMH):
