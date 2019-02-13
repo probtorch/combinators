@@ -43,14 +43,17 @@ def try_rsample(dist):
         return dist.rsample()
     return dist.sample()
 
-def shared_shape(a, b):
+def shared_sizes(a, b):
     result = ()
-    for (dim, dimb) in zip(a.shape, b.shape):
+    for (dim, dimb) in zip(a, b):
         if dim == dimb or dim == 1 or dimb == 1:
             result += (dim,)
         else:
             break
     return result
+
+def shared_shape(a, b):
+    return shared_sizes(a.shape, b.shape)
 
 def conjunct_event_shape(tensor, batch_dims):
     while len(tensor.shape) > batch_dims:
