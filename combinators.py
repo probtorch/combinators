@@ -126,7 +126,7 @@ class Primitive(Model):
             assert value is None or (value == self.q[name].value).all()
             value = self.q[name].value
         if value is not None:
-            if name in self.q:
+            if name in self.q and not self.q[name].observed:
                 provenance = Provenance.REUSED
             else:
                 provenance = Provenance.OBSERVED
