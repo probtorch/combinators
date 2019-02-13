@@ -8,17 +8,26 @@ import graphs
 import utils
 
 class Foldable(combinators.Model):
-    def __init__(self, operator, initializer=None, iteration=0, **kwargs):
+    def __init__(self, operator, initializer=None, iteration=0, qs=None,
+                 **kwargs):
         assert isinstance(operator, combinators.Sampler)
         super(Foldable, self).__init__(batch_shape=operator.batch_shape)
+        self._kwargs = kwargs
+        self._iteration = iteration
+        self._qs = qs
+
+        if self._qs and self._qs.contains_model(self.name):
+            qs = self._qs[self.name:]
+            operator = operator.cond(qs)
+            if isinstance(initializer, combinators.Sampler):
+                initializer = initializer.cond(qs)
+
         self.add_module('operator', operator)
         if isinstance(initializer, combinators.Sampler):
             self.add_module('_initializer', initializer)
             assert self.operator.batch_shape == self._initializer.batch_shape
         else:
             self._initializer = initializer
-        self._kwargs = kwargs
-        self._iteration = iteration
 
     @property
     def name(self):
@@ -34,7 +43,8 @@ class Foldable(combinators.Model):
             seed_weight = torch.zeros(self.batch_shape)
         result, op_trace, weight = self.operator(seed, *args, **kwargs)
         next_step = Foldable(self.operator, initializer=result,
-                             iteration=self._iteration + 1, **self._kwargs)
+                             iteration=self._iteration + 1, qs=self._qs,
+                             **self._kwargs)
 
         graph.insert(self.name, op_trace)
         weight += seed_weight
@@ -49,13 +59,7 @@ class Foldable(combinators.Model):
         return Foldable(self.operator.walk(f), initializer, **self._kwargs)
 
     def cond(self, qs):
-        qs_operator = qs[self.name:]
-        if isinstance(self._initializer, combinators.Sampler):
-            qs_initializer = qs[self.name:]
-            initializer = self._initializer.cond(qs_initializer)
-        else:
-            initializer = self._initializer
-        return Foldable(self.operator.cond(qs_operator), initializer,
+        return Foldable(self.operator, self._initializer, self._iteration, qs,
                         **self._kwargs)
 
 class Reduce(combinators.Model):
