@@ -61,7 +61,6 @@ def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
 class StepBallDynamics(combinators.Primitive):
     def _forward(self, theta, t, data={}):
         boundary, dynamics, uncertainty, noise, position = theta
-        t += 1
 
         position = position + self.sample(
             Normal, torch.bmm(dynamics, position.unsqueeze(-1)).squeeze(-1),
@@ -73,8 +72,8 @@ class StepBallDynamics(combinators.Primitive):
                 position, dynamics = reflect_on_boundary(position, dynamics,
                                                          boundary, d=i,
                                                          positive=pos)
-        position = self.observe('position_%d' % t,
-                                data.get('position_%d' % t, None), Normal,
+        position = self.observe('position_%d' % (t+1),
+                                data.get('position_%d' % (t+1), None), Normal,
                                 loc=position, scale=softplus(noise))
 
         return boundary, dynamics, uncertainty, noise, position
