@@ -54,12 +54,12 @@ def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
 
 class StepBallDynamics(combinators.Primitive):
     def _forward(self, theta, t, data={}):
-        boundary, dynamics, uncertainty, noise, position = theta
+        dynamics, uncertainty, noise, position = theta
 
         for i in range(2):
             for pos in [True, False]:
                 position, dynamics = reflect_on_boundary(position, dynamics,
-                                                         boundary, d=i,
+                                                         6.0, d=i,
                                                          positive=pos)
 
         position = position + self.sample(
@@ -70,7 +70,7 @@ class StepBallDynamics(combinators.Primitive):
                      data.get('position_%d' % (t+1), None), Normal,
                      loc=position, scale=softplus(noise))
 
-        return boundary, dynamics, uncertainty, noise, position
+        return dynamics, uncertainty, noise, position
 
 class StepBallGuide(combinators.Primitive):
     def __init__(self, T, params={}, trainable=False, batch_shape=(1,), q=None):
