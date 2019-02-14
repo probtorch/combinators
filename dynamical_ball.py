@@ -10,10 +10,6 @@ import combinators
 class InitBallDynamics(combinators.Primitive):
     def __init__(self, params={}, trainable=False, batch_shape=(1,), q=None):
         params = {
-            'boundary': {
-                'loc': torch.zeros([]),
-                'scale': torch.ones([]),
-            },
             'dynamics': {
                 'loc': torch.eye(2),
                 'scale': torch.ones(2, 2),
@@ -34,7 +30,6 @@ class InitBallDynamics(combinators.Primitive):
         super(InitBallDynamics, self).__init__(params, trainable, batch_shape,
                                                q)
     def _forward(self, data={}):
-        boundary = self.param_sample(LogNormal, name='boundary')
         dynamics = self.param_sample(Normal, name='dynamics')
         uncertainty = self.param_sample(LogNormal, name='uncertainty')
         noise = self.param_sample(LogNormal, name='noise')
@@ -42,7 +37,7 @@ class InitBallDynamics(combinators.Primitive):
         pos_scale = LowerCholeskyTransform()(pos_params['covariance_matrix'])
         position = self.sample(MultivariateNormal, loc=pos_params['loc'],
                                scale_tril=pos_scale, name='position_0')
-        return boundary, dynamics, uncertainty, noise, position
+        return dynamics, uncertainty, noise, position
 
 def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
     sign = 1.0 if positive else -1.0
