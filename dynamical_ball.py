@@ -46,13 +46,17 @@ class InitBallDynamics(combinators.Primitive):
 
 def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
     sign = 1.0 if positive else -1.0
-    overage = sign * (position[:, d] - boundary)
+    overage = sign * (position[:, d] - sign * boundary)
+    overage = torch.where(torch.sign(overage) == sign, overage,
+                          torch.zeros(*overage.shape))
+    position[:, d] = position[:, d] - overage
+
     overage = overage.unsqueeze(-1).expand(dynamics[:, d].shape)
     dynamics = list(torch.unbind(dynamics, 1))
-    dynamics[d] = torch.where(overage > torch.zeros(overage.shape),
-                              -dynamics[d], dynamics[d])
+    dynamics[d] = torch.where(torch.sign(overage) == sign, -dynamics[d],
+                              dynamics[d])
     dynamics = torch.stack(dynamics, dim=1)
-    return dynamics
+    return position, dynamics
 
 class StepBallDynamics(combinators.Primitive):
     def _forward(self, theta, t, data={}):
