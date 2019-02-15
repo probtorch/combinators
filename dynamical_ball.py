@@ -68,9 +68,9 @@ class StepBallDynamics(combinators.Primitive):
             Normal, torch.bmm(dynamics, position.unsqueeze(-1)).squeeze(-1),
             softplus(uncertainty), name='velocity_%d' % t
         )
-        self.observe('position_%d' % (t+1),
-                     data.get('position_%d' % (t+1), None), Normal,
-                     loc=position, scale=softplus(noise))
+        position = self.observe('position_%d' % (t+1),
+                                data.get('position_%d' % (t+1), None), Normal,
+                                loc=position, scale=softplus(noise))
 
         return dynamics, uncertainty, noise, position
 
