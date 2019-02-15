@@ -66,12 +66,16 @@ class StepBallDynamics(combinators.Primitive):
                                                          6.0, d=i,
                                                          positive=pos)
 
-        position = position + self.sample(Normal, proposal - position,
-                                          softplus(uncertainty),
-                                          name='velocity_%d' % t)
+        uncertainty_tril = LowerCholeskyTransform()(uncertainty)
+        position = position + self.sample(
+            MultivariateNormal, proposal - position,
+            scale_tril=uncertainty_tril, name='velocity_%d' % t
+        )
+        noise_tril = LowerCholeskyTransform()(noise)
         position = self.observe('position_%d' % (t+1),
-                                data.get('position_%d' % (t+1), None), Normal,
-                                loc=position, scale=softplus(noise))
+                                data.get('position_%d' % (t+1), None),
+                                MultivariateNormal, loc=position,
+                                scale_tril=noise_tril)
 
         return dynamics, uncertainty, noise, position
 
