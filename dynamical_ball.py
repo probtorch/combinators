@@ -6,6 +6,7 @@ from torch.distributions.transforms import LowerCholeskyTransform
 from torch.nn.functional import softplus
 
 import combinators
+import utils
 
 class InitBallDynamics(combinators.Primitive):
     def __init__(self, params={}, trainable=False, batch_shape=(1,), q=None):
