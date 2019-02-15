@@ -93,7 +93,7 @@ class Reduce(Model):
         return step_result, graph, log_weight
 
     def walk(self, f):
-        return f(Reduce(self.folder.walk(f), self._generator))
+        return Reduce(self.folder.walk(f), self._generator)
 
     def cond(self, qs):
         qs_folder = qs[self.name:]
