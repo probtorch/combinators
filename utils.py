@@ -12,6 +12,9 @@ import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def particle_matmul(matrices, vectors):
+    return torch.bmm(matrices, vectors.unsqueeze(-1)).squeeze(-1)
+
 def iter_trie_slice(trie, prefix=pygtrie._SENTINEL):
     for key in trie.iterkeys(prefix=prefix):
         hdr = prefix + '/' if prefix != pygtrie._SENTINEL else ''
