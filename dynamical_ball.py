@@ -16,12 +16,12 @@ class InitBallDynamics(combinators.Primitive):
                 'scale': torch.ones(2, 2),
             },
             'uncertainty': {
-                'loc': torch.ones(2),
-                'scale': torch.ones(2),
+                'loc': torch.eye(2),
+                'scale': torch.ones(2, 2),
             },
             'noise': {
-                'loc': torch.ones(2),
-                'scale': torch.ones(2),
+                'loc': torch.eye(2),
+                'scale': torch.ones(2, 2),
             },
             'position_0': {
                 'loc': torch.ones(2),
@@ -32,8 +32,8 @@ class InitBallDynamics(combinators.Primitive):
                                                q)
     def _forward(self, data={}):
         dynamics = self.param_sample(Normal, name='dynamics')
-        uncertainty = self.param_sample(LogNormal, name='uncertainty')
-        noise = self.param_sample(LogNormal, name='noise')
+        uncertainty = self.param_sample(Normal, name='uncertainty')
+        noise = self.param_sample(Normal, name='noise')
         pos_params = self.args_vardict()['position_0']
         pos_scale = LowerCholeskyTransform()(pos_params['covariance_matrix'])
         position = self.sample(MultivariateNormal, loc=pos_params['loc'],
