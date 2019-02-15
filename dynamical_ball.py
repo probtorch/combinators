@@ -44,7 +44,9 @@ def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
     overage = position[:, d] - sign * boundary
     overage = torch.where(torch.sign(overage) == sign, overage,
                           torch.zeros(*overage.shape))
-    position[:, d] = position[:, d] - overage
+    position = list(torch.unbind(position, 1))
+    position[d] = position[d] - overage
+    position = torch.stack(position, dim=1)
 
     overage = overage.unsqueeze(-1).expand(dynamics[:, d].shape)
     dynamics = list(torch.unbind(dynamics, 1))
