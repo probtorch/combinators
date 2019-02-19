@@ -94,9 +94,10 @@ class ModelGraph:
 
     def log_joint(self, prefix='', nodes=None):
         if nodes is None:
+            hdr = pygtrie._SENTINEL if not prefix else prefix
             nodes = list(reduce(lambda x, y: x + y, [
-                [prefix + addr + '/' + var for var in self._trie[prefix+addr]]
-                for addr in self._trie[prefix:]
+                [addr + '/' + var for var in self._trie[addr]]
+                for addr in utils.iter_trie_slice(self._trie, hdr)
             ]))
         log_prob = torch.zeros(1).to(self.device)
         for n in nodes:
