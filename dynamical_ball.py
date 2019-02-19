@@ -32,10 +32,13 @@ class InitBallDynamics(combinators.Primitive):
         } if not params else params
         super(InitBallDynamics, self).__init__(params, trainable, batch_shape,
                                                q)
+        self.transform = LowerCholeskyTransform()
+
     def _forward(self, data={}):
         dynamics = self.param_sample(Normal, name='dynamics')
         uncertainty = self.param_sample(Normal, name='uncertainty')
-        noise = self.param_sample(Normal, name='noise')
+        uncertainty = self.transform(uncertainty)
+        noise = self.transform(self.param_sample(Normal, name='noise'))
         pos_params = self.args_vardict()['position_0']
         pos_scale = LowerCholeskyTransform()(pos_params['covariance_matrix'])
         position = self.sample(MultivariateNormal, loc=pos_params['loc'],
