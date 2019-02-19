@@ -64,23 +64,24 @@ class StepBallDynamics(combinators.Primitive):
     def _forward(self, theta, t, data={}):
         dynamics, uncertainty, noise, position = theta
 
-        proposal = position + utils.particle_matmul(dynamics, position)
+        # Our dynamics here are actually an affine transformation, so one-extend
+        # the position.
+        velocity = utils.particle_matmul(
+            dynamics, torch.cat((position, torch.ones(*self.batch_shape, 1)),
+                                dim=-1)
+        )
+        proposal = position + self.sample(MultivariateNormal, velocity,
+                                          scale_tril=uncertainty,
+                                          name='velocity_%d' % t)
         for i in range(2):
             for pos in [True, False]:
-                proposal, dynamics = reflect_on_boundary(proposal, dynamics,
-                                                         6.0, d=i,
-                                                         positive=pos)
-
-        uncertainty_tril = LowerCholeskyTransform()(uncertainty)
-        position = position + self.sample(
-            MultivariateNormal, proposal - position,
-            scale_tril=uncertainty_tril, name='velocity_%d' % t
-        )
-        noise_tril = LowerCholeskyTransform()(noise)
+                proposal, dynamics = reflect_on_boundary(
+                    proposal, dynamics, 6.0, d=i, positive=pos
+                )
         position = self.observe('position_%d' % (t+1),
                                 data.get('position_%d' % (t+1), None),
-                                MultivariateNormal, loc=position,
-                                scale_tril=noise_tril)
+                                MultivariateNormal, loc=proposal,
+                                scale_tril=noise)
 
         return dynamics, uncertainty, noise, position
 
