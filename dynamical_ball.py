@@ -51,7 +51,7 @@ def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
     overage = torch.where(torch.sign(overage) == sign, overage,
                           torch.zeros(*overage.shape))
     position = list(torch.unbind(position, 1))
-    position[d] = position[d] - overage
+    position[d] = position[d] - 2 * overage
     position = torch.stack(position, dim=1)
 
     overage = overage.unsqueeze(-1).expand(dynamics[:, d].shape)
