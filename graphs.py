@@ -89,14 +89,15 @@ class ModelGraph:
     def device(self):
         for addr in self:
             for v in self[addr]:
-                return self[v].value.device
+                return self[addr][v].value.device
         return 'cpu'
 
     def log_joint(self, prefix='', nodes=None):
         if nodes is None:
+            hdr = pygtrie._SENTINEL if not prefix else prefix
             nodes = list(reduce(lambda x, y: x + y, [
-                [prefix + addr + '/' + var for var in self._trie[prefix+addr]]
-                for addr in self._trie[prefix:]
+                [addr + '/' + var for var in self._trie[addr]]
+                for addr in utils.iter_trie_slice(self._trie, hdr)
             ]))
         log_prob = torch.zeros(1).to(self.device)
         for n in nodes:
@@ -125,10 +126,15 @@ class ModelGraph:
         for k, v in other.items():
             self[prefix + '/' + k] = v
 
-    def variables(self, prefix=pygtrie._SENTINEL):
+    def variables(self, prefix=pygtrie._SENTINEL, predicate=lambda k, v: True):
         for _, trace in self._trie.iteritems(prefix=prefix):
             for k, v in trace.items():
-                yield (k, v)
+                if predicate(k, v):
+                    yield (k, v)
+
+    def num_variables(self, prefix=pygtrie._SENTINEL,
+                      predicate=lambda k, v: True):
+        return len(list(self.variables(prefix, predicate)))
 
     def graft(self, key, val):
         if isinstance(key, int):
