@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import numpy as np
 import torch
 from torch.distributions import LogNormal, MultivariateNormal, Normal
 from torch.distributions.transforms import LowerCholeskyTransform
