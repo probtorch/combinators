@@ -54,8 +54,8 @@ def broadcastable_sizes(a, b):
             break
     return result
 
-def shared_shape(a, b):
-    return shared_sizes(a.shape, b.shape)
+def broadcastable_shape(a, b):
+    return broadcastable_sizes(a.shape, b.shape)
 
 def conjunct_event_shape(tensor, batch_dims):
     while len(tensor.shape) > batch_dims:
@@ -63,7 +63,7 @@ def conjunct_event_shape(tensor, batch_dims):
     return tensor
 
 def conjunct_events(conjunct_log_prob, log_prob):
-    batch_dims = len(shared_shape(conjunct_log_prob, log_prob))
+    batch_dims = len(broadcastable_shape(conjunct_log_prob, log_prob))
     return conjunct_log_prob + conjunct_event_shape(log_prob, batch_dims)
 
 def dict_lookup(d):
