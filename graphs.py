@@ -132,6 +132,10 @@ class ModelGraph:
                 if predicate(k, v):
                     yield (k, v)
 
+    def num_variables(self, prefix=pygtrie._SENTINEL,
+                      predicate=lambda k, v: True):
+        return len(list(self.variables(prefix, predicate)))
+
     def graft(self, key, val):
         if isinstance(key, int):
             key = self._ordering[key]
