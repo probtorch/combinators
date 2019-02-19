@@ -22,14 +22,13 @@ class MHMove(combinators.Inference):
 
     def forward(self, *args, **kwargs):
         zs, xi, w = self.sampler(*args, **kwargs)
-        original_model_graph = xi
         multiple_zs = isinstance(zs, tuple)
         if not multiple_zs:
             zs = (zs,)
         marginal = utils.marginalize_all(w)
         for _ in range(self._moves):
             zsq, xiq, wq, move_proposed, move_current =\
-                self.propose(zs, xi, original_model_graph, *args, **kwargs)
+                self.propose(zs, xi, *args, **kwargs)
             marginal_q = utils.marginalize_all(wq)
             mh_ratio = (marginal_q - move_proposed) - (marginal - move_current)
             log_alpha = torch.min(torch.zeros(mh_ratio.shape), mh_ratio)
