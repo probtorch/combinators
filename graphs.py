@@ -126,10 +126,11 @@ class ModelGraph:
         for k, v in other.items():
             self[prefix + '/' + k] = v
 
-    def variables(self, prefix=pygtrie._SENTINEL):
+    def variables(self, prefix=pygtrie._SENTINEL, predicate=lambda k, v: True):
         for _, trace in self._trie.iteritems(prefix=prefix):
             for k, v in trace.items():
-                yield (k, v)
+                if predicate(k, v):
+                    yield (k, v)
 
     def graft(self, key, val):
         if isinstance(key, int):
