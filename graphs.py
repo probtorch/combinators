@@ -89,7 +89,7 @@ class ModelGraph:
     def device(self):
         for addr in self:
             for v in self[addr]:
-                return self[v].value.device
+                return self[addr][v].value.device
         return 'cpu'
 
     def log_joint(self, prefix='', nodes=None):
