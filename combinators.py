@@ -130,8 +130,8 @@ class Primitive(Model):
                 provenance = Provenance.REUSED
             else:
                 provenance = Provenance.OBSERVED
-                shared_shapes = utils.shared_sizes(value.shape,
-                                                   self.batch_shape)
+                shared_shapes = utils.broadcastable_sizes(value.shape,
+                                                          self.batch_shape)
                 if shared_shapes != self.batch_shape:
                     value = value.expand(*self.batch_shape, *value.shape)
         else:
