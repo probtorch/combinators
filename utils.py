@@ -2,6 +2,7 @@
 
 import collections
 import flatdict
+import pygtrie
 
 import matplotlib.pyplot as plt
 import probtorch
@@ -11,9 +12,15 @@ import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
-def slice_trace(trace, key):
+def iter_trie_slice(trie, prefix=pygtrie._SENTINEL):
+    for key in trie.iterkeys(prefix=prefix):
+        hdr = prefix + '/' if prefix != pygtrie._SENTINEL else ''
+        yield hdr + key
+
+def slice_trace(trace, key, forwards=True):
     result = probtorch.Trace()
-    for k, v in trace.items():
+    items = trace.items() if forwards else reversed(trace.items())
+    for k, v in items:
         if k == key:
             break
         result[k] = v
@@ -43,17 +50,19 @@ def try_rsample(dist):
         return dist.rsample()
     return dist.sample()
 
-def shared_sizes(a, b):
+def broadcastable_sizes(a, b):
     result = ()
-    for (dim, dimb) in zip(a, b):
-        if dim == dimb or dim == 1 or dimb == 1:
-            result += (dim,)
+    for (dima, dimb) in reversed(list(zip(a, b))):
+        if dima == dimb or dimb == 1:
+            result += (dima,)
+        elif dima == 1:
+            result += (dimb,)
         else:
             break
     return result
 
-def shared_shape(a, b):
-    return shared_sizes(a.shape, b.shape)
+def broadcastable_shape(a, b):
+    return broadcastable_sizes(a.shape, b.shape)
 
 def conjunct_event_shape(tensor, batch_dims):
     while len(tensor.shape) > batch_dims:
@@ -61,7 +70,7 @@ def conjunct_event_shape(tensor, batch_dims):
     return tensor
 
 def conjunct_events(conjunct_log_prob, log_prob):
-    batch_dims = len(shared_shape(conjunct_log_prob, log_prob))
+    batch_dims = len(broadcastable_shape(conjunct_log_prob, log_prob))
     return conjunct_log_prob + conjunct_event_shape(log_prob, batch_dims)
 
 def dict_lookup(d):
