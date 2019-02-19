@@ -43,11 +43,13 @@ def try_rsample(dist):
         return dist.rsample()
     return dist.sample()
 
-def shared_sizes(a, b):
+def broadcastable_sizes(a, b):
     result = ()
-    for (dim, dimb) in zip(a, b):
-        if dim == dimb or dim == 1 or dimb == 1:
-            result += (dim,)
+    for (dima, dimb) in reversed(list(zip(a, b))):
+        if dima == dimb or dimb == 1:
+            result += (dima,)
+        elif dima == 1:
+            result += (dimb,)
         else:
             break
     return result
