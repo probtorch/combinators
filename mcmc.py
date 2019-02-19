@@ -41,25 +41,29 @@ class MHMove(combinators.Inference):
         return zs, xi, w
 
 class LightweightMH(MHMove):
-    def propose(self, results, graph, originals, *args, **kwargs):
+    def propose(self, results, graph, *args, **kwargs):
         t = np.random.randint(len(graph))
-        sampled = [k for k in originals[t] if not originals[t][k].observed]
+        sampled = [k for k in graph[t] if not graph[t][k].observed]
         while not sampled:
             t = np.random.randint(len(graph))
-            sampled = [k for k in originals[t] if not originals[t][k].observed]
+            sampled = [k for k in graph[t] if not graph[t][k].observed]
 
         address = sampled[np.random.randint(len(sampled))]
-        original = graph[t][address]
+        candidate_trace = utils.slice_trace(graph[t], address)
+        candidate_graph = graph.graft(t, candidate_trace)
 
-        candidate = utils.slice_trace(graph[t], address)
-        move_current = utils.marginalize_all(original.log_prob)
-        dist = original.dist
-        rv = probtorch.RandomVariable(dist, utils.try_rsample(dist),
-                                      probtorch.stochastic.Provenance.SAMPLED)
-        candidate[address] = rv
-        candidates = graph.graft(t, candidate)
-        zs, xi, w = self.sampler.cond(candidates)(*args, **kwargs)
-        move_candidate = utils.marginalize_all(rv.log_prob)
+        zs, xi, w = self.sampler.cond(candidate_graph)(*args, **kwargs)
+
+        predicate = lambda k, v: not v.observed
+        move_candidate = utils.marginalize_all(xi.log_joint())
+        move_candidate += torch.log(torch.tensor(float(
+            xi.num_variables(predicate=predicate)
+        )))
+        move_current = utils.marginalize_all(graph.log_joint())
+        move_current += torch.log(torch.tensor(float(
+            graph.num_variables(predicate=predicate)
+        )))
+
         return zs, xi, w, move_candidate, move_current
 
     def walk(self, f):
