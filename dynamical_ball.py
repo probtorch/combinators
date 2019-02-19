@@ -13,8 +13,9 @@ class InitBallDynamics(combinators.Primitive):
     def __init__(self, params={}, trainable=False, batch_shape=(1,), q=None):
         params = {
             'dynamics': {
-                'loc': torch.eye(2),
-                'scale': torch.ones(2, 2),
+                'loc': torch.cat((torch.zeros(2, 2),
+                                  torch.ones(2, 1) / np.sqrt(2)), dim=-1),
+                'scale': torch.ones(2, 3),
             },
             'uncertainty': {
                 'loc': torch.eye(2),
