@@ -1,50 +1,34 @@
 #!/usr/bin/env python3
 
-import probtorch
-from probtorch.util import log_sum_exp
 import torch
-from torch.distributions import Categorical, Normal
+from torch.distributions import Categorical, Dirichlet
 from torch.nn.functional import softplus
 
-import filtering
+import combinators
 import gmm
 import utils
 
-def init_hmm(this=None):
-    params = this.args_vardict(this.trace.batch_shape)
-    mu, sigma, pi0 = gmm.init_gmm('Pi_0', this)
+class InitHmm(combinators.Primitive):
+    def _forward(self, mu, sigma, pi0, **kwargs):
+        pi = torch.zeros(*self.batch_shape, pi0.shape[-1], pi0.shape[-1])
+        for k in range(pi0.shape[-1]):
+            pi[:, k] = self.param_sample(Dirichlet, name='Pi_%d' % (k+1))
+        z0 = self.sample(Categorical, softplus(pi[:, 0]), name='Z_0')
+        return z0, mu, sigma, pi
 
-    pi = torch.zeros(this.trace.num_particles, pi0.shape[1], pi0.shape[1])
-    for k in range(pi0.shape[1]):
-        pi[:, k] = this.trace.param_dirichlet(params, name='Pi_%d' % (k+1))
+class HmmStep(combinators.Primitive):
+    def __init__(self, *args, **kwargs):
+        super(HmmStep, self).__init__(*args, **kwargs)
+        self.gmm = gmm.Gmm(batch_shape=self.batch_shape)
 
-    z0, _ = gmm.gmm(mu, sigma, pi0, latent_name='Z_0', observable_name=None,
-                    this=this)
-    return z0, mu, sigma, pi, pi0
+    def _forward(self, theta, t, data={}):
+        z_prev, mu, sigma, pi = theta
+        t += 1
+        pi_prev = utils.particle_index(pi, z_prev)
 
-def forward_filter_hmm(mu, sigma, pi, pi0):
-    transition = lambda prev, current: torch.log(pi[:, prev, current])
-    observation_dists = [Normal(mu[:, state], softplus(sigma[:, state]))
-                         for state in range(pi.shape[1])]
-    return filtering.ForwardMessenger(hmm_step, 'Z_%d', 'X_%d', transition,
-                                      observation_dists,
-                                      initial_marginals=('init_hmm',
-                                                         torch.log(pi0)))
+        (z_current, _), p, _ = self.gmm(mu, sigma, pi_prev,
+                                        latent_name='Z_%d' % t,
+                                        observable_name='X_%d' % t, data=data)
+        self.p = utils.join_traces(self.p, p['Gmm'])
 
-def forward_backward_filter_hmm(mu, sigma, pi, pi0):
-    transition = lambda prev, current: torch.log(pi[:, prev, current])
-    observation_dists = [Normal(mu[:, state], softplus(sigma[:, state]))
-                         for state in range(pi.shape[1])]
-    return filtering.ForwardBackwardMessenger(
-        hmm_step, 'Z_%d', 'X_%d', transition, observation_dists,
-        initial_marginals=('init_hmm', torch.log(pi0))
-    )
-
-def hmm_step(theta, t, this=None):
-    z_prev, mu, sigma, pi, pi0 = theta
-    t += 1
-    pi_prev = utils.particle_index(pi, z_prev)
-
-    z_current, _ = gmm.gmm(mu, sigma, pi_prev, latent_name='Z_%d' % t,
-                           observable_name='X_%d' % t, this=this)
-    return z_current, mu, sigma, pi, pi0
+        return z_current, mu, sigma, pi

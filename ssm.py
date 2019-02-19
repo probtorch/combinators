@@ -1,27 +1,33 @@
 #!/usr/bin/env python3
 
-import probtorch
 import torch
+from torch.distributions import Normal
 from torch.nn.functional import softplus
 
 import combinators
-import utils
 
-def init_ssm(this=None):
-    params = this.args_vardict(this.trace.batch_shape)
-    mu = this.trace.param_normal(params, name='mu')
-    sigma = torch.sqrt(this.trace.param_normal(params, name='sigma')**2)
-    delta = this.trace.param_normal(params, name='delta')
-    z0 = this.trace.normal(mu, softplus(sigma), name='Z_0')
-    return z0, mu, sigma, delta
+class InitSsm(combinators.Primitive):
+    @property
+    def name(self):
+        return 'InitSsm'
 
-def ssm_step(theta, t, this=None):
-    z_prev, mu, sigma, delta = theta
-    t += 1
-    z_current = this.trace.normal(z_prev + delta, softplus(sigma),
-                                  name='Z_%d' % t)
-    this.trace.normal(
-        z_current, torch.ones(*z_current.shape, device=z_current.device),
-        name='X_%d' % t,
-    )
-    return z_current, mu, sigma, delta
+    def _forward(self, *args, **kwargs):
+        mu = self.param_sample(Normal, name='mu')
+        sigma = self.param_sample(Normal, name='sigma')
+        delta = self.param_sample(Normal, name='delta')
+        z0 = self.sample(Normal, mu, softplus(sigma), name='Z_0')
+        return z0, mu, sigma, delta
+
+class SsmStep(combinators.Primitive):
+    @property
+    def name(self):
+        return 'SsmStep'
+
+    def _forward(self, theta, t, data={}):
+        z_prev, mu, sigma, delta = theta
+        t += 1
+        z_current = self.sample(Normal, z_prev + delta, softplus(sigma),
+                                name='Z_%d' % t)
+        self.observe('X_%d' % t, data.get('X_%d' % t), Normal, z_current,
+                     torch.ones(*z_current.shape, device=z_current.device))
+        return z_current, mu, sigma, delta
