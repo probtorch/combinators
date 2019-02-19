@@ -2,6 +2,7 @@
 
 import collections
 import flatdict
+import pygtrie
 
 import matplotlib.pyplot as plt
 import probtorch
@@ -11,9 +12,15 @@ import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
-def slice_trace(trace, key):
+def iter_trie_slice(trie, prefix=pygtrie._SENTINEL):
+    for key in trie.iterkeys(prefix=prefix):
+        hdr = prefix + '/' if prefix != pygtrie._SENTINEL else ''
+        yield hdr + key
+
+def slice_trace(trace, key, forwards=True):
     result = probtorch.Trace()
-    for k, v in trace.items():
+    items = trace.items() if forwards else reversed(trace.items())
+    for k, v in items:
         if k == key:
             break
         result[k] = v
