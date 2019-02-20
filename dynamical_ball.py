@@ -49,8 +49,22 @@ def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
     return position, dynamics
 
 class StepBallDynamics(combinators.Primitive):
+    def __init__(self, *args, **kwargs):
+        super(StepBallDynamics, self).__init__(*args, **kwargs)
+        self.transform = LowerCholeskyTransform()
+
     def _forward(self, theta, t, data={}):
-        dynamics, uncertainty, noise, position = theta
+        dynamics, position = theta
+
+        # Covariances should be sampled!
+        uncertainty = self.transform(self.sample(
+            Normal, torch.eye(2).expand(*self.batch_shape, 2, 2),
+            torch.ones(*self.batch_shape, 2, 2), name='uncertainty_%d' % t
+        ))
+        noise = self.transform(self.sample(
+            Normal, torch.eye(2).expand(*self.batch_shape, 2, 2),
+            torch.ones(*self.batch_shape, 2, 2), name='noise_%d' % t
+        ))
 
         # Our dynamics here are actually an affine transformation, so one-extend
         # the position.
@@ -71,7 +85,7 @@ class StepBallDynamics(combinators.Primitive):
                                 MultivariateNormal, loc=proposal,
                                 scale_tril=noise)
 
-        return dynamics, uncertainty, noise, position
+        return dynamics, position
 
 class StepBallGuide(combinators.Primitive):
     def __init__(self, T, params={}, trainable=False, batch_shape=(1,), q=None):
