@@ -55,7 +55,7 @@ def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
 
 class StepBallDynamics(combinators.Primitive):
     def _forward(self, theta, t, data={}):
-        dynamics, position = theta
+        dynamics, position, uncertainty = theta
 
         # Our dynamics here are actually an affine transformation, so one-extend
         # the position.
@@ -76,7 +76,7 @@ class StepBallDynamics(combinators.Primitive):
                                 Normal, loc=proposal,
                                 scale=torch.ones(*proposal.shape))
 
-        return dynamics, position
+        return dynamics, position, uncertainty
 
 class StepBallGuide(combinators.Primitive):
     def __init__(self, T, params={}, trainable=False, batch_shape=(1,), q=None):
