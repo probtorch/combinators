@@ -21,6 +21,10 @@ class InitBallDynamics(combinators.Primitive):
                 'loc': torch.ones(2),
                 'covariance_matrix': torch.eye(2),
             },
+            'uncertainty': {
+                'loc': torch.ones(2),
+                'scale': torch.ones(2),
+            },
         } if not params else params
         super(InitBallDynamics, self).__init__(params, trainable, batch_shape,
                                                q)
@@ -31,7 +35,8 @@ class InitBallDynamics(combinators.Primitive):
         pos_scale = LowerCholeskyTransform()(pos_params['covariance_matrix'])
         position = self.sample(MultivariateNormal, loc=pos_params['loc'],
                                scale_tril=pos_scale, name='position_0')
-        return dynamics, position
+        uncertainty = softplus(self.param_sample(Normal, name='uncertainty'))
+        return dynamics, position, uncertainty
 
 def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
     sign = 1.0 if positive else -1.0
