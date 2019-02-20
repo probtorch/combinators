@@ -17,14 +17,6 @@ class InitBallDynamics(combinators.Primitive):
                                   torch.ones(2, 1) / np.sqrt(2)), dim=-1),
                 'scale': torch.ones(2, 3),
             },
-            'uncertainty': {
-                'loc': torch.eye(2),
-                'scale': torch.ones(2, 2),
-            },
-            'noise': {
-                'loc': torch.eye(2),
-                'scale': torch.ones(2, 2),
-            },
             'position_0': {
                 'loc': torch.ones(2),
                 'covariance_matrix': torch.eye(2),
@@ -32,18 +24,14 @@ class InitBallDynamics(combinators.Primitive):
         } if not params else params
         super(InitBallDynamics, self).__init__(params, trainable, batch_shape,
                                                q)
-        self.transform = LowerCholeskyTransform()
 
     def _forward(self, data={}):
         dynamics = self.param_sample(Normal, name='dynamics')
-        uncertainty = self.param_sample(Normal, name='uncertainty')
-        uncertainty = self.transform(uncertainty)
-        noise = self.transform(self.param_sample(Normal, name='noise'))
         pos_params = self.args_vardict()['position_0']
         pos_scale = LowerCholeskyTransform()(pos_params['covariance_matrix'])
         position = self.sample(MultivariateNormal, loc=pos_params['loc'],
                                scale_tril=pos_scale, name='position_0')
-        return dynamics, uncertainty, noise, position
+        return dynamics, position
 
 def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
     sign = 1.0 if positive else -1.0
