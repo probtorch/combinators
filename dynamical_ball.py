@@ -54,10 +54,6 @@ def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
     return position, dynamics
 
 class StepBallDynamics(combinators.Primitive):
-    def __init__(self, *args, **kwargs):
-        super(StepBallDynamics, self).__init__(*args, **kwargs)
-        self.transform = LowerCholeskyTransform()
-
     def _forward(self, theta, t, data={}):
         dynamics, position = theta
 
