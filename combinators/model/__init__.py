@@ -1,1 +1,3 @@
-__all__ = ['foldable', 'kernel', 'model']
+from .model import *
+
+__all__ = ['foldable', 'kernel']
