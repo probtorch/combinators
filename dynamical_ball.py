@@ -63,14 +63,15 @@ class StepBallDynamics(combinators.Primitive):
             dynamics, torch.cat((position, torch.ones(*self.batch_shape, 1)),
                                 dim=-1)
         )
-        proposal = position + self.sample(Normal, loc=velocity,
-                                          scale=torch.ones(*velocity.shape),
-                                          name='velocity_%d' % t)
+        proposal = position + velocity
+
         for i in range(2):
             for pos in [True, False]:
                 proposal, dynamics = reflect_on_boundary(
                     proposal, dynamics, 6.0, d=i, positive=pos
                 )
+        self.sample(Normal, loc=proposal - position, scale=uncertainty,
+                    name='velocity_%d' % t)
         position = self.observe('position_%d' % (t+1),
                                 data.get('position_%d' % (t+1), None),
                                 Normal, loc=proposal,
