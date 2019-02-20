@@ -4,9 +4,9 @@ import torch
 from torch.distributions import Normal
 from torch.nn.functional import softplus
 
-import combinators
+from combinators.model import model
 
-class InitSsm(combinators.Primitive):
+class InitSsm(model.Primitive):
     @property
     def name(self):
         return 'InitSsm'
@@ -18,7 +18,7 @@ class InitSsm(combinators.Primitive):
         z0 = self.sample(Normal, mu, softplus(sigma), name='Z_0')
         return z0, mu, sigma, delta
 
-class SsmStep(combinators.Primitive):
+class SsmStep(model.Primitive):
     @property
     def name(self):
         return 'SsmStep'
