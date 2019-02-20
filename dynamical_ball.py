@@ -84,14 +84,6 @@ class StepBallGuide(combinators.Primitive):
                 'loc': torch.zeros(T, 2),
                 'scale': torch.ones(T, 2),
             },
-            'uncertainties': {
-                'loc': torch.eye(2).expand(T, 2, 2),
-                'scale': torch.ones(T, 2, 2),
-            },
-            'noises': {
-                'loc': torch.eye(2).expand(T, 2, 2),
-                'scale': torch.ones(T, 2, 2),
-            },
         } if not params else params
         self._num_timesteps = T
         super(StepBallGuide, self).__init__(params, trainable, batch_shape, q)
@@ -108,14 +100,6 @@ class StepBallGuide(combinators.Primitive):
     def _forward(self, theta, t, data={}):
         params = self.args_vardict()
         velocities = params['velocities']
-        uncertainties = params['uncertainties']
-        noises = params['noises']
-
-        self.sample(Normal, uncertainties['loc'][:, t],
-                    softplus(uncertainties['scale'][:, t]),
-                    name='uncertainty_%d' % t)
-        self.sample(Normal, noises['loc'][:, t],
-                    softplus(noises['scale'][:, t]), name='noise_%d' % t)
         self.sample(Normal, velocities['loc'][:, t],
                     softplus(velocities['scale'][:, t]), name='velocity_%d' % t)
         return theta
