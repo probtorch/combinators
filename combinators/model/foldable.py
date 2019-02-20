@@ -3,14 +3,15 @@
 import probtorch
 import torch
 
-import combinators
-import graphs
-import utils
+from .. import graphs
+from .model import Model
+from ..sampler import Sampler
+from .. import utils
 
-class Foldable(combinators.Model):
+class Foldable(Model):
     def __init__(self, operator, initializer=None, iteration=0, qs=None,
                  **kwargs):
-        assert isinstance(operator, combinators.Sampler)
+        assert isinstance(operator, Sampler)
         super(Foldable, self).__init__(batch_shape=operator.batch_shape)
         self._kwargs = kwargs
         self._iteration = iteration
@@ -19,11 +20,11 @@ class Foldable(combinators.Model):
         if self._qs and self._qs.contains_model(self.name):
             qs = self._qs[self.name:]
             operator = operator.cond(qs)
-            if isinstance(initializer, combinators.Sampler):
+            if isinstance(initializer, Sampler):
                 initializer = initializer.cond(qs)
 
         self.add_module('operator', operator)
-        if isinstance(initializer, combinators.Sampler):
+        if isinstance(initializer, Sampler):
             self.add_module('_initializer', initializer)
             assert self.operator.batch_shape == self._initializer.batch_shape
         else:
@@ -35,7 +36,7 @@ class Foldable(combinators.Model):
 
     def forward(self, *args, **kwargs):
         graph = graphs.ModelGraph()
-        if isinstance(self._initializer, combinators.Sampler):
+        if isinstance(self._initializer, Sampler):
             seed, init_trace, seed_weight = self._initializer(**kwargs)
             graph.insert(self.name, init_trace)
         else:
@@ -52,7 +53,7 @@ class Foldable(combinators.Model):
         return (result, next_step), graph, weight
 
     def walk(self, f):
-        if isinstance(self._initializer, combinators.Sampler):
+        if isinstance(self._initializer, Sampler):
             initializer = self._initializer.walk(f)
         else:
             initializer = self._initializer
@@ -62,7 +63,7 @@ class Foldable(combinators.Model):
         return Foldable(self.operator, self._initializer, self._iteration, qs,
                         **self._kwargs)
 
-class Reduce(combinators.Model):
+class Reduce(Model):
     def __init__(self, folder, generator):
         assert isinstance(folder.get_model(), Foldable)
         super(Reduce, self).__init__(batch_shape=folder.batch_shape)
