@@ -7,8 +7,8 @@ from torch.distributions.transforms import LowerCholeskyTransform
 import torch.nn as nn
 from torch.nn.functional import softplus
 
-import combinators
-import utils
+import combinators.model as model
+import combinators.utils as utils
 
 def reflect_directions(dir_loc):
     dir_locs = dir_loc.unsqueeze(-2).repeat(1, 4, 1)
@@ -17,7 +17,7 @@ def reflect_directions(dir_loc):
     dir_locs[:, 3, 0] *= -1
     return dir_locs / (dir_locs**2).sum(dim=-1).unsqueeze(-1).sqrt()
 
-class InitBouncingBall(combinators.Primitive):
+class InitBouncingBall(model.Primitive):
     def _forward(self, data={}):
         initial_alpha = self.param_sample(Dirichlet, name='alpha_0')
         pi = self.sample(Dirichlet, initial_alpha, name='Pi')
@@ -46,7 +46,7 @@ class InitBouncingBall(combinators.Primitive):
 
         return initial_position, initial_z, transition, dir_locs, dir_covs
 
-class BouncingBallStep(combinators.Primitive):
+class BouncingBallStep(model.Primitive):
     def _forward(self, theta, t, data={}):
         position, z_prev, transition, dir_locs, dir_covs = theta
         directions = {
@@ -70,7 +70,7 @@ class BouncingBallStep(combinators.Primitive):
 
         return position, z_current, transition, dir_locs, dir_covs
 
-class ProposalStep(combinators.Primitive):
+class ProposalStep(model.Primitive):
     def __init__(self, *args, name=None, **kwargs):
         super(ProposalStep, self).__init__(*args, **kwargs)
         self._name = name
