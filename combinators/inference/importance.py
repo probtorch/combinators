@@ -9,9 +9,9 @@ import torch
 import torch.distributions as dists
 from torch.nn.functional import log_softmax
 
-import combinators
-import foldable
-import utils
+from . import inference
+from ..model import foldable
+from .. import utils
 
 def index_select_rv(rv, dim, indices):
     result = rv
@@ -21,7 +21,7 @@ def index_select_rv(rv, dim, indices):
                                 rv.reparameterized)
     return result
 
-class ImportanceResampler(combinators.Inference):
+class ImportanceResampler(inference.Inference):
     @property
     def particle_shape(self):
         return self.sampler.batch_shape
@@ -58,7 +58,7 @@ class ImportanceResampler(combinators.Inference):
         return ImportanceResampler(self.sampler.cond(qs))
 
 def importance_with_proposal(proposal, model):
-    return ImportanceResampler(combinators.GuidedConditioning(model, proposal))
+    return ImportanceResampler(inference.GuidedConditioning(model, proposal))
 
 def generalized_smc(sampler):
     return sampler.walk(ImportanceResampler)
