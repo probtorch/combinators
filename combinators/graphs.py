@@ -5,7 +5,7 @@ import probtorch
 import pygtrie
 import torch
 
-import utils
+from . import utils
 
 class ModelGraph:
     def __init__(self, trie=None, traces=None):
