@@ -84,6 +84,10 @@ class Model(Sampler):
         self._batch_shape = batch_shape
 
     @property
+    def batch_shape(self):
+        return self._batch_shape
+
+    @property
     def name(self):
         raise NotImplementedError()
 
