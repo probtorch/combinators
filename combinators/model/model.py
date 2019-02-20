@@ -4,9 +4,10 @@ import torch
 
 import probtorch
 from probtorch.stochastic import Provenance
-from combinators.sampler import Sampler
-import graphs
-import utils
+
+from .. import graphs
+from ..sampler import Sampler
+from .. import utils
 
 class Model(Sampler):
     def __init__(self, batch_shape=(1,)):
