@@ -1,1 +1,3 @@
-__all__ = ['importance', 'inference', 'mcmc']
+from .inference import *
+
+__all__ = ['importance', 'mcmc']
