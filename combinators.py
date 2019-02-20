@@ -206,6 +206,20 @@ class Inference(Sampler):
     def walk(self, f):
         raise NotImplementedError()
 
+class TransitionKernel(Model):
+    def forward(self, zs, xi, w, *args, **kwargs):
+        return zs, xi, w, torch.zeros(), torch.zeros()
+
+    def walk(self, f):
+        raise NotImplementedError()
+
+    def cond(self, qs):
+        raise NotImplementedError()
+
+    @property
+    def name(self):
+        raise NotImplementedError()
+
 class GuidedConditioning(Inference):
     def __init__(self, sampler, guide):
         super(GuidedConditioning, self).__init__(sampler)
