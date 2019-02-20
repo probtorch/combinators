@@ -2,13 +2,9 @@
 
 import collections
 
-import probtorch
-from probtorch.stochastic import Provenance
-import pygtrie
 import torch
 import torch.nn as nn
 
-import graphs
 import utils
 
 class Sampler(nn.Module):
