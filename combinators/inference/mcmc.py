@@ -7,15 +7,17 @@ import numpy as np
 import probtorch
 import torch
 
-import combinators
-import foldable
-import importance
-import utils
+from .inference import Inference
+from . import importance
+from ..model.kernel import TransitionKernel
+from ..model import foldable
+from ..sampler import Sampler
+from .. import utils
 
-class MHMove(combinators.Inference):
+class MHMove(Inference):
     def __init__(self, sampler, kernel, moves=1):
         super(MHMove, self).__init__(sampler)
-        assert isinstance(kernel, combinators.TransitionKernel)
+        assert isinstance(kernel, TransitionKernel)
         self.add_module('kernel', kernel)
         self._moves = moves
 
@@ -45,10 +47,10 @@ class MHMove(combinators.Inference):
     def cond(self, qs):
         return MHMove(self.sampler.cond(qs), self.kernel, self._moves)
 
-class LightweightKernel(combinators.TransitionKernel):
+class LightweightKernel(TransitionKernel):
     def __init__(self, prior):
-        super(combinators.TransitionKernel, self).__init__(prior.batch_shape)
-        assert isinstance(prior, combinators.Sampler)
+        super(LightweightKernel, self).__init__(prior.batch_shape)
+        assert isinstance(prior, Sampler)
         self.add_module('prior', prior)
 
     def forward(self, zs, xi, w, *args, **kwargs):
