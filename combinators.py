@@ -18,7 +18,7 @@ class Sampler(nn.Module):
 
     @property
     def batch_shape(self):
-        return torch.Size(self._batch_shape)
+        raise NotImplementedError()
 
     def get_model(self):
         raise NotImplementedError()
