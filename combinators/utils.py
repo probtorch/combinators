@@ -14,7 +14,7 @@ import torch.nn as nn
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
 def unique_shape(tensor, shape):
-    for dim, i in enumerate(tensor.shape):
+    for i, dim in enumerate(tensor.shape):
         if shape[i] != dim:
             return tensor.shape[i:]
     return ()
