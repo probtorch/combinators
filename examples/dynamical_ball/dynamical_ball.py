@@ -6,16 +6,14 @@ from torch.distributions import LogNormal, MultivariateNormal, Normal
 from torch.distributions.transforms import LowerCholeskyTransform
 from torch.nn.functional import softplus
 
-import combinators
-import utils
+import combinators.model
 
-class InitBallDynamics(combinators.Primitive):
+class InitBallDynamics(combinators.model.Primitive):
     def __init__(self, params={}, trainable=False, batch_shape=(1,), q=None):
         params = {
-            'dynamics': {
-                'loc': torch.cat((torch.zeros(2, 2),
-                                  torch.ones(2, 1) / np.sqrt(2)), dim=-1),
-                'scale': torch.ones(2, 3),
+            'direction': {
+                'loc': torch.ones(2) / np.sqrt(2),
+                'scale': torch.ones(2),
             },
             'position_0': {
                 'loc': torch.ones(2),
@@ -30,15 +28,15 @@ class InitBallDynamics(combinators.Primitive):
                                                q)
 
     def _forward(self, data={}):
-        dynamics = self.param_sample(Normal, name='dynamics')
+        direction = self.param_sample(Normal, name='direction')
         pos_params = self.args_vardict()['position_0']
         pos_scale = LowerCholeskyTransform()(pos_params['covariance_matrix'])
         position = self.sample(MultivariateNormal, loc=pos_params['loc'],
                                scale_tril=pos_scale, name='position_0')
         uncertainty = softplus(self.param_sample(Normal, name='uncertainty'))
-        return dynamics, position, uncertainty
+        return direction, position, uncertainty
 
-def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
+def reflect_on_boundary(position, direction, boundary, d=0, positive=True):
     sign = 1.0 if positive else -1.0
     overage = position[:, d] - sign * boundary
     overage = torch.where(torch.sign(overage) == sign, overage,
@@ -47,29 +45,28 @@ def reflect_on_boundary(position, dynamics, boundary, d=0, positive=True):
     position[d] = position[d] - 2 * overage
     position = torch.stack(position, dim=1)
 
-    overage = overage.unsqueeze(-1).expand(dynamics[:, d].shape)
-    dynamics = list(torch.unbind(dynamics, 1))
-    dynamics[d] = torch.where(overage != 0.0, -dynamics[d], dynamics[d])
-    dynamics = torch.stack(dynamics, dim=1)
-    return position, dynamics
+    direction = list(torch.unbind(direction, 1))
+    direction[d] = torch.where(overage != 0.0, -direction[d], direction[d])
+    direction = torch.stack(direction, dim=1)
+    return position, direction, overage
 
-class StepBallDynamics(combinators.Primitive):
+class StepBallDynamics(combinators.model.Primitive):
+    def __init__(self, *args, **kwargs):
+        super(StepBallDynamics, self).__init__(*args, **kwargs)
+        self.loss = torch.nn.MSELoss(reduction='none')
+
     def _forward(self, theta, t, data={}):
-        dynamics, position, uncertainty = theta
+        direction, position, uncertainty = theta
 
-        # Our dynamics here are actually an affine transformation, so one-extend
-        # the position.
-        velocity = utils.particle_matmul(
-            dynamics, torch.cat((position, torch.ones(*self.batch_shape, 1)),
-                                dim=-1)
-        )
-        proposal = position + velocity
+        proposal = position + direction
 
         for i in range(2):
             for pos in [True, False]:
-                proposal, dynamics = reflect_on_boundary(
-                    proposal, dynamics, 6.0, d=i, positive=pos
+                proposal, direction, overage = reflect_on_boundary(
+                    proposal, direction, 6.0, d=i, positive=pos
                 )
+                self.p.loss(self.loss, overage, torch.zeros(*overage.shape),
+                            name='overage_%d_%d_%s' % (t, i, pos))
         self.sample(Normal, loc=proposal - position, scale=uncertainty,
                     name='velocity_%d' % t)
         position = self.observe('position_%d' % (t+1),
@@ -77,9 +74,9 @@ class StepBallDynamics(combinators.Primitive):
                                 Normal, loc=proposal,
                                 scale=torch.ones(*proposal.shape))
 
-        return dynamics, position, uncertainty
+        return direction, position, uncertainty
 
-class StepBallGuide(combinators.Primitive):
+class StepBallGuide(combinators.model.Primitive):
     def __init__(self, T, params={}, trainable=False, batch_shape=(1,), q=None):
         params = {
             'velocities': {
