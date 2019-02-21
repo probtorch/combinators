@@ -89,7 +89,7 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        _, inference, weight = sampler(data=data)
+        _, xi, weight = sampler(data=data)
 
         bound = -utils.marginalize_all(weight)
         bound_name = 'EUBO' if inclusive_kl else 'ELBO'
@@ -105,4 +105,4 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
 
     trained_params = sampler.args_vardict(False)
 
-    return inference, trained_params, bounds
+    return xi, trained_params, bounds
