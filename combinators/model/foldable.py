@@ -8,11 +8,11 @@ from .model import Model
 from ..sampler import Sampler
 from .. import utils
 
-class Foldable(Model):
+class Step(Model):
     def __init__(self, operator, initializer=None, iteration=0, qs=None,
                  **kwargs):
         assert isinstance(operator, Sampler)
-        super(Foldable, self).__init__(batch_shape=operator.batch_shape)
+        super(Step, self).__init__(batch_shape=operator.batch_shape)
         self._kwargs = kwargs
         self._iteration = iteration
         self._qs = qs
@@ -32,36 +32,36 @@ class Foldable(Model):
 
     @property
     def name(self):
-        return 'Foldable(%s)' % str(self._iteration)
+        return 'Step(%s)' % str(self._iteration)
 
     def forward(self, *args, **kwargs):
         graph = graphs.ModelGraph()
         if isinstance(self._initializer, Sampler):
-            seed, init_trace, seed_weight = self._initializer(**kwargs)
+            seed, init_trace, seed_log_weight = self._initializer(**kwargs)
             graph.insert(self.name, init_trace)
         else:
             seed = self._initializer
-            seed_weight = torch.zeros(self.batch_shape)
-        result, op_trace, weight = self.operator(seed, *args, **kwargs)
-        next_step = Foldable(self.operator, initializer=result,
-                             iteration=self._iteration + 1, qs=self._qs,
-                             **self._kwargs)
+            seed_log_weight = torch.zeros(self.batch_shape)
+        result, op_trace, log_weight = self.operator(seed, *args, **kwargs)
+        next_step = Step(self.operator, initializer=result,
+                         iteration=self._iteration + 1, qs=self._qs,
+                         **self._kwargs)
 
         graph.insert(self.name, op_trace)
-        weight += seed_weight
+        log_weight += seed_log_weight
 
-        return (result, next_step), graph, weight
+        return (result, next_step), graph, log_weight
 
     def walk(self, f):
         if isinstance(self._initializer, Sampler):
             initializer = self._initializer.walk(f)
         else:
             initializer = self._initializer
-        return Foldable(self.operator.walk(f), initializer, **self._kwargs)
+        return Step(self.operator.walk(f), initializer, **self._kwargs)
 
     def cond(self, qs):
-        return Foldable(self.operator, self._initializer, self._iteration, qs,
-                        **self._kwargs)
+        return Step(self.operator, self._initializer, self._iteration, qs,
+                    **self._kwargs)
 
 class Reduce(Model):
     def __init__(self, folder, generator):
