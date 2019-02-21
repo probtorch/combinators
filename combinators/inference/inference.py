@@ -59,6 +59,9 @@ class Population(Inference):
         return Population(self.target.cond(qs), batch_shape=self._batch_shape,
                           before=self.before)
 
+def populate(target, batch_shape, before=True):
+    return Population(target, batch_shape, before=before)
+
 class Marginal(Inference):
     def __init__(self, target, dims=(0,)):
         super(Marginal, self).__init__(target)
