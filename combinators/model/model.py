@@ -117,12 +117,12 @@ class Primitive(Model):
     def _forward(self, *args, **kwargs):
         raise NotImplementedError()
 
-class Composition(Model):
+class Compose(Model):
     def __init__(self, f, g, intermediate_name=None):
         assert isinstance(f, Sampler)
         assert isinstance(g, Sampler)
         assert f.batch_shape == g.batch_shape
-        super(Composition, self).__init__(batch_shape=f.batch_shape)
+        super(Compose, self).__init__(batch_shape=f.batch_shape)
         self.add_module('f', f)
         self.add_module('g', g)
         self._intermediate = intermediate_name
@@ -147,12 +147,12 @@ class Composition(Model):
     def cond(self, qs):
         fq = self.f.cond(qs[self.name:])
         gq = self.g.cond(qs[self.name:])
-        return Composition(fq, gq, self._intermediate)
+        return Compose(fq, gq, self._intermediate)
 
     def walk(self, f):
         walk_f = self.f.walk(f)
         walk_g = self.g.walk(f)
-        return f(Composition(walk_f, walk_g, self._intermediate))
+        return f(Compose(walk_f, walk_g, self._intermediate))
 
 class Partial(Model):
     def __init__(self, func, *arguments, **keywords):
