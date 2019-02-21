@@ -5,7 +5,7 @@ import probtorch
 import pygtrie
 import torch
 
-import utils
+from . import utils
 
 class ModelGraph:
     def __init__(self, trie=None, traces=None):
@@ -58,52 +58,52 @@ class ModelGraph:
         return 'ModelGraph{%s}' % str(self._trie.items())
 
     def keys(self):
-        for address in self._ordering:
-            yield address
+        for key in self._ordering:
+            yield key
 
     def values(self):
-        for address in self._ordering:
-            yield self[address]
+        for key in self._ordering:
+            yield self[key]
 
     def items(self):
-        for address in self._ordering:
-            yield (address, self[address])
+        for key in self._ordering:
+            yield (key, self[key])
 
     def map(self, f):
         result = ModelGraph()
-        for address in self:
-            result[address] = f(address, self[address])
+        for key in self:
+            result[key] = f(key, self[key])
         return result
 
     def filter(self, predicate):
-        for address in self:
-            if predicate(address, self[address]):
-                yield (address, self[address])
+        for key in self:
+            if predicate(key, self[key]):
+                yield (key, self[key])
 
     def find(self, predicate):
-        for address in self:
-            if predicate(address, self[address]):
-                return (address, self[address])
+        for key in self:
+            if predicate(key, self[key]):
+                return (key, self[key])
 
     @property
     def device(self):
-        for addr in self:
-            for v in self[addr]:
-                return self[addr][v].value.device
+        for key in self:
+            for v in self[key]:
+                return self[key][v].value.device
         return 'cpu'
 
     def log_joint(self, prefix='', nodes=None):
         if nodes is None:
             hdr = pygtrie._SENTINEL if not prefix else prefix
             nodes = list(reduce(lambda x, y: x + y, [
-                [addr + '/' + var for var in self._trie[addr]]
-                for addr in utils.iter_trie_slice(self._trie, hdr)
+                [key + '/' + var for var in self._trie[key]]
+                for key in utils.iter_trie_slice(self._trie, hdr)
             ]))
         log_prob = torch.zeros(1).to(self.device)
         for n in nodes:
-            addr, _, var = n.rpartition('/')
-            assert addr.startswith(prefix)
-            node = self._trie[addr][var]
+            key, _, var = n.rpartition('/')
+            assert key.startswith(prefix)
+            node = self._trie[key][var]
             assert torch.isnan(node.log_prob).sum() == 0.0
             log_prob = utils.conjunct_events(log_prob, node.log_prob)
         return log_prob

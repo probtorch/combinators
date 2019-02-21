@@ -4,11 +4,11 @@ import torch
 from torch.distributions import Categorical, Dirichlet
 from torch.nn.functional import softplus
 
-import combinators
-import gmm
-import utils
+import combinators.model as model
+import combinators.utils as utils
+import examples.gmm.gmm as gmm
 
-class InitHmm(combinators.Primitive):
+class InitHmm(model.Primitive):
     def _forward(self, mu, sigma, pi0, **kwargs):
         pi = torch.zeros(*self.batch_shape, pi0.shape[-1], pi0.shape[-1])
         for k in range(pi0.shape[-1]):
@@ -16,7 +16,7 @@ class InitHmm(combinators.Primitive):
         z0 = self.sample(Categorical, softplus(pi[:, 0]), name='Z_0')
         return z0, mu, sigma, pi
 
-class HmmStep(combinators.Primitive):
+class HmmStep(model.Primitive):
     def __init__(self, *args, **kwargs):
         super(HmmStep, self).__init__(*args, **kwargs)
         self.gmm = gmm.Gmm(batch_shape=self.batch_shape)
