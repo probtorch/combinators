@@ -4,7 +4,6 @@ import collections
 import logging
 
 from probtorch.stochastic import RandomVariable
-from probtorch.util import log_mean_exp
 import torch
 import torch.distributions as dists
 from torch.nn.functional import log_softmax
