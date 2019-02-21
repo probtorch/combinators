@@ -102,8 +102,7 @@ class Primitive(Model):
         result = self._forward(*args, **kwargs)
         priors = [k for k in self.p if k in self.q]
         log_weight = torch.zeros(self.batch_shape)
-        likelihoods = [k for k in self.p if k in self.p.conditioned() and\
-                       k not in self.q]
+        likelihoods = [k for k in self.p.conditioned() if k not in self.q]
         sample_dims = tuple(range(len(self.batch_shape)))
         log_weight += self.p.log_joint(sample_dims=sample_dims,
                                        nodes=likelihoods,
