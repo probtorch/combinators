@@ -59,8 +59,8 @@ class LightweightKernel(TransitionKernel):
             t = np.random.randint(len(xi))
             sampled = [k for k in xi[t] if not xi[t][k].observed]
 
-        address = sampled[np.random.randint(len(sampled))]
-        candidate_trace = utils.slice_trace(xi[t], address)
+        key = sampled[np.random.randint(len(sampled))]
+        candidate_trace = utils.slice_trace(xi[t], key)
         candidate_graph = xi.graft(t, candidate_trace)
 
         zsq, xiq, log_weight_q = self.prior.cond(candidate_graph)(*args,
