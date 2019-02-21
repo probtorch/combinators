@@ -24,23 +24,6 @@ class Inference(Sampler):
     def walk(self, f):
         raise NotImplementedError()
 
-class Importance(Inference):
-    def __init__(self, target, proposal):
-        super(Importance, self).__init__(target)
-        assert isinstance(proposal, Sampler)
-        assert proposal.batch_shape == target.batch_shape
-        self.add_module('proposal', proposal)
-
-    def forward(self, *args, **kwargs):
-        _, xi, log_weight = self.proposal(*args, **kwargs)
-        return self.target.cond(xi)(*args, **kwargs)
-
-    def walk(self, f):
-        return f(Importance(self.target.walk(f), self.proposal))
-
-    def cond(self, qs):
-        return Importance(self.target.cond(qs), self.proposal)
-
 class Population(Inference):
     def __init__(self, target, batch_shape, before=True):
         super(Population, self).__init__(target)
