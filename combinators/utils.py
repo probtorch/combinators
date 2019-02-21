@@ -15,7 +15,7 @@ EMPTY_TRACE = collections.defaultdict(lambda: None)
 
 def unique_shape(tensor, shape):
     for i, dim in enumerate(tensor.shape):
-        if shape[i] != dim:
+        if i >= len(shape) or shape[i] != dim:
             return tensor.shape[i:]
     return ()
 
