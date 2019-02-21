@@ -47,6 +47,9 @@ class MHMove(Inference):
     def cond(self, qs):
         return MHMove(self.target.cond(qs), self.kernel, self._moves)
 
+def mh_move(target, kernel, moves=1):
+    return MHMove(target, kernel, moves=moves)
+
 class LightweightKernel(TransitionKernel):
     def __init__(self, prior):
         super(LightweightKernel, self).__init__(prior.batch_shape)
@@ -89,7 +92,7 @@ class LightweightKernel(TransitionKernel):
         return 'LightweightKernel(%s)' % self.prior.name
 
 def lightweight_mh(target, moves=1):
-    return MHMove(target, LightweightKernel(target), moves=moves)
+    return mh_move(target, LightweightKernel(target), moves=moves)
 
 def resample_move_smc(target, moves=1, mcmc=lightweight_mh):
     inference = lambda m: mcmc(importance.Resample(m), moves)
