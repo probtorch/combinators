@@ -121,14 +121,14 @@ class Primitive(Model):
         raise NotImplementedError()
 
 class Compose(Model):
-    def __init__(self, f, g, intermediate_name=None):
+    def __init__(self, f, g, kw=None):
         assert isinstance(f, Sampler)
         assert isinstance(g, Sampler)
         assert f.batch_shape == g.batch_shape
         super(Compose, self).__init__(batch_shape=f.batch_shape)
         self.add_module('f', f)
         self.add_module('g', g)
-        self._intermediate = intermediate_name
+        self._kw = kw
 
     @property
     def name(self):
@@ -137,8 +137,8 @@ class Compose(Model):
     def forward(self, *args, **kwargs):
         zg, xi_g, w_g = self.g(*args, **kwargs)
         kws = {}
-        if self._intermediate:
-            kws[self._intermediate] = zg
+        if self._kw:
+            kws[self._kw] = zg
         elif not isinstance(zg, tuple):
             zg = (zg,)
         zf, xi_f, w_f = self.f(*zg, **kws)
@@ -150,12 +150,12 @@ class Compose(Model):
     def cond(self, qs):
         fq = self.f.cond(qs[self.name:])
         gq = self.g.cond(qs[self.name:])
-        return Compose(fq, gq, self._intermediate)
+        return Compose(fq, gq, self._kw)
 
     def walk(self, f):
         walk_f = self.f.walk(f)
         walk_g = self.g.walk(f)
-        return f(Compose(walk_f, walk_g, self._intermediate))
+        return f(Compose(walk_f, walk_g, self._kw))
 
 class Partial(Model):
     def __init__(self, func, *arguments, **keywords):
