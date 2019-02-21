@@ -52,8 +52,8 @@ class Population(Inference):
         return z, xi, log_weight
 
     def walk(self, f):
-        return f(Population(self.target.walk(f), batch_shape=self._batch_shape,
-                            before=self.before))
+        return Population(self.target.walk(f), batch_shape=self._batch_shape,
+                          before=self.before)
 
     def cond(self, qs):
         return Population(self.target.cond(qs), batch_shape=self._batch_shape,
