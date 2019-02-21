@@ -95,3 +95,6 @@ class Marginal(Inference):
 
     def cond(self, qs):
         return Marginal(self.target.cond(qs), dims=self._dims)
+
+def marginalize(target, dims=(0,)):
+    return Marginal(target, dims=dims)
