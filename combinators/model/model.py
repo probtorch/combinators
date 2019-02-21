@@ -157,6 +157,9 @@ class Compose(Model):
         walk_g = self.g.walk(f)
         return f(Compose(walk_f, walk_g, self._kw))
 
+def compose(f, g, kw=None):
+    return Compose(f, g, kw=kw)
+
 class Partial(Model):
     def __init__(self, func, *arguments, **keywords):
         assert isinstance(func, Sampler)
@@ -181,6 +184,9 @@ class Partial(Model):
     def cond(self, qs):
         curried_q = self.curried.cond(qs[self.name + '/' + self.curried.name:])
         return Partial(curried_q, *self._curry_arguments, **self._curry_kwargs)
+
+def partial(func, *arguments, **keywords):
+    return Partial(func, *arguments, **keywords)
 
 class MapIid(Model):
     def __init__(self, func):
@@ -212,3 +218,6 @@ class MapIid(Model):
     def cond(self, qs):
         funcq = self.func.cond(qs['/' + self.func.name:])
         return MapIid(funcq)
+
+def map_iid(func):
+    return MapIid(func)
