@@ -207,22 +207,3 @@ PARAM_TRANSFORMS = {
     'scale': nn.functional.softplus,
     'concentration': nn.functional.softplus,
 }
-
-def _parameterize_trace_methods(transforms=PARAM_TRANSFORMS):
-    import inspect as _inspect
-
-    for k, v in _inspect.getmembers(probtorch.Trace):
-        if _inspect.isfunction(v):
-            args = _inspect.signature(v).parameters.keys()
-            if 'name' in args and 'value' in args:
-                def param_sample(self, params, name=None, value=None, k=k,
-                                 **kwargs):
-                    params = {**params[name].copy(), **kwargs}
-                    for arg, val in params.items():
-                        matches = [k for k in transforms if k in arg]
-                        if matches:
-                            params[arg] = transforms[matches[0]](val)
-                    return getattr(self, k)(name=name, value=value, **params)
-                setattr(probtorch.Trace, 'param_' + k, param_sample)
-
-_parameterize_trace_methods()
