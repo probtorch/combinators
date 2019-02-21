@@ -52,7 +52,8 @@ class Resample(inference.Inference):
 
         particle_logs, _ = utils.batch_collapse(log_weights, self.batch_shape)
         particle_logs = log_softmax(particle_logs, dim=0)
-        ancestors = dists.Categorical(logits=particle_logs).sample()
+        particle_dist = dists.Categorical(logits=particle_logs)
+        ancestors = particle_dist.sample(particle_logs.shape)
 
         zs = list(zs)
         for i, z in enumerate(zs):
