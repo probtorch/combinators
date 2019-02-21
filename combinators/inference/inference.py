@@ -3,10 +3,10 @@
 from combinators.sampler import Sampler
 
 class Inference(Sampler):
-    def __init__(self, sampler):
+    def __init__(self, target):
         super(Inference, self).__init__()
-        assert isinstance(sampler, Sampler)
-        self.add_module('sampler', sampler)
+        assert isinstance(target, Sampler)
+        self.add_module('target', target)
 
     @property
     def name(self):
@@ -14,10 +14,10 @@ class Inference(Sampler):
 
     @property
     def batch_shape(self):
-        return self.sampler.batch_shape
+        return self.target.batch_shape
 
     def get_model(self):
-        return self.sampler.get_model()
+        return self.target.get_model()
 
     def walk(self, f):
         raise NotImplementedError()
