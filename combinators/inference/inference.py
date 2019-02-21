@@ -89,3 +89,9 @@ class Marginal(Inference):
             zs = zs[0]
 
         return zs, xi, log_weights
+
+    def walk(self, f):
+        return Marginal(self.target.walk(f), dims=self._dims)
+
+    def cond(self, qs):
+        return Marginal(self.target.cond(qs), dims=self._dims)
