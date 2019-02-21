@@ -58,12 +58,15 @@ class Population(Inference):
     def forward(self, *args, **kwargs):
         if self.before:
             args, kwargs = self._expand_args(*args, **kwargs)
-        z, xi, w = self.target(*args, **kwargs)
-        if not isinstance(z, tuple):
-            z = (z,)
+        z, xi, log_weight = self.target(*args, **kwargs)
+
         if not self.before:
-            z = self._expand_args(*z)
-        return z, xi, w
+            if isinstance(z, tuple):
+                z = self._expand_args(*z)
+            else:
+                z = self._expand_args(z)
+
+        return z, xi, log_weight
 
     def walk(self, f):
         return f(Population(self.target.walk(f), batch_shape=self._batch_shape,
