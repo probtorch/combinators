@@ -91,13 +91,18 @@ class LightweightKernel(TransitionKernel):
 def lightweight_mh(target, moves=1):
     return MHMove(target, LightweightKernel(target), moves=moves)
 
-def resample_move_smc(sampler, initializer=None, moves=1, mcmc=lightweight_mh):
+def resample_move_smc(target, moves=1, mcmc=lightweight_mh):
+    inference = lambda m: mcmc(importance.Resample(m), moves)
+    return target.walk(inference)
+
+def step_resample_move_smc(sampler, initializer=None, moves=1,
+                           mcmc=lightweight_mh):
     fold = foldable.Step(sampler, initializer=initializer)
     inference = lambda m: mcmc(importance.Resample(m), moves)
     return fold.walk(inference)
 
 def reduce_resample_move_smc(stepwise, step_generator, initializer=None,
                              moves=1, mcmc=lightweight_mh):
-    rmsmc_foldable = resample_move_smc(stepwise, initializer=initializer,
-                                       moves=moves, mcmc=mcmc)
+    rmsmc_foldable = step_resample_move_smc(stepwise, initializer=initializer,
+                                            moves=moves, mcmc=mcmc)
     return foldable.Reduce(rmsmc_foldable, step_generator)
