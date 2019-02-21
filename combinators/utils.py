@@ -2,6 +2,7 @@
 
 import collections
 import flatdict
+from functools import reduce
 import pygtrie
 
 import matplotlib.pyplot as plt
@@ -11,6 +12,17 @@ import torch
 import torch.nn as nn
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
+
+def unique_shape(tensor, shape):
+    for dim, i in enumerate(tensor.shape):
+        if shape[i] != dim:
+            return tensor.shape[i:]
+    return ()
+
+def batch_collapse(tensor, shape):
+    collapsed = reduce(lambda x, y: x * y, shape)
+    unique = unique_shape(tensor, shape)
+    return tensor.reshape((collapsed,) + unique), unique
 
 def particle_matmul(matrices, vectors):
     return torch.bmm(matrices, vectors.unsqueeze(-1)).squeeze(-1)
