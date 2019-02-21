@@ -65,7 +65,7 @@ class Step(Model):
 
 class Reduce(Model):
     def __init__(self, folder, generator):
-        assert isinstance(folder.get_model(), Foldable)
+        assert isinstance(folder.get_model(), Step)
         super(Reduce, self).__init__(batch_shape=folder.batch_shape)
         self.add_module('folder', folder)
         self._generator = generator
@@ -78,15 +78,16 @@ class Reduce(Model):
         items = self._generator()
         stepper = self.folder
         graph = graphs.ModelGraph()
-        weight = torch.zeros(self.batch_shape)
+        log_weight = torch.zeros(self.batch_shape)
 
         for item in items:
-            (step_result, next_step), step_trace, w = stepper(item, **kwargs)
+            (step_result, next_step), step_trace, w = stepper(item, *args,
+                                                              **kwargs)
             graph.insert(self.name, step_trace)
-            weight += w
+            log_weight += w
             stepper = next_step
 
-        return step_result, graph, weight
+        return step_result, graph, log_weight
 
     def walk(self, f):
         return f(Reduce(self.folder.walk(f), self._generator))
