@@ -22,22 +22,22 @@ class Inference(Sampler):
     def walk(self, f):
         raise NotImplementedError()
 
-class GuidedConditioning(Inference):
-    def __init__(self, sampler, guide):
-        super(GuidedConditioning, self).__init__(sampler)
-        assert isinstance(guide, Sampler)
-        assert guide.batch_shape == sampler.batch_shape
-        self.add_module('guide', guide)
+class Importance(Inference):
+    def __init__(self, target, proposal):
+        super(Importance, self).__init__(target)
+        assert isinstance(proposal, Sampler)
+        assert proposal.batch_shape == target.batch_shape
+        self.add_module('proposal', proposal)
 
     def forward(self, *args, **kwargs):
-        _, xi, w = self.guide(*args, **kwargs)
-        return self.sampler.cond(xi)(*args, **kwargs)
+        _, xi, w = self.proposal(*args, **kwargs)
+        return self.target.cond(xi)(*args, **kwargs)
 
     def walk(self, f):
-        return f(GuidedConditioning(self.sampler.walk(f), self.guide))
+        return f(Importance(self.target.walk(f), self.proposal))
 
     def cond(self, qs):
-        return GuidedConditioning(self.sampler.cond(qs), self.guide)
+        return Importance(self.target.cond(qs), self.proposal)
 
 class Population(Inference):
     def __init__(self, sampler, batch_shape, before=True):
