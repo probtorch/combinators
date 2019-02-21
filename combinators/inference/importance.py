@@ -30,6 +30,9 @@ class Importance(inference.Inference):
     def cond(self, qs):
         return Importance(self.target.cond(qs), self.proposal)
 
+def importance(target, proposal):
+    return Importance(target, proposal)
+
 def collapsed_index_select(tensor, batch_shape, ancestors):
     tensor, unique = utils.batch_collapse(tensor, batch_shape)
     tensor = tensor.index_select(0, ancestors)
@@ -77,11 +80,14 @@ class Resample(inference.Inference):
     def cond(self, qs):
         return Resample(self.target.cond(qs))
 
-def importance_with_proposal(model, proposal):
-    return Resample(Importance(model, proposal))
+def resample(target):
+    return Resample(target)
 
-def smc(sampler):
-    return sampler.walk(Resample)
+def resample_proposed(target, proposal):
+    return resample(importance(target, proposal))
+
+def smc(target):
+    return target.walk(Resample)
 
 def step_smc(sampler, initializer=None):
     resampler = Resample(sampler)
