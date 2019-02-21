@@ -2,7 +2,7 @@
 
 from probtorch.util import log_mean_exp
 
-from combinators.sampler import Sampler
+from ..sampler import Sampler
 
 class Inference(Sampler):
     def __init__(self, target):
