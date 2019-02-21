@@ -25,7 +25,7 @@ class Importance(inference.Inference):
         return self.target.cond(xi)(*args, **kwargs)
 
     def walk(self, f):
-        return f(Importance(self.target.walk(f), self.proposal))
+        return Importance(self.target.walk(f), self.proposal)
 
     def cond(self, qs):
         return Importance(self.target.cond(qs), self.proposal)
