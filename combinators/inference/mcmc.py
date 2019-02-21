@@ -60,7 +60,7 @@ class LightweightKernel(TransitionKernel):
         sampled = []
         while not sampled:
             t = np.random.randint(len(xi))
-            sampled = [k for k in xi[t] if not xi[t][k].observed]
+            sampled = [k for k in xi[t].variables() if not xi[t][k].observed]
 
         key = sampled[np.random.randint(len(sampled))]
         candidate_trace = utils.slice_trace(xi[t], key)
