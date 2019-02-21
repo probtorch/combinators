@@ -12,6 +12,23 @@ from . import inference
 from ..model import foldable
 from .. import utils
 
+class Importance(inference.Inference):
+    def __init__(self, target, proposal):
+        super(Importance, self).__init__(target)
+        assert isinstance(proposal, Sampler)
+        assert proposal.batch_shape == target.batch_shape
+        self.add_module('proposal', proposal)
+
+    def forward(self, *args, **kwargs):
+        _, xi, log_weight = self.proposal(*args, **kwargs)
+        return self.target.cond(xi)(*args, **kwargs)
+
+    def walk(self, f):
+        return f(Importance(self.target.walk(f), self.proposal))
+
+    def cond(self, qs):
+        return Importance(self.target.cond(qs), self.proposal)
+
 def collapsed_index_select(tensor, batch_shape, ancestors):
     tensor, unique = utils.batch_collapse(tensor, batch_shape)
     tensor = tensor.index_select(0, ancestors)
@@ -59,7 +76,7 @@ class Resample(inference.Inference):
         return Resample(self.sampler.cond(qs))
 
 def importance_with_proposal(model, proposal):
-    return Resample(inference.Importance(model, proposal))
+    return Resample(Importance(model, proposal))
 
 def smc(sampler):
     return sampler.walk(Resample)
