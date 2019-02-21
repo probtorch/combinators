@@ -59,8 +59,8 @@ class Resample(inference.Inference):
     def cond(self, qs):
         return Resample(self.sampler.cond(qs))
 
-def importance_with_proposal(proposal, model):
-    return ImportanceResampler(inference.GuidedConditioning(model, proposal))
+def importance_with_proposal(model, proposal):
+    return Resample(inference.Importance(model, proposal))
 
 def generalized_smc(sampler):
     return sampler.walk(ImportanceResampler)
