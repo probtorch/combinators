@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from probtorch.util import log_mean_exp
+
 from combinators.sampler import Sampler
 
 class Inference(Sampler):
