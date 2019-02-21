@@ -75,3 +75,31 @@ class Population(Inference):
     def cond(self, qs):
         return Population(self.target.cond(qs), batch_shape=self._batch_shape,
                           before=self.before)
+
+class Marginal(Inference):
+    def __init__(self, target, dims=(0,)):
+        super(Marginal, self).__init__(target)
+        self._dims = sorted(dims)
+
+    @property
+    def batch_shape(self):
+        result = list(self.target.batch_shape)
+        for i, dim in enumerate(self._dims):
+            del result[dim-i]
+        return result
+
+    def forward(self, *args, **kwargs):
+        zs, xi, log_weights = self.target(*args, **kwargs)
+
+        multiple_zs = isinstance(zs, tuple)
+        if not multiple_zs:
+            zs = (zs,)
+
+        for i, dim in enumerate(self._dims):
+            zs = tuple([z.mean(dim=dim-i) for z in zs])
+            log_weights = log_mean_exp(log_weights, dim=dim-i)
+
+        if not multiple_zs:
+            zs = zs[0]
+
+        return zs, xi, log_weights
