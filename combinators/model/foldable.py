@@ -63,6 +63,9 @@ class Step(Model):
         return Step(self.operator, self._initializer, self._iteration, qs,
                     **self._kwargs)
 
+def step(operator, initializer=None, qs=None, **kwargs):
+    return Step(operator, initializer=initializer, qs=qs, **kwargs)
+
 class Reduce(Model):
     def __init__(self, folder, generator):
         assert isinstance(folder.get_model(), Step)
@@ -95,3 +98,6 @@ class Reduce(Model):
     def cond(self, qs):
         qs_folder = qs[self.name:]
         return Reduce(self.folder.cond(qs_folder), self._generator)
+
+def reduce(folder, generator):
+    return Reduce(folder, generator)
