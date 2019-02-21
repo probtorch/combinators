@@ -26,41 +26,38 @@ def index_select_rv(rv, batch_shape, ancestors):
                                 rv.reparameterized)
     return result
 
-class ImportanceResampler(inference.Inference):
-    @property
-    def particle_shape(self):
-        return self.sampler.batch_shape
-
+class Resample(inference.Inference):
     def forward(self, *args, **kwargs):
-        zs, xi, weights = self.sampler(*args, **kwargs)
+        zs, xi, log_weights = self.sampler(*args, **kwargs)
         multiple_zs = isinstance(zs, tuple)
         if not multiple_zs:
             zs = (zs,)
 
-        for _ in range(len(self.particle_shape)):
-            weights = log_softmax(weights, dim=0)
-        resampler = dists.Categorical(logits=weights)
-        ancestors = resampler.sample(self.particle_shape)
+        particle_logs, _ = utils.batch_collapse(log_weights, self.batch_shape)
+        particle_logs = log_softmax(particle_logs, dim=0)
+        ancestors = dists.Categorical(logits=particle_logs).sample()
 
-        for i in range(len(self.particle_shape)):
-            zs = tuple([z.index_select(i, ancestors) for z in zs])
-        if not multiple_zs:
+        zs = list(zs)
+        for i, z in enumerate(zs):
+            zs[i] = collapsed_index_select(z, self.batch_shape, ancestors)
+        if multiple_zs:
+            zs = tuple(zs)
+        else:
             zs = zs[0]
 
-        resampler = lambda rv: index_select_rv(rv, 0, ancestors)
+        resampler = lambda rv: index_select_rv(rv, self.batch_shape, ancestors)
         trace_resampler = lambda _, trace: utils.trace_map(trace, resampler)
         xi = xi.map(trace_resampler)
 
-        weight = utils.batch_expand(utils.marginalize_all(weights),
-                                    weights.shape)
-
-        return zs, xi, weight
+        log_weights = utils.batch_expand(utils.marginalize_all(log_weights),
+                                         log_weights.shape)
+        return zs, xi, log_weights
 
     def walk(self, f):
-        return ImportanceResampler(self.sampler.walk(f))
+        return Resample(self.sampler.walk(f))
 
     def cond(self, qs):
-        return ImportanceResampler(self.sampler.cond(qs))
+        return Resample(self.sampler.cond(qs))
 
 def importance_with_proposal(proposal, model):
     return ImportanceResampler(inference.GuidedConditioning(model, proposal))
