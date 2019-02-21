@@ -89,9 +89,9 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
     for t in range(num_iterations):
         optimizer.zero_grad()
 
-        _, xi, weight = sampler(data=data)
+        _, xi, log_weight = sampler(data=data)
 
-        bound = -utils.marginalize_all(weight)
+        bound = -utils.marginalize_all(log_weight)
         bound_name = 'EUBO' if inclusive_kl else 'ELBO'
         bounds[t] = bound if inclusive_kl else -bound
         logging.info('%s=%.8e at epoch %d', bound_name, bounds[t], t + 1)
