@@ -45,7 +45,7 @@ def index_select_rv(rv, batch_shape, ancestors):
 
 class Resample(inference.Inference):
     def forward(self, *args, **kwargs):
-        zs, xi, log_weights = self.sampler(*args, **kwargs)
+        zs, xi, log_weights = self.target(*args, **kwargs)
         multiple_zs = isinstance(zs, tuple)
         if not multiple_zs:
             zs = (zs,)
@@ -71,10 +71,10 @@ class Resample(inference.Inference):
         return zs, xi, log_weights
 
     def walk(self, f):
-        return Resample(self.sampler.walk(f))
+        return Resample(self.target.walk(f))
 
     def cond(self, qs):
-        return Resample(self.sampler.cond(qs))
+        return Resample(self.target.cond(qs))
 
 def importance_with_proposal(model, proposal):
     return Resample(Importance(model, proposal))
