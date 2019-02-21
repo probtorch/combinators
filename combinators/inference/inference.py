@@ -40,14 +40,14 @@ class Importance(Inference):
         return Importance(self.target.cond(qs), self.proposal)
 
 class Population(Inference):
-    def __init__(self, sampler, batch_shape, before=True):
-        super(Population, self).__init__(sampler)
+    def __init__(self, target, batch_shape, before=True):
+        super(Population, self).__init__(target)
         self._batch_shape = batch_shape
         self._before = before
 
     @property
     def batch_shape(self):
-        return self._particle_shape + self.sampler.batch_shape
+        return self._batch_shape + self.target.batch_shape
 
     @property
     def before(self):
@@ -56,7 +56,7 @@ class Population(Inference):
     def forward(self, *args, **kwargs):
         if self.before:
             args, kwargs = self._expand_args(*args, **kwargs)
-        z, xi, w = self.sampler(*args, **kwargs)
+        z, xi, w = self.target(*args, **kwargs)
         if not isinstance(z, tuple):
             z = (z,)
         if not self.before:
@@ -64,9 +64,9 @@ class Population(Inference):
         return z, xi, w
 
     def walk(self, f):
-        return f(Population(self.sampler.walk(f), batch_shape=self._batch_shape,
+        return f(Population(self.target.walk(f), batch_shape=self._batch_shape,
                             before=self.before))
 
     def cond(self, qs):
-        return Population(self.sampler.cond(qs), batch_shape=self._batch_shape,
+        return Population(self.target.cond(qs), batch_shape=self._batch_shape,
                           before=self.before)
