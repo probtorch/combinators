@@ -13,10 +13,15 @@ from . import inference
 from ..model import foldable
 from .. import utils
 
-def index_select_rv(rv, dim, indices):
+def collapsed_index_select(tensor, batch_shape, ancestors):
+    tensor, unique = utils.batch_collapse(tensor, batch_shape)
+    tensor = tensor.index_select(0, ancestors)
+    return tensor.reshape(batch_shape + unique)
+
+def index_select_rv(rv, batch_shape, ancestors):
     result = rv
     if not rv.observed:
-        value = rv.value.index_select(dim, indices)
+        value = collapsed_index_select(rv.value, batch_shape, ancestors)
         result = RandomVariable(rv.dist, value, rv.provenance, rv.mask,
                                 rv.reparameterized)
     return result
