@@ -8,6 +8,7 @@ import torch
 import torch.distributions as dists
 from torch.nn.functional import log_softmax
 
+from ..sampler import Sampler
 from . import inference
 from ..model import foldable
 from .. import utils
