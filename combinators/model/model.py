@@ -180,36 +180,32 @@ class Partial(Model):
         return Partial(curried_q, *self._curry_arguments, **self._curry_kwargs)
 
 class MapIid(Model):
-    def __init__(self, func, items, **kwargs):
+    def __init__(self, func):
         assert isinstance(func, Sampler)
         super(MapIid, self).__init__(batch_shape=func.batch_shape)
         self.add_module('func', func)
-        self.map_items = items
-        self.map_kwargs = kwargs
 
     @property
     def name(self):
         return 'MapIid'
 
-    def iterate(self, **kwargs):
-        for item in self.map_items:
-            kwargs = {**self.map_kwargs, **kwargs}
-            z, xi, w = self.map_func(item, **kwargs)
-            yield (z, xi, w)
+    def iterate(self, items, *args, **kwargs):
+        for item in items:
+            yield self.func(item, *args, **kwargs)
 
-    def forward(self, *args, **kwargs):
-        results = list(self.iterate(**kwargs))
+    def forward(self, items, *args, **kwargs):
+        results = list(self.iterate(items, *args, **kwargs))
         graph = graphs.ModelGraph()
-        weight = torch.zeros(self.batch_shape)
-        for (_, xi, w) in results:
-            graph.insert(self.name, xi)
-            weight += w
+        log_weight = torch.zeros(self.batch_shape)
+        for (i, (_, xi, w)) in enumerate(results):
+            graph.insert(self.name + '/%d' % i, xi)
+            log_weight += w
         zs = [result[0] for result in results]
-        return zs, graph, weight
+        return zs, graph, log_weight
 
     def walk(self, f):
-        return f(MapIid(self.func.walk(f), self.map_items, **self.map_kwargs))
+        return f(MapIid(self.func.walk(f)))
 
     def cond(self, qs):
         funcq = self.func.cond(qs['/' + self.func.name:])
-        return MapIid(funcq, self.map_items, **self.map_kwargs)
+        return MapIid(funcq)
