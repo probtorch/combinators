@@ -19,6 +19,9 @@ class Sampler(nn.Module):
     def get_model(self):
         raise NotImplementedError()
 
+    def apply(self, f, selector):
+        return self.walk(lambda m: f(m) if selector(m) else m)
+
     def walk(self, f):
         raise NotImplementedError()
 
