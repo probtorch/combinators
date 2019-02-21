@@ -65,12 +65,12 @@ def importance_with_proposal(model, proposal):
 def smc(sampler):
     return sampler.walk(Resample)
 
-def smc(sampler, initializer=None):
-    resampler = ImportanceResampler(sampler)
-    return foldable.Foldable(resampler, initializer=initializer)
+def step_smc(sampler, initializer=None):
+    resampler = Resample(sampler)
+    return foldable.Step(resampler, initializer=initializer)
 
 def reduce_smc(stepwise, step_generator, initializer=None):
-    smc_foldable = smc(stepwise, initializer)
+    smc_foldable = step_smc(stepwise, initializer)
     return foldable.Reduce(smc_foldable, step_generator)
 
 def variational_importance(sampler, num_iterations, data, use_cuda=True,
