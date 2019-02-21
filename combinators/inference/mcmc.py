@@ -53,7 +53,7 @@ class LightweightKernel(TransitionKernel):
         assert isinstance(prior, Sampler)
         self.add_module('prior', prior)
 
-    def forward(self, zs, xi, w, *args, **kwargs):
+    def forward(self, zs, xi, log_weight, *args, **kwargs):
         sampled = []
         while not sampled:
             t = np.random.randint(len(xi))
@@ -63,7 +63,8 @@ class LightweightKernel(TransitionKernel):
         candidate_trace = utils.slice_trace(xi[t], address)
         candidate_graph = xi.graft(t, candidate_trace)
 
-        zsq, xiq, wq = self.prior.cond(candidate_graph)(*args, **kwargs)
+        zsq, xiq, log_weight_q = self.prior.cond(candidate_graph)(*args,
+                                                                  **kwargs)
 
         predicate = lambda k, v: not v.observed
         move_candidate = utils.marginalize_all(xiq.log_joint())
@@ -75,13 +76,13 @@ class LightweightKernel(TransitionKernel):
             xi.num_variables(predicate=predicate)
         )))
 
-        return zsq, xiq, wq, move_candidate, move_current
+        return zsq, xiq, log_weight_q, move_candidate, move_current
 
     def walk(self, f):
         return LightweightKernel(self.prior.walk(f))
 
     def cond(self, qs):
-        return LightweightKernel(self.sampler.cond(qs[self.name:]))
+        return LightweightKernel(self.target.cond(qs[self.name:]))
 
     @property
     def name(self):
