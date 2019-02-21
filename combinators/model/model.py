@@ -44,6 +44,9 @@ class Deterministic(Model):
     def walk(self, f):
         return f(self)
 
+def deterministic(*args, batch_shape=(1,)):
+    return Deterministic(*args, batch_shape=batch_shape)
+
 class Primitive(Model):
     def __init__(self, params={}, trainable=True, batch_shape=(1,), q=None):
         super(Primitive, self).__init__(batch_shape=batch_shape)
