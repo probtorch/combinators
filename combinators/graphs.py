@@ -128,7 +128,8 @@ class ModelGraph:
 
     def variables(self, prefix=pygtrie._SENTINEL, predicate=lambda k, v: True):
         for _, trace in self._trie.iteritems(prefix=prefix):
-            for k, v in trace.items():
+            for k in trace.variables():
+                v = trace[k]
                 if predicate(k, v):
                     yield (k, v)
 
