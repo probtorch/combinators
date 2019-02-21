@@ -32,7 +32,7 @@ class Importance(Inference):
         self.add_module('proposal', proposal)
 
     def forward(self, *args, **kwargs):
-        _, xi, w = self.proposal(*args, **kwargs)
+        _, xi, log_weight = self.proposal(*args, **kwargs)
         return self.target.cond(xi)(*args, **kwargs)
 
     def walk(self, f):
