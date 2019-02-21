@@ -40,7 +40,7 @@ def collapsed_index_select(tensor, batch_shape, ancestors):
 
 def index_select_rv(rv, batch_shape, ancestors):
     result = rv
-    if not rv.observed:
+    if isinstance(rv, RandomVariable) and not rv.observed:
         value = collapsed_index_select(rv.value, batch_shape, ancestors)
         result = RandomVariable(rv.dist, value, rv.provenance, rv.mask,
                                 rv.reparameterized)
