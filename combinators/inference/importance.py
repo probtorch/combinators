@@ -62,8 +62,8 @@ class Resample(inference.Inference):
 def importance_with_proposal(model, proposal):
     return Resample(inference.Importance(model, proposal))
 
-def generalized_smc(sampler):
-    return sampler.walk(ImportanceResampler)
+def smc(sampler):
+    return sampler.walk(Resample)
 
 def smc(sampler, initializer=None):
     resampler = ImportanceResampler(sampler)
