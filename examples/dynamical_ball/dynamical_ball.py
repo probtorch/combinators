@@ -23,6 +23,10 @@ class InitBallDynamics(combinators.model.Primitive):
                 'loc': torch.ones(2),
                 'scale': torch.ones(2),
             },
+            'noise': {
+                'loc': torch.ones(2),
+                'scale': torch.ones(2),
+            },
         } if not params else params
         super(InitBallDynamics, self).__init__(params, trainable, batch_shape,
                                                q)
@@ -34,7 +38,8 @@ class InitBallDynamics(combinators.model.Primitive):
         position = self.sample(MultivariateNormal, loc=pos_params['loc'],
                                scale_tril=pos_scale, name='position_0')
         uncertainty = softplus(self.param_sample(Normal, name='uncertainty'))
-        return direction, position, uncertainty
+        noise = softplus(self.param_sample(Normal, name='noise'))
+        return direction, position, uncertainty, noise
 
 def reflect_on_boundary(position, direction, boundary, d=0, positive=True):
     sign = 1.0 if positive else -1.0
