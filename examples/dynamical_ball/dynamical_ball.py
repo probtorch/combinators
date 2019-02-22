@@ -61,7 +61,7 @@ class StepBallDynamics(combinators.model.Primitive):
         self.loss = torch.nn.MSELoss(reduction='none')
 
     def _forward(self, theta, t, data={}):
-        direction, position, uncertainty = theta
+        direction, position, uncertainty, noise = theta
 
         proposal = position + direction
 
@@ -77,9 +77,9 @@ class StepBallDynamics(combinators.model.Primitive):
         position = self.observe('position_%d' % (t+1),
                                 data.get('position_%d' % (t+1), None),
                                 Normal, loc=proposal,
-                                scale=torch.ones(*proposal.shape))
+                                scale=noise)
 
-        return direction, position, uncertainty
+        return direction, position, uncertainty, noise
 
 class StepBallGuide(combinators.model.Primitive):
     def __init__(self, T, params={}, trainable=False, batch_shape=(1,), q=None):
