@@ -82,7 +82,7 @@ class LightweightKernel(TransitionKernel):
         return zsq, xiq, log_weight_q, move_candidate, move_current
 
     def walk(self, f):
-        return LightweightKernel(self.prior.walk(f))
+        return f(LightweightKernel(self.prior.walk(f)))
 
     def cond(self, qs):
         return LightweightKernel(self.target.cond(qs[self.name:]))

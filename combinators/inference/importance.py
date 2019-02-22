@@ -25,7 +25,7 @@ class Importance(inference.Inference):
         return self.target.cond(xi)(*args, **kwargs)
 
     def walk(self, f):
-        return Importance(self.target.walk(f), self.proposal)
+        return f(Importance(self.target.walk(f), self.proposal))
 
     def cond(self, qs):
         return Importance(self.target.cond(qs), self.proposal)
@@ -75,7 +75,7 @@ class Resample(inference.Inference):
         return zs, xi, log_weights
 
     def walk(self, f):
-        return Resample(self.target.walk(f))
+        return f(Resample(self.target.walk(f)))
 
     def cond(self, qs):
         return Resample(self.target.cond(qs))

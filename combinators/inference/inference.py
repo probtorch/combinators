@@ -52,8 +52,8 @@ class Population(Inference):
         return z, xi, log_weight
 
     def walk(self, f):
-        return Population(self.target.walk(f), batch_shape=self._batch_shape,
-                          before=self.before)
+        return f(Population(self.target.walk(f), batch_shape=self._batch_shape,
+                            before=self.before))
 
     def cond(self, qs):
         return Population(self.target.cond(qs), batch_shape=self._batch_shape,
@@ -91,7 +91,7 @@ class Marginal(Inference):
         return zs, xi, log_weights
 
     def walk(self, f):
-        return Marginal(self.target.walk(f), dims=self._dims)
+        return f(Marginal(self.target.walk(f), dims=self._dims))
 
     def cond(self, qs):
         return Marginal(self.target.cond(qs), dims=self._dims)
