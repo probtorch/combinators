@@ -84,9 +84,9 @@ class StepBallGuide(combinators.model.Primitive):
     def __init__(self, *args, **kwargs):
         super(StepBallGuide, self).__init__(*args, **kwargs)
         self.dynamics_mapping = nn.Sequential(
-            nn.Linear(2, 4),
+            nn.Linear(4, 5),
             nn.Softsign(),
-            nn.Linear(4, 2),
+            nn.Linear(5, 2),
         )
 
     @property
@@ -99,9 +99,10 @@ class StepBallGuide(combinators.model.Primitive):
                              qs[self.name])
 
     def _forward(self, theta, t, data={}):
-        _, position, uncertainty, _ = theta
+        direction, position, uncertainty, _ = theta
         position = data['position_%d' % (t+1)].expand(*position.shape)
+        dynamics = torch.cat((direction, position), dim=1)
 
-        self.sample(Normal, self.dynamics_mapping(position), uncertainty,
-                    name='velocity_%d' % t)
+        self.sample(Normal, self.dynamics_mapping(dynamics), uncertainty,
+                    name='velocity_%d' % (t+1))
         return theta
