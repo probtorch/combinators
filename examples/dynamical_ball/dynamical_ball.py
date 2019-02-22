@@ -2,6 +2,7 @@
 
 import numpy as np
 import torch
+import torch.nn as nn
 from torch.distributions import LogNormal, MultivariateNormal, Normal
 from torch.distributions.transforms import LowerCholeskyTransform
 from torch.nn.functional import softplus
@@ -82,28 +83,27 @@ class StepBallDynamics(combinators.model.Primitive):
         return direction, position, uncertainty, noise
 
 class StepBallGuide(combinators.model.Primitive):
-    def __init__(self, T, params={}, trainable=False, batch_shape=(1,), q=None):
-        params = {
-            'velocities': {
-                'loc': torch.zeros(T, 2),
-                'scale': torch.ones(T, 2),
-            },
-        } if not params else params
-        self._num_timesteps = T
-        super(StepBallGuide, self).__init__(params, trainable, batch_shape, q)
+    def __init__(self, *args, **kwargs):
+        super(StepBallGuide, self).__init__(*args, **kwargs)
+        self.dynamics_mapping = nn.Sequential(
+            nn.Linear(2, 4),
+            nn.Softsign(),
+            nn.Linear(4, 2),
+        )
 
     @property
     def name(self):
         return 'StepBallDynamics'
 
     def cond(self, qs):
-        return StepBallGuide(self._num_timesteps, self.args_vardict(False),
+        return StepBallGuide(self.args_vardict(False),
                              self._hyperparams_trainable, self.batch_shape,
                              qs[self.name])
 
     def _forward(self, theta, t, data={}):
-        params = self.args_vardict()
-        velocities = params['velocities']
-        self.sample(Normal, velocities['loc'][:, t],
-                    softplus(velocities['scale'][:, t]), name='velocity_%d' % t)
+        _, position, uncertainty, _ = theta
+        position = data['position_%d' % t].expand(*position.shape)
+
+        self.sample(Normal, self.dynamics_mapping(position), uncertainty,
+                    name='velocity_%d' % t)
         return theta
