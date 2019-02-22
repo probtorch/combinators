@@ -87,7 +87,8 @@ def resample_proposed(target, proposal):
     return resample(importance(target, proposal))
 
 def smc(target):
-    return target.walk(Resample)
+    selector = lambda m: isinstance(m, Importance)
+    return target.apply(resample, selector)
 
 def step_smc(sampler, initializer=None):
     resampler = Resample(sampler)
