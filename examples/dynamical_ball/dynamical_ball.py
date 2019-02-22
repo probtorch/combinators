@@ -93,13 +93,15 @@ class StepBallDynamics(combinators.model.Primitive):
         return direction, position, uncertainty, noise
 
 class StepBallGuide(combinators.model.Primitive):
-    def __init__(self, *args, **kwargs):
-        super(StepBallGuide, self).__init__(*args, **kwargs)
-        self.dynamics_mapping = nn.Sequential(
-            nn.Linear(4, 5),
-            nn.Softsign(),
-            nn.Linear(5, 2),
-        )
+    def __init__(self, num_steps, params={}, trainable=False, batch_shape=(1,),
+                 q=None):
+        params = {
+            'velocities': {
+                'loc': torch.zeros(num_steps, 2),
+                'scale': torch.ones(num_steps, 2),
+            },
+        } if not params else params
+        super(StepBallGuide, self).__init__(params, trainable, batch_shape, q)
 
     @property
     def name(self):
@@ -111,10 +113,9 @@ class StepBallGuide(combinators.model.Primitive):
                              qs[self.name])
 
     def _forward(self, theta, t, data={}):
-        direction, position, uncertainty, _ = theta
-        position = data['position_%d' % (t+1)].expand(*position.shape)
-        dynamics = torch.cat((direction, position), dim=1)
+        velocities = self.args_vardict()['velocities']
 
-        self.sample(Normal, self.dynamics_mapping(dynamics), uncertainty,
+        self.sample(Normal, loc=velocities['loc'][:, t],
+                    scale=softplus(velocities['scale'][:, t]),
                     name='velocity_%d' % (t+1))
         return theta
