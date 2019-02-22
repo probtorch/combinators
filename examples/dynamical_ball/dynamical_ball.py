@@ -98,7 +98,7 @@ class StepBallGuide(combinators.model.Primitive):
 
     def _forward(self, theta, t, data={}):
         _, position, uncertainty, _ = theta
-        position = data['position_%d' % t].expand(*position.shape)
+        position = data['position_%d' % (t+1)].expand(*position.shape)
 
         self.sample(Normal, self.dynamics_mapping(position), uncertainty,
                     name='velocity_%d' % t)
