@@ -88,10 +88,10 @@ class StepBallDynamics(combinators.model.Primitive):
     def _forward(self, theta, t, data={}):
         direction, position, uncertainty, noise = theta
 
-        proposal, direction = simulate_step(position, direction, self.p)
+        position, direction = simulate_step(position, direction, self.p)
         position = self.observe('position_%d' % (t+1),
                                 data.get('position_%d' % (t+1)), Normal,
-                                loc=proposal, scale=noise)
+                                loc=position, scale=noise)
         direction = self.sample(Normal, loc=direction, scale=uncertainty,
                                 name='velocity_%d' % (t+1))
 
