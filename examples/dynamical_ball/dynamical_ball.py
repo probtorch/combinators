@@ -12,7 +12,7 @@ import combinators.model
 class InitBallDynamics(combinators.model.Primitive):
     def __init__(self, params={}, trainable=False, batch_shape=(1,), q=None):
         params = {
-            'direction': {
+            'velocity_0': {
                 'loc': torch.ones(2) / np.sqrt(2),
                 'scale': torch.ones(2),
             },
@@ -33,7 +33,7 @@ class InitBallDynamics(combinators.model.Primitive):
                                                q)
 
     def _forward(self, data={}):
-        direction = self.param_sample(Normal, name='direction')
+        direction = self.param_sample(Normal, name='velocity_0')
         speed = torch.sqrt(torch.sum(direction**2, dim=1))
         direction = direction / speed.unsqueeze(-1).expand(*direction.shape)
         pos_params = self.args_vardict()['position_0']
