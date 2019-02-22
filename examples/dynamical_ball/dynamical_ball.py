@@ -56,13 +56,9 @@ def reflect_on_boundary(position, direction, boundary, d=0, positive=True):
     direction = list(torch.unbind(direction, 1))
     direction[d] = torch.where(overage != 0.0, -direction[d], direction[d])
     direction = torch.stack(direction, dim=1)
-    return position, direction, overage
+    return position, direction
 
 class StepBallDynamics(combinators.model.Primitive):
-    def __init__(self, *args, **kwargs):
-        super(StepBallDynamics, self).__init__(*args, **kwargs)
-        self.loss = torch.nn.MSELoss(reduction='none')
-
     def _forward(self, theta, t, data={}):
         direction, position, uncertainty, noise = theta
 
@@ -70,11 +66,9 @@ class StepBallDynamics(combinators.model.Primitive):
 
         for i in range(2):
             for pos in [True, False]:
-                proposal, direction, overage = reflect_on_boundary(
+                proposal, direction = reflect_on_boundary(
                     proposal, direction, 6.0, d=i, positive=pos
                 )
-                self.p.loss(self.loss, overage, torch.zeros(*overage.shape),
-                            name='overage_%d_%d_%s' % (t, i, pos))
         self.sample(Normal, loc=proposal - position, scale=uncertainty,
                     name='velocity_%d' % t)
         position = self.observe('position_%d' % (t+1),
