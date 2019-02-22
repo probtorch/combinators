@@ -58,23 +58,25 @@ def reflect_on_boundary(position, direction, boundary, d=0, positive=True):
     direction = torch.stack(direction, dim=1)
     return position, direction
 
+def simulate_step(position, velocity):
+    proposal = position + velocity
+    for i in range(2):
+        for pos in [True, False]:
+            proposal, velocity = reflect_on_boundary(
+                proposal, velocity, 6.0, d=i, positive=pos
+            )
+    return proposal, velocity
+
 class StepBallDynamics(combinators.model.Primitive):
     def _forward(self, theta, t, data={}):
         direction, position, uncertainty, noise = theta
 
-        proposal = position + direction
-
-        for i in range(2):
-            for pos in [True, False]:
-                proposal, direction = reflect_on_boundary(
-                    proposal, direction, 6.0, d=i, positive=pos
-                )
-        self.sample(Normal, loc=proposal - position, scale=uncertainty,
-                    name='velocity_%d' % t)
+        proposal, direction = simulate_step(position, direction)
         position = self.observe('position_%d' % (t+1),
-                                data.get('position_%d' % (t+1), None),
-                                Normal, loc=proposal,
-                                scale=noise)
+                                data.get('position_%d' % (t+1)), Normal,
+                                loc=proposal, scale=noise)
+        direction = self.sample(Normal, loc=direction, scale=uncertainty,
+                                name='velocity_%d' % (t+1))
 
         return direction, position, uncertainty, noise
 
