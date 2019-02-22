@@ -100,9 +100,8 @@ def resample_move_smc(target, moves=1, mcmc=lightweight_mh):
 
 def step_resample_move_smc(sampler, initializer=None, moves=1,
                            mcmc=lightweight_mh):
-    fold = foldable.Step(sampler, initializer=initializer)
-    inference = lambda m: mcmc(importance.Resample(m), moves)
-    return fold.walk(inference)
+    return foldable.Step(mcmc(importance.Resample(sampler), moves),
+                         initializer=initializer)
 
 def reduce_resample_move_smc(stepwise, step_generator, initializer=None,
                              moves=1, mcmc=lightweight_mh):
