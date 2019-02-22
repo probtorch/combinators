@@ -56,15 +56,20 @@ def reflect_on_boundary(position, direction, boundary, d=0, positive=True):
     direction = list(torch.unbind(direction, 1))
     direction[d] = torch.where(overage != 0.0, -direction[d], direction[d])
     direction = torch.stack(direction, dim=1)
-    return position, direction
+    return position, direction, overage
 
-def simulate_step(position, velocity):
+LOSS = torch.nn.MSELoss(reduction='none')
+
+def simulate_step(position, velocity, p=None):
     proposal = position + velocity
     for i in range(2):
         for pos in [True, False]:
-            proposal, velocity = reflect_on_boundary(
+            proposal, velocity, overage = reflect_on_boundary(
                 proposal, velocity, 6.0, d=i, positive=pos
             )
+            if p:
+                p.loss(LOSS, overage, torch.zeros(*overage.shape),
+                       name='overage_%d_%d_%s' % (t, i, pos))
     return proposal, velocity
 
 def simulate_trajectory(position, velocity, num_steps, velocities=None):
@@ -83,7 +88,7 @@ class StepBallDynamics(combinators.model.Primitive):
     def _forward(self, theta, t, data={}):
         direction, position, uncertainty, noise = theta
 
-        proposal, direction = simulate_step(position, direction)
+        proposal, direction = simulate_step(position, direction, self.p)
         position = self.observe('position_%d' % (t+1),
                                 data.get('position_%d' % (t+1)), Normal,
                                 loc=proposal, scale=noise)
