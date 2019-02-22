@@ -34,6 +34,8 @@ class InitBallDynamics(combinators.model.Primitive):
 
     def _forward(self, data={}):
         direction = self.param_sample(Normal, name='direction')
+        speed = torch.sqrt(torch.sum(direction**2, dim=1))
+        direction = direction / speed.unsqueeze(-1).expand(*direction.shape)
         pos_params = self.args_vardict()['position_0']
         pos_scale = LowerCholeskyTransform()(pos_params['covariance_matrix'])
         position = self.sample(MultivariateNormal, loc=pos_params['loc'],
