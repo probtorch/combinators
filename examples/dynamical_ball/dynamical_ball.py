@@ -67,6 +67,16 @@ def simulate_step(position, velocity):
             )
     return proposal, velocity
 
+def simulate_trajectory(position, velocity, num_steps):
+    trajectory = torch.zeros(position.shape[0], num_steps + 1, 2, 2)
+    trajectory[:, 0, 0] = position
+    trajectory[:, 0, 1] = velocity
+    for t in range(1, num_steps + 1):
+        position, velocity = simulate_step(position, velocity)
+        trajectory[:, t, 0] = position
+        trajectory[:, t, 1] = velocity
+    return trajectory
+
 class StepBallDynamics(combinators.model.Primitive):
     def _forward(self, theta, t, data={}):
         direction, position, uncertainty, noise = theta
