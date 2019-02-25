@@ -203,7 +203,7 @@ class MapIid(Model):
 
     def forward(self, items, *args, **kwargs):
         results = list(self.iterate(items, *args, **kwargs))
-        graph = graphs.ModelGraph()
+        graph = graphs.ComputationGraph()
         log_weight = torch.zeros(self.batch_shape)
         for (i, (_, xi, w)) in enumerate(results):
             graph.insert(self.name + '/%d' % i, xi)
