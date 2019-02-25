@@ -141,7 +141,7 @@ class Compose(Model):
         elif not isinstance(zg, tuple):
             zg = (zg,)
         zf, xi_f, w_f = self.f(*zg, **kws)
-        xi = graphs.ModelGraph()
+        xi = graphs.ComputationGraph()
         xi.insert(self.name, xi_g)
         xi.insert(self.name, xi_f)
         return zf, xi, w_g + w_f
