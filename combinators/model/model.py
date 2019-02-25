@@ -35,7 +35,7 @@ class Deterministic(Model):
         return 'Deterministic'
 
     def forward(self, *args, **kwargs):
-        empty_graph = graphs.ModelGraph(traces={self.name: probtorch.Trace()})
+        empty_graph = graphs.ComputationGraph(traces={self.name: probtorch.Trace()})
         return self._args, empty_graph, torch.zeros(self.batch_shape)
 
     def cond(self, qs):
