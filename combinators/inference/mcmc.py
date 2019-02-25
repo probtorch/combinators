@@ -9,14 +9,14 @@ import torch
 
 from .inference import Inference
 from . import importance
-from ..model.kernel import TransitionKernel
+from ..kernel.kernel import TransitionKernel
 from ..model import foldable
 from ..sampler import Sampler
 from .. import utils
 
-class MHMove(Inference):
+class MarkovChain(Inference):
     def __init__(self, target, kernel, moves=1):
-        super(MHMove, self).__init__(target)
+        super(MarkovChain, self).__init__(target)
         assert isinstance(kernel, TransitionKernel)
         self.add_module('kernel', kernel)
         self._moves = moves
@@ -26,17 +26,15 @@ class MHMove(Inference):
         multiple_zs = isinstance(zs, tuple)
         if not multiple_zs:
             zs = (zs,)
-        marginal = utils.marginalize_all(log_weight)
+
         for _ in range(self._moves):
-            zsq, xiq, log_weight_q, move_proposed, move_current =\
-                self.kernel(zs, xi, log_weight, *args, **kwargs)
-            marginal_q = utils.marginalize_all(log_weight_q)
-            mh_ratio = (marginal_q - move_proposed) - (marginal - move_current)
-            log_alpha = torch.min(torch.zeros(mh_ratio.shape), mh_ratio)
-            if torch.bernoulli(torch.exp(log_alpha)) == 1:
+            xiq = self.kernel(zs, xi, log_weight, *args, **kwargs)
+            zsq, xiq, log_weight_q = self.target.cond(xiq)(*args, **kwargs)
+            if self._accept(xi, log_weight, xiq, log_weight_q):
                 zs = zsq
                 xi = xiq
                 log_weight = log_weight_q
+
         if not multiple_zs:
             zs = zs[0]
         return zs, xi, log_weight
