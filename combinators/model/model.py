@@ -35,7 +35,7 @@ class Deterministic(Model):
         return 'Deterministic'
 
     def forward(self, *args, **kwargs):
-        empty_graph = graphs.ModelGraph(traces={self.name: probtorch.Trace()})
+        empty_graph = graphs.ComputationGraph(traces={self.name: probtorch.Trace()})
         return self._args, empty_graph, torch.zeros(self.batch_shape)
 
     def cond(self, qs):
@@ -111,7 +111,7 @@ class Primitive(Model):
                                        reparameterized=False) -\
                       self.q.log_joint(sample_dims=sample_dims, nodes=priors,
                                        reparameterized=False)
-        ps = graphs.ModelGraph(traces={self.name: self.p})
+        ps = graphs.ComputationGraph(traces={self.name: self.p})
         self.p = None
         assert log_weight.shape == self.batch_shape
         return result, ps, log_weight
@@ -141,7 +141,7 @@ class Compose(Model):
         elif not isinstance(zg, tuple):
             zg = (zg,)
         zf, xi_f, w_f = self.f(*zg, **kws)
-        xi = graphs.ModelGraph()
+        xi = graphs.ComputationGraph()
         xi.insert(self.name, xi_g)
         xi.insert(self.name, xi_f)
         return zf, xi, w_g + w_f
@@ -203,7 +203,7 @@ class MapIid(Model):
 
     def forward(self, items, *args, **kwargs):
         results = list(self.iterate(items, *args, **kwargs))
-        graph = graphs.ModelGraph()
+        graph = graphs.ComputationGraph()
         log_weight = torch.zeros(self.batch_shape)
         for (i, (_, xi, w)) in enumerate(results):
             graph.insert(self.name + '/%d' % i, xi)

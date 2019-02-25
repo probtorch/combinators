@@ -7,7 +7,7 @@ import torch
 
 from . import utils
 
-class ModelGraph:
+class ComputationGraph:
     def __init__(self, trie=None, traces=None):
         self._trie = trie if trie else pygtrie.StringTrie()
         self._ordering = list(trie.keys()) if trie else []
@@ -39,7 +39,7 @@ class ModelGraph:
             assert key[-1] != '/'
             for k, v in self._trie.iteritems(prefix=key):
                 trie[k[len(key)+1:]] = v
-            return ModelGraph(trie)
+            return ComputationGraph(trie)
         elif isinstance(key, int):
             return self._trie[self._ordering[key]]
         assert not key or key[-1] != '/'
@@ -55,7 +55,7 @@ class ModelGraph:
         return self.keys()
 
     def __repr__(self):
-        return 'ModelGraph{%s}' % str(self._trie.items())
+        return 'ComputationGraph{%s}' % str(self._trie.items())
 
     def keys(self):
         for key in self._ordering:
@@ -70,7 +70,7 @@ class ModelGraph:
             yield (key, self[key])
 
     def map(self, f):
-        result = ModelGraph()
+        result = ComputationGraph()
         for key in self:
             result[key] = f(key, self[key])
         return result
@@ -109,7 +109,7 @@ class ModelGraph:
         return log_prob
 
     def __mul__(self, other):
-        result = ModelGraph()
+        result = ComputationGraph()
         for k, v in self.items():
             result[k] = v
         for k, v in other.items():
@@ -122,7 +122,7 @@ class ModelGraph:
         return self
 
     def insert(self, prefix, other):
-        assert isinstance(other, ModelGraph)
+        assert isinstance(other, ComputationGraph)
         for k, v in other.items():
             self[prefix + '/' + k] = v
 
@@ -141,7 +141,7 @@ class ModelGraph:
         if isinstance(key, int):
             key = self._ordering[key]
         assert isinstance(val, probtorch.Trace)
-        result = ModelGraph(trie=self._trie.copy())
+        result = ComputationGraph(trie=self._trie.copy())
         result._ordering = self._ordering
         for i, k in enumerate(result._ordering):
             if k == key:
