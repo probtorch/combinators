@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-import torch
-
 from combinators.sampler import Sampler
 
 class TransitionKernel(Sampler):
@@ -27,3 +25,6 @@ class TransitionKernel(Sampler):
 
     def log_transition_prob(self, origin, destination):
         raise NotImplementedError()
+
+    def get_model(self):
+        return None
