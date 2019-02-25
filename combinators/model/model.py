@@ -89,6 +89,14 @@ class Primitive(Model):
         assert name not in self.q or self.q[name].observed
         return self.sample(Dist, *args, name=name, value=value, **kwargs)
 
+    def factor(self, log_prob, name=None):
+        assert name not in self.q or isinstance(self.q[name], probtorch.Factor)
+        return self.p.factor(log_prob, name=name)
+
+    def loss(self, objective, value, target, name=None):
+        assert name not in self.q or isinstance(self.q[name], probtorch.Loss)
+        return self.p.loss(objective, value, target, name=name)
+
     def walk(self, f):
         return f(self)
 
