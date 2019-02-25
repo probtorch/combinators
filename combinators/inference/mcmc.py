@@ -60,10 +60,12 @@ def mh_move(target, kernel, moves=1):
     return MHMove(target, kernel, moves=moves)
 
 class LightweightKernel(TransitionKernel):
-    def __init__(self, prior):
-        super(LightweightKernel, self).__init__(prior.batch_shape)
-        assert isinstance(prior, Sampler)
-        self.add_module('prior', prior)
+    def log_transition_prob(self, _, destination):
+        move = utils.marginalize_all(destination.log_joint())
+        move += torch.log(torch.tensor(float(
+            destination.num_variables(predicate=lambda k, v: not v.observed)
+        )))
+        return move
 
     def forward(self, zs, xi, log_weight, *args, **kwargs):
         sampled = []
@@ -73,35 +75,20 @@ class LightweightKernel(TransitionKernel):
 
         key = sampled[np.random.randint(len(sampled))]
         candidate_trace = utils.slice_trace(xi[t], key)
-        candidate_graph = xi.graft(t, candidate_trace)
-
-        zsq, xiq, log_weight_q = self.prior.cond(candidate_graph)(*args,
-                                                                  **kwargs)
-
-        predicate = lambda k, v: not v.observed
-        move_candidate = utils.marginalize_all(xiq.log_joint())
-        move_candidate += torch.log(torch.tensor(float(
-            xiq.num_variables(predicate=predicate)
-        )))
-        move_current = utils.marginalize_all(xi.log_joint())
-        move_current += torch.log(torch.tensor(float(
-            xi.num_variables(predicate=predicate)
-        )))
-
-        return zsq, xiq, log_weight_q, move_candidate, move_current
+        return xi.graft(t, candidate_trace)
 
     def walk(self, f):
-        return f(LightweightKernel(self.prior.walk(f)))
+        return f(LightweightKernel(self.batch_shape))
 
     def cond(self, qs):
-        return LightweightKernel(self.target.cond(qs[self.name:]))
+        return LightweightKernel(self.batch_shape)
 
     @property
     def name(self):
-        return 'LightweightKernel(%s)' % self.prior.name
+        return 'LightweightKernel'
 
 def lightweight_mh(target, moves=1):
-    return mh_move(target, LightweightKernel(target), moves=moves)
+    return mh_move(target, LightweightKernel(target.batch_shape), moves=moves)
 
 def resample_move_smc(target, moves=1, mcmc=lightweight_mh):
     inference = lambda m: mcmc(importance.Resample(m), moves)
