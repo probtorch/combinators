@@ -151,6 +151,15 @@ class ComputationGraph:
         result._trie[key] = val
         return result
 
+    def cut(self, key):
+        if isinstance(key, int):
+            key = self._ordering[key]
+        result = ComputationGraph()
+        for k in self._ordering:
+            if not k.startswith(key):
+                result[k] = self[k]
+        return result
+
     def markov_blanket(self, key):
         if isinstance(key, int):
             key = self._ordering[key]
