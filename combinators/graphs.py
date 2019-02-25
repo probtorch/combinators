@@ -84,6 +84,7 @@ class ComputationGraph:
         for key in self:
             if predicate(key, self[key]):
                 return (key, self[key])
+        return None
 
     @property
     def device(self):
