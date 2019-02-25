@@ -150,3 +150,25 @@ class ComputationGraph:
                 break
         result._trie[key] = val
         return result
+
+    def markov_blanket(self, key):
+        if isinstance(key, int):
+            key = self._ordering[key]
+        blanket = set()
+
+        # Walk to the parent, add it and the siblings
+        parent_key = key.rpartition('/')[0]
+        if parent_key and self._trie.has_node(parent_key):
+            blanket.add(parent_key)
+            parent_depth = len(parent_key.split('/'))
+            for k in self._trie.keys(prefix=parent_key):
+                if len(k.split('/')) == parent_depth + 1 and k != key:
+                    blanket.add(k)
+
+        # Add children of this node
+        key_depth = len(key.split('/'))
+        for k in self._trie.keys(prefix=key):
+            if len(k.split('/')) == key_depth + 1:
+                blanket.add(k)
+
+        return blanket
