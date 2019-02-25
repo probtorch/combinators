@@ -39,8 +39,19 @@ class MarkovChain(Inference):
             zs = zs[0]
         return zs, xi, log_weight
 
+class MHMove(MarkovChain):
+    def _accept(self, xi, log_w, xiq, log_wq):
+        marginal = utils.marginalize_all(log_w)
+        marginal_q = utils.marginalize_all(log_wq)
+        move_current = self.kernel.log_transition_prob(xiq, xi)
+        move_candidate = self.kernel.log_transition_prob(xi, xiq)
+
+        mh_ratio = (marginal_q - move_candidate) - (marginal - move_current)
+        log_alpha = torch.min(torch.zeros(mh_ratio.shape), mh_ratio)
+        return torch.bernoulli(torch.exp(log_alpha)) == 1
+
     def walk(self, f):
-        return MHMove(self.target.walk(f), self.kernel, self._moves)
+        return f(MHMove(self.target.walk(f), self.kernel, self._moves))
 
     def cond(self, qs):
         return MHMove(self.target.cond(qs), self.kernel, self._moves)
