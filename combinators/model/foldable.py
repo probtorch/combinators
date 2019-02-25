@@ -80,7 +80,7 @@ class Reduce(Model):
     def forward(self, *args, **kwargs):
         items = self._generator()
         stepper = self.folder
-        graph = graphs.ModelGraph()
+        graph = graphs.ComputationGraph()
         log_weight = torch.zeros(self.batch_shape)
 
         for item in items:
