@@ -67,9 +67,6 @@ def simulate_step(position, velocity, p=None):
             proposal, velocity, overage = reflect_on_boundary(
                 proposal, velocity, 6.0, d=i, positive=pos
             )
-            if p:
-                p.loss(LOSS, overage, torch.zeros(*overage.shape),
-                       name='overage_%d_%d_%s' % (t, i, pos))
     return proposal, velocity
 
 def simulate_trajectory(position, velocity, num_steps, velocities=None):
