@@ -35,7 +35,7 @@ class Step(Model):
         return 'Step(%s)' % str(self._iteration)
 
     def forward(self, *args, **kwargs):
-        graph = graphs.ModelGraph()
+        graph = graphs.ComputationGraph()
         if isinstance(self._initializer, Sampler):
             seed, init_trace, seed_log_weight = self._initializer(**kwargs)
             graph.insert(self.name, init_trace)
