@@ -48,7 +48,7 @@ def lightweight_mh(target, moves=1):
 
 def resample_move_smc(target, moves=1, mcmc=lightweight_mh):
     inference = lambda m: mcmc(importance.Resample(m), moves)
-    selector = lambda m: isinstance(m, importance.Importance)
+    selector = lambda m: isinstance(m, importance.Propose)
     return target.apply(inference, selector)
 
 def step_resample_move_smc(sampler, initializer=None, moves=1,

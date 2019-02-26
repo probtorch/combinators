@@ -13,25 +13,39 @@ from . import inference
 from ..model import foldable
 from .. import utils
 
-class Importance(inference.Inference):
+class Propose(inference.Inference):
     def __init__(self, target, proposal):
-        super(Importance, self).__init__(target)
+        super(Propose, self).__init__(target)
         assert isinstance(proposal, Sampler)
         assert proposal.batch_shape == target.batch_shape
         self.add_module('proposal', proposal)
 
     def forward(self, *args, **kwargs):
-        _, xi, _ = self.proposal(*args, **kwargs)
-        return self.target.cond(xi)(*args, **kwargs)
+        _, xiq, log_wq = self.proposal(*args, **kwargs)
+        zs, xi, log_w = self.target.cond(xiq)(*args, **kwargs)
+
+        sample_dims = tuple(range(len(self.batch_shape)))
+
+        for name in xiq:
+            conditioned = [k for k in xiq[name].conditioned()]
+            log_wq -= xiq[name].log_joint(sample_dims=sample_dims,
+                                          nodes=conditioned,
+                                          reparameterized=False)
+            if name in xi:
+                reused = [k for k in xi[name] if k in xiq[name]]
+                log_wq -= xiq[name].log_joint(sample_dims=sample_dims,
+                                              nodes=reused,
+                                              reparameterized=False)
+        return zs, xi, log_wq + log_w
 
     def walk(self, f):
-        return f(Importance(self.target.walk(f), self.proposal))
+        return f(Propose(self.target.walk(f), self.proposal))
 
     def cond(self, qs):
-        return Importance(self.target, self.proposal.cond(qs))
+        return Propose(self.target, self.proposal.cond(qs))
 
-def importance(target, proposal):
-    return Importance(target, proposal)
+def propose(target, proposal):
+    return Propose(target, proposal)
 
 def collapsed_index_select(tensor, batch_shape, ancestors):
     tensor, unique = utils.batch_collapse(tensor, batch_shape)
@@ -84,10 +98,10 @@ def resample(target):
     return Resample(target)
 
 def resample_proposed(target, proposal):
-    return resample(importance(target, proposal))
+    return resample(propose(target, proposal))
 
 def smc(target):
-    selector = lambda m: isinstance(m, Importance)
+    selector = lambda m: isinstance(m, Propose)
     return target.apply(resample, selector)
 
 def step_smc(sampler, initializer=None):
