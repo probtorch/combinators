@@ -23,9 +23,9 @@ class MarkovChain(Inference):
             zs = (zs,)
 
         for _ in range(self._moves):
-            xiq = self.kernel(zs, xi, log_weight, *args, **kwargs)
+            xiq, log_weight_q = self.kernel(zs, xi, log_weight, *args, **kwargs)
             zsp, xip, log_weight_p = self.target.cond(xiq)(*args, **kwargs)
-            log_weight += log_weight_p
+            log_weight += log_weight_q + log_weight_p
             zs = zsp
             xi = xip
 
