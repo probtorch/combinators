@@ -7,7 +7,6 @@ from . import importance
 from ..kernel.kernel import TransitionKernel
 from ..kernel import mh
 from ..model import foldable
-from .. import utils
 
 class MarkovChain(Inference):
     def __init__(self, target, kernel, moves=1, count_target=False):
