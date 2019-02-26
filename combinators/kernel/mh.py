@@ -35,3 +35,6 @@ class LightweightKernel(TransitionKernel):
     @property
     def name(self):
         return 'LightweightKernel'
+
+def lightweight_kernel(shape):
+    return LightweightKernel(shape)
