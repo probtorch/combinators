@@ -8,9 +8,9 @@ from ..kernel.kernel import TransitionKernel
 from ..kernel import mh
 from ..model import foldable
 
-class MarkovChain(Inference):
+class Move(Inference):
     def __init__(self, target, kernel, moves=1, count_target=False):
-        super(MarkovChain, self).__init__(target)
+        super(Move, self).__init__(target)
         assert isinstance(kernel, TransitionKernel)
         self.add_module('kernel', kernel)
         self._moves = moves
@@ -37,19 +37,18 @@ class MarkovChain(Inference):
         return zs, xi, log_weight
 
     def walk(self, f):
-        return f(MarkovChain(self.target.walk(f), self.kernel, self._moves,
-                             self._count_target))
+        return f(Move(self.target.walk(f), self.kernel, self._moves,
+                      self._count_target))
 
     def cond(self, qs):
-        return MarkovChain(self.target.cond(qs), self.kernel, self._moves,
-                           self._count_target)
+        return Move(self.target.cond(qs), self.kernel, self._moves,
+                    self._count_target)
 
-def mh_move(target, kernel, moves=1):
-    return MarkovChain(target, kernel, moves=moves)
+def move(target, kernel, moves=1):
+    return Move(target, kernel, moves=moves)
 
 def lightweight_mh(target, moves=1):
-    return mh_move(target, mh.LightweightKernel(target.batch_shape),
-                   moves=moves)
+    return move(target, mh.LightweightKernel(target.batch_shape), moves=moves)
 
 def resample_move_smc(target, moves=1, mcmc=lightweight_mh):
     inference = lambda m: mcmc(importance.Resample(m), moves)
