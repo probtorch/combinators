@@ -50,14 +50,15 @@ def move(target, kernel, moves=1):
 def lightweight_mh(target, moves=1):
     return move(target, mh.LightweightKernel(target.batch_shape), moves=moves)
 
-def resample_move_smc(target, moves=1, mcmc=lightweight_mh):
-    inference = lambda m: mcmc(importance.Resample(m), moves)
+def resample_move_smc(target, kernel=mh.lightweight_kernel, moves=1):
+    inference = lambda m: move(importance.resample(m), kernel(m.batch_shape),
+                               moves)
     selector = lambda m: isinstance(m, importance.Propose)
     return target.apply(inference, selector)
 
 def step_resample_move_smc(sampler, initializer=None, moves=1,
                            mcmc=lightweight_mh):
-    return foldable.Step(mcmc(importance.Resample(sampler), moves),
+    return foldable.Step(mcmc(importance.resample(sampler), moves),
                          initializer=initializer)
 
 def reduce_resample_move_smc(stepwise, step_generator, initializer=None,
