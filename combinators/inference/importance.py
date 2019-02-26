@@ -105,7 +105,7 @@ def smc(target):
     return target.apply(resample, selector)
 
 def step_smc(sampler, initializer=None):
-    resampler = Resample(sampler)
+    resampler = resample(sampler)
     return foldable.Step(resampler, initializer=initializer)
 
 def reduce_smc(stepwise, step_generator, initializer=None):
