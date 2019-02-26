@@ -10,11 +10,12 @@ from ..model import foldable
 from .. import utils
 
 class MarkovChain(Inference):
-    def __init__(self, target, kernel, moves=1):
+    def __init__(self, target, kernel, moves=1, count_target=False):
         super(MarkovChain, self).__init__(target)
         assert isinstance(kernel, TransitionKernel)
         self.add_module('kernel', kernel)
         self._moves = moves
+        self._count_target = count_target
 
     def forward(self, *args, **kwargs):
         zs, xi, log_weight = self.target(*args, **kwargs)
@@ -25,6 +26,8 @@ class MarkovChain(Inference):
         for t in range(self._moves):
             kwargs['t'] = t
             xiq, log_weight_q = self.kernel(zs, xi, log_weight, *args, **kwargs)
+            if not self._count_target:
+                kwargs.pop('t')
             zsp, xip, log_weight_p = self.target.cond(xiq)(*args, **kwargs)
             log_weight += log_weight_q + log_weight_p
             zs = zsp
@@ -35,10 +38,12 @@ class MarkovChain(Inference):
         return zs, xi, log_weight
 
     def walk(self, f):
-        return f(MarkovChain(self.target.walk(f), self.kernel, self._moves))
+        return f(MarkovChain(self.target.walk(f), self.kernel, self._moves,
+                             self._count_target))
 
     def cond(self, qs):
-        return MarkovChain(self.target.cond(qs), self.kernel, self._moves)
+        return MarkovChain(self.target.cond(qs), self.kernel, self._moves,
+                           self._count_target)
 
 def mh_move(target, kernel, moves=1):
     return MarkovChain(target, kernel, moves=moves)
