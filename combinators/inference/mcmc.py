@@ -24,35 +24,23 @@ class MarkovChain(Inference):
 
         for _ in range(self._moves):
             xiq = self.kernel(zs, xi, log_weight, *args, **kwargs)
-            zsq, xiq, log_weight_q = self.target.cond(xiq)(*args, **kwargs)
-            if self._accept(xi, log_weight, xiq, log_weight_q):
-                zs = zsq
-                xi = xiq
-                log_weight = log_weight_q
+            zsp, xip, log_weight_p = self.target.cond(xiq)(*args, **kwargs)
+            log_weight += log_weight_p
+            zs = zsp
+            xi = xip
 
         if not multiple_zs:
             zs = zs[0]
         return zs, xi, log_weight
 
-class MHMove(MarkovChain):
-    def _accept(self, xi, log_w, xiq, log_wq):
-        marginal = utils.marginalize_all(log_w)
-        marginal_q = utils.marginalize_all(log_wq)
-        move_current = self.kernel.log_transition_prob(xiq, xi)
-        move_candidate = self.kernel.log_transition_prob(xi, xiq)
-
-        mh_ratio = (marginal_q - move_candidate) - (marginal - move_current)
-        log_alpha = torch.min(torch.zeros(mh_ratio.shape), mh_ratio)
-        return torch.bernoulli(torch.exp(log_alpha)) == 1
-
     def walk(self, f):
-        return f(MHMove(self.target.walk(f), self.kernel, self._moves))
+        return f(MarkovChain(self.target.walk(f), self.kernel, self._moves))
 
     def cond(self, qs):
-        return MHMove(self.target.cond(qs), self.kernel, self._moves)
+        return MarkovChain(self.target.cond(qs), self.kernel, self._moves)
 
 def mh_move(target, kernel, moves=1):
-    return MHMove(target, kernel, moves=moves)
+    return MarkovChain(target, kernel, moves=moves)
 
 def lightweight_mh(target, moves=1):
     return mh_move(target, mh.LightweightKernel(target.batch_shape),
