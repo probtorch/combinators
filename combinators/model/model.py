@@ -108,16 +108,14 @@ class Primitive(Model):
     def forward(self, *args, **kwargs):
         self.p = probtorch.Trace()
         result = self._forward(*args, **kwargs)
-        priors = [k for k in self.p if k in self.q]
+        reused = [k for k in self.p if k in self.q]
         log_weight = torch.zeros(self.batch_shape)
-        likelihoods = [k for k in self.p.conditioned() if k not in self.q]
+        conditioned = [k for k in self.p.conditioned()]
         sample_dims = tuple(range(len(self.batch_shape)))
         log_weight += self.p.log_joint(sample_dims=sample_dims,
-                                       nodes=likelihoods,
+                                       nodes=conditioned,
                                        reparameterized=False) +\
-                      self.p.log_joint(sample_dims=sample_dims, nodes=priors,
-                                       reparameterized=False) -\
-                      self.q.log_joint(sample_dims=sample_dims, nodes=priors,
+                      self.p.log_joint(sample_dims=sample_dims, nodes=reused,
                                        reparameterized=False)
         ps = graphs.ComputationGraph(traces={self.name: self.p})
         self.p = None

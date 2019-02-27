@@ -7,14 +7,14 @@ from . import importance
 from ..kernel.kernel import TransitionKernel
 from ..kernel import mh
 from ..model import foldable
-from .. import utils
 
-class MarkovChain(Inference):
-    def __init__(self, target, kernel, moves=1):
-        super(MarkovChain, self).__init__(target)
+class Move(Inference):
+    def __init__(self, target, kernel, moves=1, count_target=False):
+        super(Move, self).__init__(target)
         assert isinstance(kernel, TransitionKernel)
         self.add_module('kernel', kernel)
         self._moves = moves
+        self._count_target = count_target
 
     def forward(self, *args, **kwargs):
         zs, xi, log_weight = self.target(*args, **kwargs)
@@ -22,50 +22,43 @@ class MarkovChain(Inference):
         if not multiple_zs:
             zs = (zs,)
 
-        for _ in range(self._moves):
-            xiq = self.kernel(zs, xi, log_weight, *args, **kwargs)
-            zsq, xiq, log_weight_q = self.target.cond(xiq)(*args, **kwargs)
-            if self._accept(xi, log_weight, xiq, log_weight_q):
-                zs = zsq
-                xi = xiq
-                log_weight = log_weight_q
+        for t in range(self._moves):
+            kwargs['t'] = t
+            xiq, log_weight_q = self.kernel(zs, xi, log_weight, *args, **kwargs)
+            if not self._count_target:
+                kwargs.pop('t')
+            zsp, xip, log_weight_p = self.target.cond(xiq)(*args, **kwargs)
+            log_weight += log_weight_q + log_weight_p
+            zs = zsp
+            xi = xip
 
         if not multiple_zs:
             zs = zs[0]
         return zs, xi, log_weight
 
-class MHMove(MarkovChain):
-    def _accept(self, xi, log_w, xiq, log_wq):
-        marginal = utils.marginalize_all(log_w)
-        marginal_q = utils.marginalize_all(log_wq)
-        move_current = self.kernel.log_transition_prob(xiq, xi)
-        move_candidate = self.kernel.log_transition_prob(xi, xiq)
-
-        mh_ratio = (marginal_q - move_candidate) - (marginal - move_current)
-        log_alpha = torch.min(torch.zeros(mh_ratio.shape), mh_ratio)
-        return torch.bernoulli(torch.exp(log_alpha)) == 1
-
     def walk(self, f):
-        return f(MHMove(self.target.walk(f), self.kernel, self._moves))
+        return f(Move(self.target.walk(f), self.kernel, self._moves,
+                      self._count_target))
 
     def cond(self, qs):
-        return MHMove(self.target.cond(qs), self.kernel, self._moves)
+        return Move(self.target.cond(qs), self.kernel, self._moves,
+                    self._count_target)
 
-def mh_move(target, kernel, moves=1):
-    return MHMove(target, kernel, moves=moves)
+def move(target, kernel, moves=1):
+    return Move(target, kernel, moves=moves)
 
 def lightweight_mh(target, moves=1):
-    return mh_move(target, mh.LightweightKernel(target.batch_shape),
-                   moves=moves)
+    return move(target, mh.LightweightKernel(target.batch_shape), moves=moves)
 
-def resample_move_smc(target, moves=1, mcmc=lightweight_mh):
-    inference = lambda m: mcmc(importance.Resample(m), moves)
-    selector = lambda m: isinstance(m, importance.Importance)
+def resample_move_smc(target, kernel=mh.lightweight_kernel, moves=1):
+    inference = lambda m: move(importance.resample(m), kernel(m.batch_shape),
+                               moves)
+    selector = lambda m: isinstance(m, importance.Propose)
     return target.apply(inference, selector)
 
 def step_resample_move_smc(sampler, initializer=None, moves=1,
                            mcmc=lightweight_mh):
-    return foldable.Step(mcmc(importance.Resample(sampler), moves),
+    return foldable.Step(mcmc(importance.resample(sampler), moves),
                          initializer=initializer)
 
 def reduce_resample_move_smc(stepwise, step_generator, initializer=None,
