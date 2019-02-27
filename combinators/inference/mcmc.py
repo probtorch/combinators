@@ -27,10 +27,10 @@ class Move(Inference):
             xiq, log_weight_q = self.kernel(zs, xi, log_weight, *args, **kwargs)
             if not self._count_target:
                 kwargs.pop('t')
-            zsp, xip, log_weight_p = self.target.cond(xiq)(*args, **kwargs)
-            log_weight += log_weight_q + log_weight_p
-            zs = zsp
-            xi = xip
+            zs, xi, log_w = importance.evaluate_conditioned(self.target, xiq,
+                                                            log_weight_q, *args,
+                                                            **kwargs)
+            log_weight += log_w
 
         if not multiple_zs:
             zs = zs[0]
