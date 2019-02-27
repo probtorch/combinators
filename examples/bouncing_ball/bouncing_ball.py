@@ -117,17 +117,10 @@ class ProposalStep(model.Primitive):
         direction_covariance = direction['covariance_matrix']
         velocity_name = 'displacement' if self.training else 'velocity'
         velocity_name += '_%d' % t
-        if self.training:
-            velocity = self.sample(
-                MultivariateNormal, loc=direction['loc'],
-                scale_tril=LowerCholeskyTransform()(direction_covariance),
-                name='displacement_%d' % t,
-            )
-        else:
-            velocity = self.sample(
-                MultivariateNormal, loc=direction['loc'],
-                scale_tril=LowerCholeskyTransform()(direction_covariance),
-                name='velocity_%d' % t
-            )
+        velocity = self.sample(
+            MultivariateNormal, loc=direction['loc'],
+            scale_tril=LowerCholeskyTransform()(direction_covariance),
+            name='velocity_%d' % t
+        )
         position = position + velocity
         return position, z_current, transition, dir_locs, dir_covs
