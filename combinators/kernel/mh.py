@@ -7,10 +7,10 @@ from .kernel import TransitionKernel
 from .. import utils
 
 class LightweightKernel(TransitionKernel):
-    def log_transition_prob(self, source, destination):
-        move = utils.marginalize_all(destination.log_joint())
+    def log_transition_prob(self, origin, destination):
+        move = destination.log_joint()
         move -= torch.log(torch.tensor(float(
-            source.num_variables(predicate=lambda k, v: not v.observed)
+            origin.num_variables(predicate=lambda k, v: not v.observed)
         )))
         return move
 
