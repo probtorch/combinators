@@ -56,15 +56,13 @@ def reflect_on_boundary(position, direction, boundary, d=0, positive=True):
     direction = list(torch.unbind(direction, 1))
     direction[d] = torch.where(overage != 0.0, -direction[d], direction[d])
     direction = torch.stack(direction, dim=1)
-    return position, direction, overage
-
-LOSS = torch.nn.MSELoss(reduction='none')
+    return position, direction
 
 def simulate_step(position, velocity, p=None):
     proposal = position + velocity
     for i in range(2):
         for pos in [True, False]:
-            proposal, velocity, overage = reflect_on_boundary(
+            proposal, velocity = reflect_on_boundary(
                 proposal, velocity, 6.0, d=i, positive=pos
             )
     return proposal, velocity
