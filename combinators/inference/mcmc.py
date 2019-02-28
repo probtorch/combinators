@@ -7,6 +7,7 @@ from . import importance
 from ..kernel.kernel import TransitionKernel
 from ..kernel import mh
 from ..model import foldable
+from .. import utils
 
 class Move(Inference):
     def __init__(self, target, kernel, moves=1, count_target=False):
@@ -24,13 +25,19 @@ class Move(Inference):
 
         for t in range(self._moves):
             kwargs['t'] = t
+            log_weight = utils.normalize_weights(
+                log_weight - importance.conditioning_factor({}, xi,
+                                                            self.batch_shape)
+            )
             xiq, log_weight_q = self.kernel(zs, xi, log_weight, *args, **kwargs)
             if not self._count_target:
                 kwargs.pop('t')
-            zs, xi, log_w = importance.evaluate_conditioned(self.target, xiq,
-                                                            log_weight_q, *args,
-                                                            **kwargs)
-            log_weight += log_w
+            zs, xi, log_w = self.target.cond(xiq)(*args, **kwargs)
+            log_omega_q = importance.conditioning_factor(xi, xiq,
+                                                         self.batch_shape)
+            log_weight = log_weight + utils.normalize_weights(
+                log_weight_q - log_omega_q + log_w
+            )
 
         if not multiple_zs:
             zs = zs[0]
