@@ -7,8 +7,9 @@ from .kernel import TransitionKernel
 from .. import utils
 
 class LightweightKernel(TransitionKernel):
-    def log_transition_prob(self, origin, destination):
-        move = destination.log_joint()
+    def log_transition_prob(self, origin, destination, shape):
+        move = torch.zeros(*shape)
+        move += destination.log_joint()
         move -= torch.log(torch.tensor(float(
             origin.num_variables(predicate=lambda k, v: not v.observed)
         )))
@@ -24,7 +25,7 @@ class LightweightKernel(TransitionKernel):
         candidate_trace = utils.slice_trace(xi[t], key)
 
         xiq = xi.graft(t, candidate_trace)
-        return xiq, self.log_transition_prob(xi, xiq)
+        return xiq, self.log_transition_prob(xi, xiq, log_weight.shape)
 
     def walk(self, f):
         return f(LightweightKernel(self.batch_shape))
