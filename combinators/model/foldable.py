@@ -50,14 +50,19 @@ class Step(Model):
         graph.insert(self.name, op_trace)
         log_weight += seed_log_weight
 
-        return (result, next_step), graph, log_weight
+        if isinstance(result, tuple):
+            result = result + (next_step,)
+        else:
+            result = (result, next_step)
+
+        return result, graph, log_weight
 
     def walk(self, f):
         if isinstance(self._initializer, Sampler):
             initializer = self._initializer.walk(f)
         else:
             initializer = self._initializer
-        return Step(self.operator.walk(f), initializer, **self._kwargs)
+        return f(Step(self.operator.walk(f), initializer, **self._kwargs))
 
     def cond(self, qs):
         return Step(self.operator, self._initializer, self._iteration, qs,
@@ -84,16 +89,15 @@ class Reduce(Model):
         log_weight = torch.zeros(self.batch_shape)
 
         for item in items:
-            (step_result, next_step), step_trace, w = stepper(item, *args,
-                                                              **kwargs)
+            step_results, step_trace, w = stepper(item, *args, **kwargs)
             graph.insert(self.name, step_trace)
             log_weight += w
-            stepper = next_step
+            stepper = step_results[-1]
 
-        return step_result, graph, log_weight
+        return step_results[:-1], graph, log_weight
 
     def walk(self, f):
-        return Reduce(self.folder.walk(f), self._generator)
+        return f(Reduce(self.folder.walk(f), self._generator))
 
     def cond(self, qs):
         qs_folder = qs[self.name:]
