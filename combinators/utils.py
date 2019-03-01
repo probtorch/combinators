@@ -29,6 +29,10 @@ def unique_shape(tensor, shape):
             return tensor.shape[i:]
     return ()
 
+def batch_marginalize(tensor):
+    batch_tensor, _ = batch_collapse(tensor, tensor.shape)
+    return log_mean_exp(batch_tensor, dim=0)
+
 def batch_collapse(tensor, shape):
     collapsed = reduce(lambda x, y: x * y, shape)
     unique = unique_shape(tensor, shape)
