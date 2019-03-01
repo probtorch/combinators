@@ -10,8 +10,15 @@ import probtorch
 from probtorch.util import log_mean_exp
 import torch
 import torch.nn as nn
+from torch.nn.functional import log_softmax
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
+
+def normalize_weights(log_weights):
+    batch_shape = log_weights.shape
+    log_weights, _ = batch_collapse(log_weights, batch_shape)
+    log_weights = log_softmax(log_weights, dim=0)
+    return log_weights.reshape(*batch_shape)
 
 def unique_shape(tensor, shape):
     for i, dim in enumerate(tensor.shape):

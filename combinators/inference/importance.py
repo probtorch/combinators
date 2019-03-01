@@ -13,22 +13,20 @@ from . import inference
 from ..model import foldable
 from .. import utils
 
-def evaluate_conditioned(target, xiq, log_wq, *args, **kwargs):
-    zs, xi, log_w = target.cond(xiq)(*args, **kwargs)
-    sample_dims = tuple(range(len(target.batch_shape)))
-
-    for name in xiq:
-        conditioned = [k for k in xiq[name].conditioned()]
-        log_wq -= xiq[name].log_joint(sample_dims=sample_dims,
-                                      nodes=conditioned,
-                                      reparameterized=False)
-        if name in xi:
-            reused = [k for k in xi[name] if k in xiq[name]]
-            log_wq -= xiq[name].log_joint(sample_dims=sample_dims,
-                                          nodes=reused,
-                                          reparameterized=False)
-
-    return zs, xi, log_wq + log_w
+def conditioning_factor(dest, src, batch_shape):
+    sample_dims = tuple(range(len(batch_shape)))
+    log_omega_q = torch.zeros(*batch_shape)
+    for name in src:
+        conditioned = [k for k in src[name].conditioned()]
+        log_omega_q += src[name].log_joint(sample_dims=sample_dims,
+                                           nodes=conditioned,
+                                           reparameterized=False)
+        if name in dest:
+            reused = [k for k in dest[name] if k in src[name]]
+            log_omega_q += src[name].log_joint(sample_dims=sample_dims,
+                                               nodes=reused,
+                                               reparameterized=False)
+    return log_omega_q
 
 class Propose(inference.Inference):
     def __init__(self, target, proposal):
@@ -39,7 +37,9 @@ class Propose(inference.Inference):
 
     def forward(self, *args, **kwargs):
         _, xiq, log_wq = self.proposal(*args, **kwargs)
-        return evaluate_conditioned(self.target, xiq, log_wq, *args, **kwargs)
+        zs, xi, log_w = self.target.cond(xiq)(*args, **kwargs)
+        log_omega_q = conditioning_factor(xi, xiq, self.target.batch_shape)
+        return zs, xi, log_wq - log_omega_q + log_w
 
     def walk(self, f):
         return f(Propose(self.target.walk(f), self.proposal))
