@@ -87,7 +87,7 @@ class Resample(inference.Inference):
         trace_resampler = lambda _, trace: utils.trace_map(trace, resampler)
         xi = xi.map(trace_resampler)
 
-        log_weights = utils.batch_expand(utils.marginalize_all(log_weights),
+        log_weights = utils.batch_expand(utils.batch_marginalize(log_weights),
                                          log_weights.shape)
         return zs, xi, log_weights
 
