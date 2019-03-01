@@ -63,13 +63,8 @@ def resample_move_smc(target, kernel=mh.lightweight_kernel, moves=1):
     selector = lambda m: isinstance(m, importance.Propose)
     return target.apply(inference, selector)
 
-def step_resample_move_smc(sampler, initializer=None, moves=1,
-                           mcmc=lightweight_mh):
-    return foldable.Step(mcmc(importance.resample(sampler), moves),
-                         initializer=initializer)
-
-def reduce_resample_move_smc(stepwise, step_generator, initializer=None,
-                             moves=1, mcmc=lightweight_mh):
-    rmsmc_foldable = step_resample_move_smc(stepwise, initializer=initializer,
-                                            moves=moves, mcmc=mcmc)
-    return foldable.Reduce(rmsmc_foldable, step_generator)
+def step_resample_move_smc(target, kernel=mh.lightweight_kernel, moves=1):
+    inference = lambda m: move(importance.resample(m), kernel(m.batch_shape),
+                               moves)
+    selector = lambda m: isinstance(m, foldable.Step)
+    return target.apply(inference, selector)
