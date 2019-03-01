@@ -108,13 +108,9 @@ def smc(target):
     selector = lambda m: isinstance(m, Propose)
     return target.apply(resample, selector)
 
-def step_smc(sampler, initializer=None):
-    resampler = resample(sampler)
-    return foldable.Step(resampler, initializer=initializer)
-
-def reduce_smc(stepwise, step_generator, initializer=None):
-    smc_foldable = step_smc(stepwise, initializer)
-    return foldable.Reduce(smc_foldable, step_generator)
+def step_smc(target):
+    selector = lambda m: isinstance(m, foldable.Step)
+    return target.apply(resample, selector)
 
 def elbo(log_weight):
     return utils.batch_marginalize(log_weight)
