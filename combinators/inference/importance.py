@@ -6,7 +6,7 @@ import logging
 from probtorch.stochastic import RandomVariable
 import torch
 import torch.distributions as dists
-from torch.nn.functional import log_softmax
+from torch.nn.functional import log_softmax, softmax
 
 from ..sampler import Sampler
 from . import inference
@@ -115,6 +115,13 @@ def reduce_smc(stepwise, step_generator, initializer=None):
     smc_foldable = step_smc(stepwise, initializer)
     return foldable.Reduce(smc_foldable, step_generator)
 
+def elbo(log_weight):
+    return utils.batch_marginalize(log_weight)
+
+def eubo(log_weight):
+    eubo_particles = torch.exp(utils.normalize_weights(log_weight)) * log_weight
+    return utils.batch_marginalize(eubo_particles)
+
 def variational_importance(sampler, num_iterations, data, use_cuda=True,
                            lr=1e-6, inclusive_kl=False, patience=50):
     optimizer = torch.optim.Adam(list(sampler.parameters()), lr=lr)
@@ -133,11 +140,11 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
 
         _, xi, log_weight = sampler(data=data)
 
-        bound = -utils.marginalize_all(log_weight)
+        bounds[t] = eubo(log_weight) if inclusive_kl else elbo(log_weight)
         bound_name = 'EUBO' if inclusive_kl else 'ELBO'
-        bounds[t] = bound if inclusive_kl else -bound
         logging.info('%s=%.8e at epoch %d', bound_name, bounds[t], t + 1)
-        bound.backward()
+        energy = bounds[t] if inclusive_kl else -bounds[t]
+        energy.backward()
         optimizer.step()
         scheduler.step(bounds[t])
 
