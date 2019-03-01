@@ -77,7 +77,8 @@ class Resample(inference.Inference):
 
         zs = list(zs)
         for i, z in enumerate(zs):
-            zs[i] = collapsed_index_select(z, self.batch_shape, ancestors)
+            if isinstance(z, torch.Tensor):
+                zs[i] = collapsed_index_select(z, self.batch_shape, ancestors)
         if multiple_zs:
             zs = tuple(zs)
         else:
