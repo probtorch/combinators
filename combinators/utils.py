@@ -9,10 +9,16 @@ import matplotlib.pyplot as plt
 import probtorch
 from probtorch.util import log_mean_exp
 import torch
+from torch.distributions import Gumbel
 import torch.nn as nn
 from torch.nn.functional import logsigmoid, log_softmax
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
+
+def gumbel_max_categorical(log_probs, sample_shape):
+    k = log_probs.shape[0]
+    gumbels = Gumbel(torch.zeros(k), torch.ones(k)).sample(sample_shape)
+    return torch.argmax(gumbels + log_probs, dim=-1)
 
 def normalize_weights(log_weights):
     batch_shape = log_weights.shape
