@@ -108,7 +108,7 @@ def step_smc(target):
     return target.apply(resample, selector)
 
 def elbo(log_weight):
-    return utils.batch_marginalize(log_weight)
+    return utils.batch_mean(log_weight)
 
 def eubo(log_weight):
     ancestors, log_marginal = utils.gumbel_max_resample(log_weight)
