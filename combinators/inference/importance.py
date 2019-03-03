@@ -70,10 +70,7 @@ class Resample(inference.Inference):
         if not multiple_zs:
             zs = (zs,)
 
-        particle_logs, _ = utils.batch_collapse(log_weights, self.batch_shape)
-        particle_logs = log_softmax(particle_logs, dim=0)
-        particle_dist = dists.Categorical(logits=particle_logs)
-        ancestors = particle_dist.sample(particle_logs.shape)
+        ancestors, log_weights = utils.gumbel_max_resample(log_weights)
 
         zs = list(zs)
         for i, z in enumerate(zs):
@@ -88,8 +85,6 @@ class Resample(inference.Inference):
         trace_resampler = lambda _, trace: utils.trace_map(trace, resampler)
         xi = xi.map(trace_resampler)
 
-        log_weights = utils.batch_expand(utils.batch_marginalize(log_weights),
-                                         log_weights.shape)
         return zs, xi, log_weights
 
     def walk(self, f):
