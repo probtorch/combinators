@@ -111,10 +111,10 @@ def elbo(log_weight):
     return utils.batch_mean(log_weight)
 
 def eubo(log_weight):
-    ancestors, log_marginal = utils.gumbel_max_resample(log_weight)
+    ancestors, _ = utils.gumbel_max_resample(log_weight)
     eubo_particles = collapsed_index_select(log_weight, log_weight.shape,
-                                            ancestors) * torch.exp(log_marginal)
-    return utils.batch_marginalize(eubo_particles)
+                                            ancestors)
+    return -utils.batch_mean(eubo_particles)
 
 def variational_importance(sampler, num_iterations, data, use_cuda=True,
                            lr=1e-6, inclusive_kl=False, patience=50):
