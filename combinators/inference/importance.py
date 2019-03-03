@@ -134,10 +134,10 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
 
         _, xi, log_weight = sampler(data=data)
 
-        bounds[t] = eubo(log_weight) if inclusive_kl else elbo(log_weight)
+        energy = eubo(log_weight) if inclusive_kl else -elbo(log_weight)
+        bounds[t] = energy if inclusive_kl else -energy
         bound_name = 'EUBO' if inclusive_kl else 'ELBO'
         logging.info('%s=%.8e at epoch %d', bound_name, bounds[t], t + 1)
-        energy = bounds[t] if inclusive_kl else -bounds[t]
         energy.backward()
         optimizer.step()
         scheduler.step(bounds[t])
