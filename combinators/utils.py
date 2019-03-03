@@ -44,6 +44,10 @@ def unique_shape(tensor, shape):
             return tensor.shape[i:]
     return ()
 
+def batch_mean(tensor):
+    batch_tensor, _ = batch_collapse(tensor, tensor.shape)
+    return batch_tensor.mean(dim=0)
+
 def batch_marginalize(tensor):
     batch_tensor, _ = batch_collapse(tensor, tensor.shape)
     return log_mean_exp(batch_tensor, dim=0)
