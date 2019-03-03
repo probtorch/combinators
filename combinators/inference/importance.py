@@ -107,17 +107,22 @@ def step_smc(target):
     selector = lambda m: isinstance(m, foldable.Step)
     return target.apply(resample, selector)
 
-def elbo(log_weight):
+def elbo(log_weight, log_mean_estimator=False):
+    if log_mean_estimator:
+        return utils.batch_marginalize(log_weight)
     return utils.batch_mean(log_weight)
 
-def eubo(log_weight):
+def eubo(log_weight, log_mean_estimator=False):
     ancestors, _ = utils.gumbel_max_resample(log_weight)
     eubo_particles = collapsed_index_select(log_weight, log_weight.shape,
                                             ancestors)
+    if log_mean_estimator:
+        return -utils.batch_marginalize(eubo_particles)
     return -utils.batch_mean(eubo_particles)
 
 def variational_importance(sampler, num_iterations, data, use_cuda=True,
-                           lr=1e-6, inclusive_kl=False, patience=50):
+                           lr=1e-6, inclusive_kl=False, patience=50,
+                           log_estimator=False):
     optimizer = torch.optim.Adam(list(sampler.parameters()), lr=lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, factor=0.5, min_lr=1e-6, patience=patience, verbose=True,
@@ -134,7 +139,10 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
 
         _, xi, log_weight = sampler(data=data)
 
-        energy = eubo(log_weight) if inclusive_kl else -elbo(log_weight)
+        if inclusive_kl:
+            energy = eubo(log_weight, log_estimator)
+        else:
+            energy = -elbo(log_weight, log_estimator)
         bounds[t] = energy if inclusive_kl else -energy
         bound_name = 'EUBO' if inclusive_kl else 'ELBO'
         logging.info('%s=%.8e at epoch %d', bound_name, bounds[t], t + 1)
