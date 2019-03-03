@@ -15,6 +15,13 @@ from torch.nn.functional import logsigmoid, log_softmax
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def gumbel_max_resample(log_weights):
+    particle_logs, _ = batch_collapse(log_weights, log_weights.shape)
+    ancestors = gumbel_max_categorical(particle_logs, particle_logs.shape)
+    log_marginal = batch_expand(log_mean_exp(particle_logs, dim=0),
+                                log_weights.shape)
+    return ancestors, log_marginal
+
 def gumbel_max_categorical(log_probs, sample_shape):
     k = log_probs.shape[0]
     gumbels = Gumbel(torch.zeros(k), torch.ones(k)).sample(sample_shape)
