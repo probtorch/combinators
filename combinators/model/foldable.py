@@ -10,12 +10,13 @@ from .. import utils
 
 class Step(Model):
     def __init__(self, operator, initializer=None, iteration=0, qs=None,
-                 **kwargs):
+                 walker=None, **kwargs):
         assert isinstance(operator, Sampler)
         super(Step, self).__init__(batch_shape=operator.batch_shape)
         self._kwargs = kwargs
         self._iteration = iteration
         self._qs = qs
+        self._walker = walker
 
         if self._qs and self._qs.contains_model(self.name):
             qs = self._qs[self.name:]
@@ -45,7 +46,9 @@ class Step(Model):
         result, op_trace, log_weight = self.operator(seed, *args, **kwargs)
         next_step = Step(self.operator, initializer=result,
                          iteration=self._iteration + 1, qs=self._qs,
-                         **self._kwargs)
+                         walker=self._walker, **self._kwargs)
+        if self._walker:
+            next_step = self._walker(next_step)
 
         graph.insert(self.name, op_trace)
         log_weight += seed_log_weight
@@ -62,11 +65,12 @@ class Step(Model):
             initializer = self._initializer.walk(f)
         else:
             initializer = self._initializer
-        return f(Step(self.operator.walk(f), initializer, **self._kwargs))
+        return f(Step(self.operator.walk(f), initializer, walker=f,
+                      **self._kwargs))
 
     def cond(self, qs):
         return Step(self.operator, self._initializer, self._iteration, qs,
-                    **self._kwargs)
+                    walker=self._walker, **self._kwargs)
 
 def step(operator, initializer=None, qs=None, **kwargs):
     return Step(operator, initializer=initializer, qs=qs, **kwargs)
