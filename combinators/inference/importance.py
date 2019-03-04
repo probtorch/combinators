@@ -15,7 +15,7 @@ from .. import utils
 
 def conditioning_factor(dest, src, batch_shape):
     sample_dims = tuple(range(len(batch_shape)))
-    log_omega_q = torch.zeros(*batch_shape)
+    log_omega_q = torch.zeros(*batch_shape, device=src.device)
     for name in src:
         conditioned = [k for k in src[name].conditioned()]
         log_omega_q += src[name].log_joint(sample_dims=sample_dims,
