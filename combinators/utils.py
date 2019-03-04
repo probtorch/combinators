@@ -24,7 +24,9 @@ def gumbel_max_resample(log_weights):
 
 def gumbel_max_categorical(log_probs, sample_shape):
     k = log_probs.shape[0]
-    gumbels = Gumbel(torch.zeros(k), torch.ones(k)).sample(sample_shape)
+    dist = Gumbel(torch.zeros(k, device=log_probs.device),
+                     torch.ones(k, device=log_probs.device))
+    gumbels = dist.sample(sample_shape)
     return torch.argmax(gumbels + log_probs, dim=-1)
 
 def normalize_weights(log_weights):
