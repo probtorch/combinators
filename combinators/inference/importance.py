@@ -152,6 +152,7 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
 
     if torch.cuda.is_available() and use_cuda:
         sampler.cpu()
+        torch.cuda.empty_cache()
     sampler.eval()
 
     trained_params = sampler.args_vardict(False)
