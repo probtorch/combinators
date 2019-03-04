@@ -90,11 +90,14 @@ class Reduce(Model):
         items = self._generator()
         stepper = self.folder
         graph = graphs.ComputationGraph()
-        log_weight = torch.zeros(self.batch_shape)
+        log_weight = torch.zeros(*self.batch_shape)
+        moved_weight = False
 
         for item in items:
             step_results, step_trace, w = stepper(item, *args, **kwargs)
             graph.insert(self.name, step_trace)
+            if not moved_weight:
+                log_weight = log_weight.to(device=graph.device)
             log_weight += w
             stepper = step_results[-1]
 
