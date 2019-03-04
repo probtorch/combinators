@@ -51,7 +51,7 @@ class Step(Model):
             next_step = self._walker(next_step)
 
         graph.insert(self.name, op_trace)
-        log_weight += seed_log_weight
+        log_weight += seed_log_weight.to(device=log_weight.device)
 
         if isinstance(result, tuple):
             result = result + (next_step,)
