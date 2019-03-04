@@ -87,6 +87,14 @@ class Primitive(Model):
 
     def observe(self, name, value, Dist, *args, **kwargs):
         assert name not in self.q or self.q[name].observed
+        for arg in args:
+            if isinstance(arg, torch.Tensor):
+                value = value.to(device=arg.device)
+                break
+        for kwarg in kwargs.values():
+            if isinstance(kwarg, torch.Tensor):
+                value = value.to(device=kwarg.device)
+                break
         return self.sample(Dist, *args, name=name, value=value, **kwargs)
 
     def factor(self, log_prob, name=None):
@@ -108,8 +116,10 @@ class Primitive(Model):
     def forward(self, *args, **kwargs):
         self.p = probtorch.Trace()
         result = self._forward(*args, **kwargs)
+        ps = graphs.ComputationGraph(traces={self.name: self.p})
         reused = [k for k in self.p if k in self.q]
-        log_weight = torch.zeros(self.batch_shape)
+        log_weight = torch.zeros(self.batch_shape,
+                                 device=ps.device)
         conditioned = [k for k in self.p.conditioned()]
         sample_dims = tuple(range(len(self.batch_shape)))
         log_weight += self.p.log_joint(sample_dims=sample_dims,
@@ -117,7 +127,6 @@ class Primitive(Model):
                                        reparameterized=False) +\
                       self.p.log_joint(sample_dims=sample_dims, nodes=reused,
                                        reparameterized=False)
-        ps = graphs.ComputationGraph(traces={self.name: self.p})
         self.p = None
         assert log_weight.shape == self.batch_shape
         return result, ps, log_weight
