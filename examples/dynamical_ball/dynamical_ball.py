@@ -48,7 +48,7 @@ def reflect_on_boundary(position, direction, boundary, d=0, positive=True):
     sign = 1.0 if positive else -1.0
     overage = position[:, d] - sign * boundary
     overage = torch.where(torch.sign(overage) == sign, overage,
-                          torch.zeros(*overage.shape))
+                          torch.zeros(*overage.shape, device=position.device))
     position = list(torch.unbind(position, 1))
     position[d] = position[d] - 2 * overage
     position = torch.stack(position, dim=1)
