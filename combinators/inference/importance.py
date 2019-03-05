@@ -112,9 +112,14 @@ def elbo(log_weight, log_mean_estimator=False):
         return utils.batch_marginalize(log_weight)
     return utils.batch_mean(log_weight)
 
-def eubo(log_weight, log_mean_estimator=False):
+def eubo(log_weight, log_mean_estimator=False, xi=None):
     probs = utils.normalize_weights(log_weight).detach().exp()
-    eubo_particles = (probs**2 - probs) * log_weight
+    if xi and xi.reparameterized():
+        eubo_particles = (probs**2 - probs) * log_weight
+    else:
+        eubo_particles = probs * log_weight
+    if log_mean_estimator:
+        return utils.log_sum_exp(eubo_particles)
     return utils.batch_sum(eubo_particles)
 
 def variational_importance(sampler, num_iterations, data, use_cuda=True,
@@ -137,7 +142,7 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
         _, xi, log_weight = sampler(data=data)
 
         if inclusive_kl:
-            energy = eubo(log_weight, log_estimator)
+            energy = eubo(log_weight, log_estimator, xi=xi)
         else:
             energy = -elbo(log_weight, log_estimator)
         bounds[t] = energy if inclusive_kl else -energy
