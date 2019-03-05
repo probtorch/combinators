@@ -138,6 +138,13 @@ class ComputationGraph:
                       predicate=lambda k, v: True):
         return len(list(self.variables(prefix, predicate)))
 
+    def reparameterized(self, prefix=pygtrie._SENTINEL,
+                        predicate=lambda k, v: True):
+        for k, v in self.variables(prefix=prefix, predicate=predicate):
+            if not v.reparameterized:
+                return False
+        return True
+
     def graft(self, key, val):
         if isinstance(key, int):
             key = self._ordering[key]
