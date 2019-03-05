@@ -41,6 +41,10 @@ def unique_shape(tensor, shape):
             return tensor.shape[i:]
     return ()
 
+def batch_sum(tensor):
+    batch_tensor, _ = batch_collapse(tensor, tensor.shape)
+    return batch_tensor.sum(dim=0)
+
 def batch_mean(tensor):
     batch_tensor, _ = batch_collapse(tensor, tensor.shape)
     return batch_tensor.mean(dim=0)
