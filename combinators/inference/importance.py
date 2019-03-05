@@ -113,8 +113,8 @@ def elbo(log_weight, log_mean_estimator=False):
     return utils.batch_mean(log_weight)
 
 def eubo(log_weight, log_mean_estimator=False):
-    log_probs = utils.normalize_weights(log_weight).detach()
-    eubo_particles = log_probs.exp() * log_weight
+    probs = utils.normalize_weights(log_weight).detach().exp()
+    eubo_particles = (probs**2 - probs) * log_weight
     return utils.batch_sum(eubo_particles)
 
 def variational_importance(sampler, num_iterations, data, use_cuda=True,
