@@ -32,12 +32,7 @@ def gumbel_max_categorical(log_probs, sample_shape):
 def normalize_weights(log_weights):
     batch_shape = log_weights.shape
     log_weights, _ = batch_collapse(log_weights, batch_shape)
-    count = log_weights.shape[0]
-    if count > 1:
-        log_weights = log_weights - log_mean_exp(log_weights, dim=0)
-        log_weights = log_weights - torch.Tensor([count]).log()
-    else:
-        log_weights = logsigmoid(log_weights)
+    log_weights = log_softmax(log_weights, dim=0)
     return log_weights.reshape(*batch_shape)
 
 def unique_shape(tensor, shape):
