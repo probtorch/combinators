@@ -7,7 +7,7 @@ import pygtrie
 
 import matplotlib.pyplot as plt
 import probtorch
-from probtorch.util import log_mean_exp
+from probtorch.util import log_mean_exp, log_sum_exp
 import torch
 from torch.distributions import Gumbel
 import torch.nn as nn
@@ -40,6 +40,10 @@ def unique_shape(tensor, shape):
         if i >= len(shape) or shape[i] != dim:
             return tensor.shape[i:]
     return ()
+
+def batch_log_sum_exp(tensor):
+    batch_tensor, _ = batch_collapse(tensor, tensor.shape)
+    return log_sum_exp(batch_tensor, dim=0)
 
 def batch_sum(tensor):
     batch_tensor, _ = batch_collapse(tensor, tensor.shape)
