@@ -113,12 +113,9 @@ def elbo(log_weight, log_mean_estimator=False):
     return utils.batch_mean(log_weight)
 
 def eubo(log_weight, log_mean_estimator=False):
-    ancestors, _ = utils.gumbel_max_resample(log_weight)
-    eubo_particles = collapsed_index_select(log_weight, log_weight.shape,
-                                            ancestors)
-    if log_mean_estimator:
-        return -utils.batch_marginalize(eubo_particles)
-    return -utils.batch_mean(eubo_particles)
+    log_probs = utils.normalize_weights(log_weight).detach()
+    eubo_particles = log_probs.exp() * log_weight
+    return utils.batch_sum(eubo_particles)
 
 def variational_importance(sampler, num_iterations, data, use_cuda=True,
                            lr=1e-6, inclusive_kl=False, patience=50,
