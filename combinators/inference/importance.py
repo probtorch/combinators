@@ -107,20 +107,30 @@ def step_smc(target):
     selector = lambda m: isinstance(m, foldable.Step)
     return target.apply(resample, selector)
 
-def elbo(log_weight, log_mean_estimator=False):
+def dreg(log_weight, log_mean_estimator=False, alpha=torch.zeros(())):
+    probs = utils.normalize_weights(log_weight).detach().exp()
+    particles = (alpha * probs + (1 - 2 * alpha) * probs**2) * log_weight
     if log_mean_estimator:
-        return utils.batch_marginalize(log_weight)
-    return utils.batch_mean(log_weight)
+        return utils.log_sum_exp(particles)
+    return utils.batch_sum(particles)
+
+def elbo(log_weight, log_mean_estimator=False, xi=None):
+    if xi and xi.reparameterized():
+        return dreg(log_weight, log_mean_estimator, alpha=torch.zeros(()))
+    else:
+        if log_mean_estimator:
+            return utils.batch_marginalize(log_weight)
+        return utils.batch_mean(log_weight)
 
 def eubo(log_weight, log_mean_estimator=False, xi=None):
-    probs = utils.normalize_weights(log_weight).detach().exp()
     if xi and xi.reparameterized():
-        eubo_particles = (probs**2 - probs) * log_weight
+        return -dreg(log_weight, log_mean_estimator, alpha=torch.ones(()))
     else:
+        probs = utils.normalize_weights(log_weight).detach().exp()
         eubo_particles = probs * log_weight
-    if log_mean_estimator:
-        return utils.log_sum_exp(eubo_particles)
-    return utils.batch_sum(eubo_particles)
+        if log_mean_estimator:
+            return utils.log_sum_exp(eubo_particles)
+        return utils.batch_sum(eubo_particles)
 
 def variational_importance(sampler, num_iterations, data, use_cuda=True,
                            lr=1e-6, inclusive_kl=False, patience=50,
