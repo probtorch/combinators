@@ -132,13 +132,13 @@ def eubo(log_weight, log_mean_estimator=False, xi=None):
             return utils.log_sum_exp(eubo_particles)
         return utils.batch_sum(eubo_particles)
 
-def variational_importance(sampler, num_iterations, data, use_cuda=True,
-                           lr=1e-6, inclusive_kl=False, patience=50,
+def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6,
+                           bound='elbo', log_all_bounds=False, patience=50,
                            log_estimator=False):
     optimizer = torch.optim.Adam(list(sampler.parameters()), lr=lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, factor=0.5, min_lr=1e-6, patience=patience, verbose=True,
-        mode='min' if inclusive_kl else 'max',
+        mode='min' if bound == 'eubo' else 'max',
     )
 
     sampler.train()
@@ -151,16 +151,21 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
 
         _, xi, log_weight = sampler(data=data)
 
-        if inclusive_kl:
-            energy = eubo(log_weight, log_estimator, xi=xi)
+        eubo_t = eubo(log_weight, log_estimator, xi=xi)
+        elbo_t = elbo(log_weight, log_estimator, xi=xi)
+        bounds[t] = {'eubo': eubo_t, 'elbo': elbo_t}
+        if log_all_bounds:
+            logging.info('ELBO=%.8e at epoch %d', bounds[t]['elbo'], t + 1)
+            logging.info('EUBO=%.8e at epoch %d', bounds[t]['eubo'], t + 1)
         else:
-            energy = -elbo(log_weight, log_estimator)
-        bounds[t] = energy if inclusive_kl else -energy
-        bound_name = 'EUBO' if inclusive_kl else 'ELBO'
-        logging.info('%s=%.8e at epoch %d', bound_name, bounds[t], t + 1)
-        energy.backward()
+            logging.info('%s=%.8e at epoch %d', bound.upper(), bounds[t][bound], t + 1)
+
+        free_energy = bounds[t][bound]
+        if bound == 'elbo':
+            free_energy = -free_energy
+        free_energy.backward()
         optimizer.step()
-        scheduler.step(bounds[t])
+        scheduler.step(bounds[t][bound])
 
     if torch.cuda.is_available() and use_cuda:
         sampler.cpu()
@@ -168,5 +173,7 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True,
     sampler.eval()
 
     trained_params = sampler.args_vardict(False)
+    bounds = (torch.stack([bs['elbo'] for bs in bounds], dim=0),
+              torch.stack([bs['eubo'] for bs in bounds], dim=0))
 
     return xi, trained_params, bounds
