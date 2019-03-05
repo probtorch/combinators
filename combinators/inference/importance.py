@@ -107,28 +107,25 @@ def step_smc(target):
     selector = lambda m: isinstance(m, foldable.Step)
     return target.apply(resample, selector)
 
-def dreg(log_weight, log_mean_estimator=False, alpha=torch.zeros(())):
+def dreg(log_weight, alpha=torch.zeros(())):
     probs = utils.normalize_weights(log_weight).detach().exp()
     particles = (alpha * probs + (1 - 2 * alpha) * probs**2) * log_weight
-    if log_mean_estimator:
-        return utils.log_sum_exp(particles)
     return utils.batch_sum(particles)
 
-def elbo(log_weight, log_mean_estimator=False, xi=None):
-    if xi and xi.reparameterized():
-        return dreg(log_weight, log_mean_estimator, alpha=torch.zeros(()))
-    else:
-        if log_mean_estimator:
-            return utils.batch_marginalize(log_weight)
-        return utils.batch_mean(log_weight)
+def elbo(log_weight, iwae_objective=False, xi=None):
+    if xi and xi.reparameterized() and iwae_objective:
+        return dreg(log_weight, alpha=torch.zeros(()))
+    elif iwae_objective:
+        return utils.batch_marginalize(log_weight)
+    return utils.batch_mean(log_weight)
 
-def eubo(log_weight, log_mean_estimator=False, xi=None):
+def eubo(log_weight, iwae_objective=False, xi=None):
     if xi and xi.reparameterized():
-        return -dreg(log_weight, log_mean_estimator, alpha=torch.ones(()))
+        return -dreg(log_weight, alpha=torch.ones(()))
     else:
         probs = utils.normalize_weights(log_weight).detach().exp()
         eubo_particles = probs * log_weight
-        if log_mean_estimator:
+        if iwae_objective:
             return utils.log_sum_exp(eubo_particles)
         return utils.batch_sum(eubo_particles)
 
@@ -151,8 +148,8 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6
 
         _, xi, log_weight = sampler(data=data)
 
-        eubo_t = eubo(log_weight, log_estimator, xi=xi)
-        elbo_t = elbo(log_weight, log_estimator, xi=xi)
+        eubo_t = eubo(log_weight, iwae_objective=log_estimator, xi=xi)
+        elbo_t = elbo(log_weight, iwae_objective=log_estimator, xi=xi)
         bounds[t] = {'eubo': eubo_t, 'elbo': elbo_t}
         if log_all_bounds:
             logging.info('ELBO=%.8e at epoch %d', bounds[t]['elbo'], t + 1)
