@@ -60,6 +60,10 @@ class Primitive(Model):
         self.q = q if q else probtorch.Trace()
 
     @property
+    def hyperparams_trainable(self):
+        return self._hyperparams_trainable
+
+    @property
     def name(self):
         return self.__class__.__name__
 
