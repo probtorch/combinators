@@ -80,14 +80,13 @@ class MetropolisHastings(Inference):
                                             **kwargs)
             if not self._count_target:
                 kwargs.pop('t')
-            zsp, xip, log_w = self.target.cond(xiq)(*args, **kwargs)
+            zsp, xip, log_w = importance.conditioned_evaluate(self.target, xiq,
+                                                              *args, **kwargs)
             if not multiple_zs:
-                zsp = (zsp,)
+                zs = (zs,)
             log_transition = self.kernel.log_transition_prob(xiq, xip)
             log_reverse_transition = self.kernel.log_transition_prob(xip, xiq)
-            log_omega_q = importance.conditioning_factor(xip, xiq,
-                                                         self.batch_shape)
-            log_w = log_weight_q - log_omega_q + log_w
+            log_w = log_weight_q + log_w
             log_alpha = utils.batch_marginalize(torch.min(
                 torch.zeros(self.batch_shape),
                 (log_w + log_reverse_transition) - (log_weight + log_transition)
