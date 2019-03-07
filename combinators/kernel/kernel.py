@@ -29,7 +29,19 @@ class TransitionKernel(Sampler):
         raise NotImplementedError()
 
     def log_transition_prob(self, origin, destination):
-        raise NotImplementedError()
+        log_transition = torch.zeros(self.batch_shape)
+        origin_nodes = dict(origin.nodes())
+        destination_nodes = dict(destination.nodes())
+        for k, v in destination_nodes.items():
+            fresh = k not in origin_nodes
+            if isinstance(v, RandomVariable):
+                fresh = fresh or (v.value != origin_nodes[k].value).any()
+            else:
+                fresh = fresh or (v.log_prob != origin_nodes[k].log_prob).any()
+            if fresh:
+                log_transition = log_transition.to(v.log_prob)
+                log_transition = log_transition + v.log_prob
+        return log_transition
 
     def get_model(self):
         return None
@@ -50,9 +62,6 @@ class GaussianKernel(TransitionKernel):
     @property
     def name(self):
         return 'GaussianKernel'
-
-    def log_transition_prob(self, origin, destination):
-        return destination[self._var].log_prob - origin[self._var].log_prob
 
     def forward(self, zs, xi, log_weight, *args, **kwargs):
         q = utils.slice_trace(xi[self._model], self._var)
