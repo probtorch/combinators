@@ -28,6 +28,11 @@ def conditioning_factor(dest, src, batch_shape):
                                                reparameterized=False)
     return log_omega_q
 
+def conditioned_evaluate(target, xiq, *args, **kwargs):
+    zs, xi, log_w = target.cond(xiq)(*args, **kwargs)
+    log_omega_q = conditioning_factor(xi, xiq, target.batch_shape)
+    return zs, xi, log_w - log_omega_q
+
 class Propose(inference.Inference):
     def __init__(self, target, proposal):
         super(Propose, self).__init__(target)
