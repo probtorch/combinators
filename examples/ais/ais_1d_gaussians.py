@@ -3,6 +3,8 @@
 import torch
 from torch.distributions import Normal
 
+from combinators.inference import importance, mcmc
+from combinators.kernel import kernel, mh
 import combinators.model as model
 import combinators.utils as utils
 
@@ -26,3 +28,7 @@ class AnnealingTarget(model.Primitive):
         self.factor(dist.log_prob(xs) * beta, name='X_p')
 
         return xs
+
+def annealed_importance(target, transition, moves=1):
+    return mcmc.Move(importance.resample(target), transition, moves=moves,
+                     count_target=True)
