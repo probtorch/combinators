@@ -127,6 +127,13 @@ class ComputationGraph:
         for k, v in other.items():
             self[prefix + '/' + k] = v
 
+    def nodes(self, prefix=pygtrie._SENTINEL, predicate=lambda k, v: True):
+        for _, trace in self._trie.iteritems(prefix=prefix):
+            for k in trace:
+                v = trace[k]
+                if predicate(k, v):
+                    yield (k, v)
+
     def variables(self, prefix=pygtrie._SENTINEL, predicate=lambda k, v: True):
         for _, trace in self._trie.iteritems(prefix=prefix):
             for k in trace.variables():
