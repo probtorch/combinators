@@ -67,6 +67,41 @@ def index_select_rv(rv, batch_shape, ancestors):
                                 rv.reparameterized)
     return result
 
+class Importance(inference.Inference):
+    def forward(self, *args, **kwargs):
+        zs, xi, log_weights = self.target(*args, **kwargs)
+        multiple_zs = isinstance(zs, tuple)
+        if not multiple_zs:
+            zs = (zs,)
+
+        ancestors, _ = utils.gumbel_max_resample(log_weights)
+        zs = list(zs)
+        for i, z in enumerate(zs):
+            if isinstance(z, torch.Tensor):
+                zs[i] = collapsed_index_select(z, self.batch_shape, ancestors)
+        if multiple_zs:
+            zs = tuple(zs)
+        else:
+            zs = zs[0]
+
+        sampler = lambda rv: index_select_rv(rv, self.batch_shape, ancestors)
+        trace_sampler = lambda _, trace: utils.trace_map(trace, sampler)
+        xi = xi.map(trace_sampler)
+
+        log_weights = collapsed_index_select(log_weights, self.batch_shape,
+                                             ancestors)
+
+        return zs, xi, log_weights
+
+    def walk(self, f):
+        return f(Importance(self.target.walk(f)))
+
+    def cond(self, qs):
+        return Importance(self.target.cond(qs))
+
+def importance(target):
+    return Importance(target)
+
 class Resample(inference.Inference):
     def forward(self, *args, **kwargs):
         zs, xi, log_weights = self.target(*args, **kwargs)
