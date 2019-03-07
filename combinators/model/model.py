@@ -117,7 +117,7 @@ class Primitive(Model):
         return f(self)
 
     def cond(self, qs):
-        return self.__class__(params=self.args_vardict(False),
+        return self.__class__(*self.arguments, params=self.args_vardict(False),
                               trainable=self._hyperparams_trainable,
                               batch_shape=self.batch_shape, q=qs[self.name])
 
