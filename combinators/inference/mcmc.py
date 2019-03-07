@@ -32,13 +32,12 @@ class Move(Inference):
             xiq, log_weight_q = self.kernel(zs, xi, log_weight, *args, **kwargs)
             if not self._count_target:
                 kwargs.pop('t')
-            zs, xi, log_w = self.target.cond(xiq)(*args, **kwargs)
+            zs, xi, log_w = importance.conditioned_evaluate(self.target, xiq,
+                                                            *args, **kwargs)
             if not multiple_zs:
                 zs = (zs,)
-            log_omega_q = importance.conditioning_factor(xi, xiq,
-                                                         self.batch_shape)
             log_weight = log_weight + utils.normalize_weights(
-                log_weight_q - log_omega_q + log_w
+                log_weight_q + log_w
             )
 
         if not multiple_zs:
