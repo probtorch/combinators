@@ -19,12 +19,12 @@ class AnnealingTarget(model.Primitive):
 
     def _forward(self, t=0, data={}):
         beta = torch.linspace(0, 1, self._annealing_steps)[t]
-        xs = self.sample(Normal, loc=torch.zeros(*self.batch_shape),
-                         scale=torch.ones(*self.batch_shape), name='X_0')
+        xs = self.sample(Normal, loc=torch.zeros(*self.batch_shape) * 3,
+                         scale=torch.ones(*self.batch_shape) * 6, name='X_0')
         self.factor(self.p['X_0'].log_prob * (1 - beta), name='X_q')
 
-        dist = Normal(loc=torch.ones(*self.batch_shape) * 3,
-                      scale=torch.ones(*self.batch_shape) / 4)
+        dist = Normal(loc=torch.zeros(*self.batch_shape),
+                      scale=torch.ones(*self.batch_shape))
         self.factor(dist.log_prob(xs) * beta, name='X_p')
 
         return xs
