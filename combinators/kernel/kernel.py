@@ -69,4 +69,4 @@ class GaussianKernel(TransitionKernel):
         val = torch.normal(var.value, torch.ones(var.value.shape) * self._scale)
         q[self._var] = RandomVariable(var.dist, val, var.provenance, var.mask)
         xiq = xi.graft(self._model, q)
-        return xiq, log_weight - var.log_prob + q[self._var].log_prob
+        return xiq, xiq.log_joint()
