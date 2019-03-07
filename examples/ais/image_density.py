@@ -36,6 +36,7 @@ def bilinearInterpolation(im, x, y):
 
     return Ia*wa + Ib*wb + Ic*wc + Id*wd
 
+<<<<<<< HEAD
 class ImageProposal(model.Primitive):
     def _forward(self, *args, **kwargs):
         return self.sample(Normal, torch.zeros(*self.batch_shape, 2),
@@ -69,4 +70,22 @@ class ProbtorchLogoDensity(model.Primitive):
                                         coords[:, 1])
         self.factor(density * beta, name='image')
 
-        return coords
+if __name__ == '__main__':
+    from scipy.misc import imread 
+    from scipy.ndimage.filters import gaussian_filter
+    import matplotlib.pyplot as plt
+    
+    img_ary = imread('probtorch-logo-bw.png', mode='L')
+    img_ary = gaussian_filter(img_ary, sigma=0.1)
+    grid_density = torch.FloatTensor(1 - img_ary/255)
+
+    n = 1000
+    x = torch.rand(n) * grid_density.shape[1]
+    y = torch.rand(n) * grid_density.shape[0]
+    fxy = bilinearInterpolation(grid_density, x, y).numpy()
+    # img_ary = numpy.array([[1.,2.],[3.,4.]]) # Dummy image for testing
+
+    plt.matshow(img_ary)
+    plt.scatter(x, y, c='r')
+    plt.scatter(x[(fxy > 0.5).nonzero()], y[(fxy > 0.5).nonzero()], c='b')
+    plt.show()
