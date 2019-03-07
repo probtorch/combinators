@@ -25,20 +25,17 @@ class Move(Inference):
 
         for t in range(self._moves):
             kwargs['t'] = t
-            log_weight = utils.normalize_weights(
-                log_weight - importance.conditioning_factor({}, xi,
-                                                            self.batch_shape)
+            log_weight -= importance.conditioning_factor(
+                {}, xi, self.batch_shape
             )
-            xiq, log_weight_q = self.kernel(zs, xi, log_weight, *args, **kwargs)
+            xiq, _ = self.kernel(zs, xi, log_weight, *args, **kwargs)
             if not self._count_target:
                 kwargs.pop('t')
-            zs, xi, log_w = importance.conditioned_evaluate(self.target, xiq,
-                                                            *args, **kwargs)
+            zs, xi, log_weight = importance.conditioned_evaluate(
+                self.target, xiq, *args, **kwargs
+            )
             if not multiple_zs:
                 zs = (zs,)
-            log_weight = log_weight + utils.normalize_weights(
-                log_weight_q + log_w
-            )
 
         if not multiple_zs:
             zs = zs[0]
