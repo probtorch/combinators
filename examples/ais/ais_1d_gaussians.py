@@ -29,7 +29,7 @@ class AnnealingTarget(model.Primitive):
         self.factor(self.p['X_0'].log_prob * (1 - beta), name='X_q')
 
         dist = Normal(loc=torch.ones(*self.batch_shape) * 3,
-                      scale=torch.ones(*self.batch_shape) * 6)
+                      scale=torch.ones(*self.batch_shape) / 4)
         self.factor(dist.log_prob(xs) * beta, name='X_p')
 
         return xs
