@@ -14,8 +14,9 @@ class AnnealingProposal(model.Primitive):
 class AnnealingTarget(model.Primitive):
     def __init__(self, annealing_steps, *args, **kwargs):
         self._annealing_steps = annealing_steps
+        q = kwargs.pop('q', None)
         super(AnnealingTarget, self).__init__(*args, **kwargs)
-        self.proposal = AnnealingProposal(batch_shape=self.batch_shape)
+        self.proposal = AnnealingProposal(batch_shape=self.batch_shape, q=q)
 
     @property
     def arguments(self):
