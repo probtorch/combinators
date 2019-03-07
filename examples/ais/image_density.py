@@ -65,40 +65,8 @@ class AnnealingProposal(inference.Inference):
 class ProbtorchLogoDensity(model.Primitive):
     def _forward(self, coords, beta, data={}):
         grid_density = -(data['image'] - 255).t()
-        grid_density = grid_density.expand(*self.batch_shape,
-                                           *grid_density.shape)
-
-        # Determine grid cell boundaries
-        floor = torch.floor(coords).to(dtype=torch.long)
-        ceil = torch.ceil(coords).to(dtype=torch.long)
-
-        # Bilinear interpolation for density values at coordinates
-        density_floor = (ceil[:, 0].to(dtype=torch.float32) - coords[:, 0]) * grid_density[floor[:, 0], floor[:, 1]] +\
-                        (coords[:, 0] - floor[0].to(dtype=torch.float32)) * grid_density[ceil[:, 0], floor[:, 1]]
-        density_ceil = (ceil[:, 0].to(dtype=torch.float32) - coords[:, 0]) * grid_density[floor[:, 0], ceil[:, 1]] +\
-                       (coords[:, 0] - floor[:, 0].to(dtype=torch.float32)) * grid_density[ceil[:, 0], ceil[:, 1]]
-        density = (ceil[:, 1] - coords[:, 1]) * density_floor +\
-                  (coords[:, 1] - floor[:, 1]) * density_ceil
-        self.factor(density.log() * beta, name='image')
+        density = bilinearInterpolation(grid_density, coords[:, 0],
+                                        coords[:, 1])
+        self.factor(density * beta, name='image')
 
         return coords
-
-if __name__ == '__main__':
-    from scipy.misc import imread
-    from scipy.ndimage.filters import gaussian_filter
-    import matplotlib.pyplot as plt
-
-    img_ary = imread('probtorch-logo-bw.png', mode='L')
-    img_ary = gaussian_filter(img_ary, sigma=0.1)
-    grid_density = torch.FloatTensor(-(img_ary - 255).T)
-
-    n = 100
-    x = torch.rand(n) * grid_density.shape[0]
-    y = torch.rand(n) * grid_density.shape[1]
-    fxy = bilinearInterpolation(grid_density, x, y).numpy()
-    # img_ary = numpy.array([[1.,2.],[3.,4.]]) # Dummy image for testing
-
-    plt.matshow(img_ary)
-    plt.scatter(x, y, c='r')
-    plt.scatter(x[(fxy > 0.5).nonzero()], y[(fxy > 0.5).nonzero()], c='b')
-    plt.show()
