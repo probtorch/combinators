@@ -30,5 +30,5 @@ class AnnealingTarget(model.Primitive):
         return xs
 
 def annealed_importance(target, transition, moves=1):
-    return mcmc.Move(importance.resample(target), transition, moves=moves,
+    return mcmc.Move(importance.importance(target), transition, moves=moves,
                      count_target=True)
