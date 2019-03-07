@@ -7,6 +7,7 @@ class TransitionKernel(Sampler):
         super(TransitionKernel, self).__init__()
         self._batch_shape = batch_shape
 
+    @property
     def batch_shape(self):
         return self._batch_shape
 
