@@ -70,7 +70,7 @@ class MHMoveKernel(TransitionKernel):
         if not multiple_zs:
             zs = (zs,)
 
-        for t in range(self._moves):
+        for _ in range(self._moves):
             xiq, log_weight_q = self.kernel(zs, xi, log_weight, *args,
                                             **kwargs)
             zsp, xip, log_w = self.target.cond(xiq)(*args, **kwargs)
