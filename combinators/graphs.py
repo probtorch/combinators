@@ -90,7 +90,7 @@ class ComputationGraph:
     def device(self):
         for key in self:
             for v in self[key]:
-                return self[key][v].value.device
+                return self[key][v].log_prob.device
         return 'cpu'
 
     def log_joint(self, prefix='', nodes=None):
