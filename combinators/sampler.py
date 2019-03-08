@@ -2,6 +2,7 @@
 
 import collections
 
+from probtorch.stochastic import Provenance
 import torch
 import torch.nn as nn
 
@@ -27,6 +28,11 @@ class Sampler(nn.Module):
 
     def cond(self, qs):
         raise NotImplementedError()
+
+    def rescore(self, qs):
+        for (_, v) in qs.variables():
+            v._provenance = Provenance.RESCORE
+        return self.cond(qs)
 
     @property
     def _expander(self):

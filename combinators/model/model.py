@@ -73,7 +73,10 @@ class Primitive(Model):
             value = self.q[name].value
         if value is not None:
             if name in self.q and not self.q[name].observed:
-                provenance = Provenance.REUSED
+                if self.q[name].provenance == Provenance.RESCORE:
+                    provenance = Provenance.SAMPLED
+                else:
+                    provenance = Provenance.REUSED
             else:
                 provenance = Provenance.OBSERVED
                 shared_shapes = utils.broadcastable_sizes(value.shape,
@@ -125,7 +128,8 @@ class Primitive(Model):
         self.p = probtorch.Trace()
         result = self._forward(*args, **kwargs)
         ps = graphs.ComputationGraph(traces={self.name: self.p})
-        reused = [k for k in self.p if k in self.q]
+        reused = [k for k in self.p if k in self.q and\
+                  utils.reused_variable(self.p[k])]
         log_weight = torch.zeros(self.batch_shape,
                                  device=ps.device)
         conditioned = [k for k in self.p.conditioned()]

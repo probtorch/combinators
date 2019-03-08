@@ -15,6 +15,10 @@ from torch.nn.functional import logsigmoid, log_softmax
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def reused_variable(v):
+    return isinstance(v, probtorch.RandomVariable) and\
+           v.provenance == probtorch.stochastic.Provenance.REUSED
+
 def gumbel_max_resample(log_weights):
     particle_logs, _ = batch_collapse(log_weights, log_weights.shape)
     ancestors = gumbel_max_categorical(particle_logs, particle_logs.shape)

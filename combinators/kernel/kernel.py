@@ -39,8 +39,9 @@ class TransitionKernel(Sampler):
             else:
                 fresh = fresh or (v.log_prob != origin_nodes[k].log_prob).any()
             if fresh:
-                log_transition = log_transition.to(v.log_prob)
-                log_transition = log_transition + v.log_prob
+                log_transition = log_transition.to(device=v.log_prob.device)
+                log_transition = utils.conjunct_events(log_transition,
+                                                       v.log_prob)
         return log_transition
 
     def get_model(self):

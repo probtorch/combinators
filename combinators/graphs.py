@@ -138,7 +138,7 @@ class ComputationGraph:
         for _, trace in self._trie.iteritems(prefix=prefix):
             for k in trace.variables():
                 v = trace[k]
-                if predicate(k, v):
+                if isinstance(v, probtorch.RandomVariable) and predicate(k, v):
                     yield (k, v)
 
     def num_variables(self, prefix=pygtrie._SENTINEL,
