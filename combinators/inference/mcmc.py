@@ -90,7 +90,8 @@ class MetropolisHastings(Inference):
                 torch.zeros(self.batch_shape),
                 (log_w + log_reverse_transition) - (log_weight + log_transition)
             ))
-            if (torch.bernoulli(log_alpha.exp()) == 1).all():
+            if utils.is_number(log_alpha) and\
+               (torch.bernoulli(log_alpha.exp()) == 1).all():
                 zs = zsp
                 xi = xip
                 log_weight = log_w
