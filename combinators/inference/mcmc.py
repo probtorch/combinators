@@ -73,9 +73,7 @@ class MetropolisHastings(Inference):
 
         for t in range(self._moves):
             # Rescore the current trace under any change of target based on t.
-            _, xi, log_weight = self.target.cond(xi)(*args, **kwargs)
-            if not multiple_zs:
-                zs = (zs,)
+            _, xi, log_weight = self.target.rescore(xi)(*args, **kwargs)
             kwargs['t'] = t
             xiq, log_weight_q = self.kernel(zs, xi, log_weight, *args,
                                             **kwargs)
