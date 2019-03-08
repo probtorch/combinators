@@ -72,6 +72,10 @@ class MetropolisHastings(Inference):
             zs = (zs,)
 
         for t in range(self._moves):
+            # Rescore the current trace under any change of target based on t.
+            _, xi, log_weight = self.target.cond(xi)(*args, **kwargs)
+            if not multiple_zs:
+                zs = (zs,)
             kwargs['t'] = t
             xiq, log_weight_q = self.kernel(zs, xi, log_weight, *args,
                                             **kwargs)
@@ -80,9 +84,9 @@ class MetropolisHastings(Inference):
             zsp, xip, log_w = importance.conditioned_evaluate(self.target, xiq,
                                                               *args, **kwargs)
             if not multiple_zs:
-                zs = (zs,)
-            log_transition = self.kernel.log_transition_prob(xiq, xip)
-            log_reverse_transition = self.kernel.log_transition_prob(xip, xiq)
+                zsp = (zsp,)
+            log_transition = self.kernel.log_transition_prob(xi, xip)
+            log_reverse_transition = self.kernel.log_transition_prob(xip, xi)
             log_w = log_weight_q + log_w
             log_alpha = utils.batch_marginalize(torch.min(
                 torch.zeros(self.batch_shape),
