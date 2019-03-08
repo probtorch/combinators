@@ -3,6 +3,7 @@
 import numpy as np
 import torch
 
+from ..inference import importance
 from .kernel import TransitionKernel
 from .. import utils
 

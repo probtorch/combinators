@@ -28,6 +28,11 @@ def conditioning_factor(dest, src, batch_shape):
                                                reparameterized=False)
     return log_omega_q
 
+def conditioned_evaluate(target, xiq, *args, **kwargs):
+    zs, xi, log_w = target.cond(xiq)(*args, **kwargs)
+    log_omega_q = conditioning_factor(xi, xiq, target.batch_shape)
+    return zs, xi, log_w - log_omega_q
+
 class Propose(inference.Inference):
     def __init__(self, target, proposal):
         super(Propose, self).__init__(target)
@@ -37,9 +42,8 @@ class Propose(inference.Inference):
 
     def forward(self, *args, **kwargs):
         _, xiq, log_wq = self.proposal(*args, **kwargs)
-        zs, xi, log_w = self.target.cond(xiq)(*args, **kwargs)
-        log_omega_q = conditioning_factor(xi, xiq, self.target.batch_shape)
-        return zs, xi, log_wq - log_omega_q + log_w
+        zs, xi, log_w = conditioned_evaluate(self.target, xiq, *args, **kwargs)
+        return zs, xi, log_wq + log_w
 
     def walk(self, f):
         return f(Propose(self.target.walk(f), self.proposal))
@@ -62,6 +66,41 @@ def index_select_rv(rv, batch_shape, ancestors):
         result = RandomVariable(rv.dist, value, rv.provenance, rv.mask,
                                 rv.reparameterized)
     return result
+
+class Importance(inference.Inference):
+    def forward(self, *args, **kwargs):
+        zs, xi, log_weights = self.target(*args, **kwargs)
+        multiple_zs = isinstance(zs, tuple)
+        if not multiple_zs:
+            zs = (zs,)
+
+        ancestors, _ = utils.gumbel_max_resample(log_weights)
+        zs = list(zs)
+        for i, z in enumerate(zs):
+            if isinstance(z, torch.Tensor):
+                zs[i] = collapsed_index_select(z, self.batch_shape, ancestors)
+        if multiple_zs:
+            zs = tuple(zs)
+        else:
+            zs = zs[0]
+
+        sampler = lambda rv: index_select_rv(rv, self.batch_shape, ancestors)
+        trace_sampler = lambda _, trace: utils.trace_map(trace, sampler)
+        xi = xi.map(trace_sampler)
+
+        log_weights = collapsed_index_select(log_weights, self.batch_shape,
+                                             ancestors)
+
+        return zs, xi, log_weights
+
+    def walk(self, f):
+        return f(Importance(self.target.walk(f)))
+
+    def cond(self, qs):
+        return Importance(self.target.cond(qs))
+
+def importance(target):
+    return Importance(target)
 
 class Resample(inference.Inference):
     def forward(self, *args, **kwargs):

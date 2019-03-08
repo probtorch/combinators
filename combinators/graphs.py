@@ -90,7 +90,7 @@ class ComputationGraph:
     def device(self):
         for key in self:
             for v in self[key]:
-                return self[key][v].value.device
+                return self[key][v].log_prob.device
         return 'cpu'
 
     def log_joint(self, prefix='', nodes=None):
@@ -126,6 +126,13 @@ class ComputationGraph:
         assert isinstance(other, ComputationGraph)
         for k, v in other.items():
             self[prefix + '/' + k] = v
+
+    def nodes(self, prefix=pygtrie._SENTINEL, predicate=lambda k, v: True):
+        for _, trace in self._trie.iteritems(prefix=prefix):
+            for k in trace:
+                v = trace[k]
+                if predicate(k, v):
+                    yield (k, v)
 
     def variables(self, prefix=pygtrie._SENTINEL, predicate=lambda k, v: True):
         for _, trace in self._trie.iteritems(prefix=prefix):
