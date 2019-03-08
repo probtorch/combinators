@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import torch
-from torch.distributions import Uniform, Normal
+from torch.distributions import Uniform, MultivariateNormal, Normal
 import numpy
 
 import combinators.inference as inference
@@ -48,7 +48,9 @@ class ImageProposalMH(model.Primitive):
         width = torch.ones(*self.batch_shape) * data['image'].shape[1]
         height = torch.ones(*self.batch_shape) * data['image'].shape[0]
         wh = torch.stack((width, height), dim=-1)
-        return self.sample(Normal, wh/2., wh/4., name=self.name)
+        return self.sample(MultivariateNormal, loc=wh/2.,
+                           covariance_matrix=torch.eye(2) * wh/4.,
+                           name=self.name)
 
 class AnnealingProposal(inference.Inference):
     def __init__(self, target, annealing_steps):
