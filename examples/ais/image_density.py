@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import torch
-from torch.distributions import Normal
+from torch.distributions import Uniform
 import numpy
 
 import combinators.inference as inference
@@ -36,11 +36,12 @@ def bilinearInterpolation(im, x, y):
 
     return Ia*wa + Ib*wb + Ic*wc + Id*wd
 
-<<<<<<< HEAD
 class ImageProposal(model.Primitive):
-    def _forward(self, *args, **kwargs):
-        return self.sample(Normal, torch.zeros(*self.batch_shape, 2),
-                           torch.ones(*self.batch_shape, 2), name=self.name)
+    def _forward(self, *args, data={}):
+        width = torch.ones(*self.batch_shape) * data['image'].shape[1]
+        height = torch.ones(*self.batch_shape) * data['image'].shape[0]
+        return self.sample(Uniform, torch.zeros(*self.batch_shape, 2),
+                           torch.stack((width, height), dim=-1), name=self.name)
 
 class AnnealingProposal(inference.Inference):
     def __init__(self, target, annealing_steps):
@@ -65,16 +66,18 @@ class AnnealingProposal(inference.Inference):
 
 class ProbtorchLogoDensity(model.Primitive):
     def _forward(self, coords, beta, data={}):
-        grid_density = -(data['image'] - 255).t()
+        grid_density = (1.0 - data['image']/255)
         density = bilinearInterpolation(grid_density, coords[:, 0],
                                         coords[:, 1])
-        self.factor(density * beta, name='image')
+        self.factor((density + 1e-6).log() * beta, name='image')
+
+        return coords
 
 if __name__ == '__main__':
-    from scipy.misc import imread 
+    from scipy.misc import imread
     from scipy.ndimage.filters import gaussian_filter
     import matplotlib.pyplot as plt
-    
+
     img_ary = imread('probtorch-logo-bw.png', mode='L')
     img_ary = gaussian_filter(img_ary, sigma=0.1)
     grid_density = torch.FloatTensor(1 - img_ary/255)
