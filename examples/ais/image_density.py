@@ -64,7 +64,7 @@ class AnnealingProposal(inference.Inference):
         return f(AnnealingProposal(self.target.walk(f), self._annealing_steps))
 
     def forward(self, *args, t=0, **kwargs):
-        beta = torch.linspace(0, 1, self._annealing_steps)[t]
+        beta = torch.linspace(1e-6, 1, self._annealing_steps)[t]
 
         zs, xi, log_weight = self.target(*args, **kwargs)
         xi[self.target.name].factor(log_weight * (1 - beta),
