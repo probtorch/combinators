@@ -15,6 +15,9 @@ from torch.nn.functional import logsigmoid, log_softmax
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def is_number(tensor):
+    return not torch.isnan(tensor).any() and not torch.isinf(tensor).any()
+
 def reused_variable(v):
     return isinstance(v, probtorch.RandomVariable) and\
            v.provenance == probtorch.stochastic.Provenance.REUSED
