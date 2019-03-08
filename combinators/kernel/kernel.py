@@ -70,3 +70,23 @@ class GaussianKernel(TransitionKernel):
         q[self._var] = RandomVariable(var.dist, val, var.provenance, var.mask)
         xiq = xi.graft(self._model, q)
         return xiq, xiq.log_joint()
+
+class LinScaledGaussianKernel(GaussianKernel):
+    def __init__(self, model, var, scale=1.0, n_steps=1):
+        super(LinScaledGaussianKernel, self).__init__(model, var, scale=scale)
+        self._n_steps = n_steps
+        self._init_scale = scale
+
+    def cond(self, qs):
+        return LinScaledGaussianKernel(self._model, self._var, self._scale, self._maxT)
+
+    def walk(self, f):
+        return f(self)
+
+    @property
+    def name(self):
+        return 'LinScaledGaussianKernel'
+
+    def forward(self, zs, xi, log_weight, *args, **kwargs):
+        self._scale = self._init_scale*max([1-(kwargs['t']/self._n_steps), 0.1])
+        return super(LinScaledGaussianKernel, self).forward(zs, xi, log_weight, *args, **kwargs)
