@@ -79,7 +79,8 @@ class LinScaledGaussianKernel(GaussianKernel):
         self._init_scale = scale
 
     def cond(self, qs):
-        return LinScaledGaussianKernel(self._model, self._var, self._scale, self._maxT)
+        return LinScaledGaussianKernel(self._model, self._var, self._scale,
+                                       self._n_steps)
 
     def walk(self, f):
         return f(self)
