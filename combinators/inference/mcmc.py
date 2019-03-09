@@ -79,17 +79,21 @@ class MetropolisHastings(Inference):
                                             **kwargs)
             if not self._count_target:
                 kwargs.pop('t')
-            zsp, xip, log_w = importance.conditioned_evaluate(self.target, xiq,
-                                                              *args, **kwargs)
-            if not multiple_zs:
-                zsp = (zsp,)
-            log_transition = self.kernel.log_transition_prob(xi, xip)
-            log_reverse_transition = self.kernel.log_transition_prob(xip, xi)
-            log_w = log_weight_q + log_w
-            log_alpha = utils.batch_marginalize(torch.min(
-                torch.zeros(self.batch_shape),
-                (log_w + log_reverse_transition) - (log_weight + log_transition)
-            ))
+            try:
+                zsp, xip, log_w = importance.conditioned_evaluate(self.target, xiq,
+                                                                  *args, **kwargs)
+                if not multiple_zs:
+                    zsp = (zsp,)
+                log_transition = self.kernel.log_transition_prob(xi, xip)
+                log_reverse_transition = self.kernel.log_transition_prob(xip, xi)
+                log_w = log_weight_q + log_w
+                log_alpha = utils.batch_marginalize(torch.min(
+                    torch.zeros(self.batch_shape),
+                    (log_w + log_reverse_transition) - (log_weight + log_transition)
+                ))
+            except ValueError as err:
+                if 'NaN' in str(err):
+                    log_alpha = torch.Tensor([float('nan')])
             if utils.is_number(log_alpha) and\
                (torch.bernoulli(log_alpha.exp()) == 1).all():
                 zs = zsp
