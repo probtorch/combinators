@@ -110,6 +110,14 @@ class Primitive(Model):
                 break
         return self.sample(Dist, *args, name=name, value=value, **kwargs)
 
+    def param_observe(self, Dist, name, value):
+        params = self.args_vardict()[name]
+        for arg, val in params.items():
+            matches = [k for k in utils.PARAM_TRANSFORMS if k in arg]
+            if matches:
+                params[arg] = utils.PARAM_TRANSFORMS[matches[0]](val)
+        return self.observe(name, value, Dist, **params)
+
     def factor(self, log_prob, name=None):
         assert name not in self.q or isinstance(self.q[name], probtorch.Factor)
         return self.p.factor(log_prob, name=name)
