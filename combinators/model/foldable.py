@@ -7,7 +7,6 @@ import torch
 from .. import graphs
 from .model import Model
 from ..sampler import Sampler
-from .. import utils
 
 class Step(Model):
     def __init__(self, operator, initializer=None, iteration=0, qs=None,
