@@ -101,11 +101,11 @@ class Primitive(Model):
     def observe(self, name, value, Dist, *args, **kwargs):
         assert name not in self.q or self.q[name].observed
         for arg in args:
-            if isinstance(arg, torch.Tensor):
+            if isinstance(arg, torch.Tensor) and value is not None:
                 value = value.to(device=arg.device)
                 break
         for kwarg in kwargs.values():
-            if isinstance(kwarg, torch.Tensor):
+            if isinstance(kwarg, torch.Tensor) and value is not None:
                 value = value.to(device=kwarg.device)
                 break
         return self.sample(Dist, *args, name=name, value=value, **kwargs)
