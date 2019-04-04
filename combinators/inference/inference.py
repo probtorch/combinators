@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from contextlib import contextmanager
 from probtorch.util import log_mean_exp
 
 from ..sampler import Sampler
@@ -23,6 +24,11 @@ class Inference(Sampler):
 
     def walk(self, f):
         raise NotImplementedError()
+
+    @contextmanager
+    def cond(self, qs):
+        with self.target.cond(qs) as target:
+            yield self
 
 class Population(Inference):
     def __init__(self, target, batch_shape, before=True):
@@ -54,10 +60,6 @@ class Population(Inference):
     def walk(self, f):
         return f(Population(self.target.walk(f), batch_shape=self._batch_shape,
                             before=self.before))
-
-    def cond(self, qs):
-        return Population(self.target.cond(qs), batch_shape=self._batch_shape,
-                          before=self.before)
 
 def populate(target, batch_shape, before=True):
     return Population(target, batch_shape, before=before)
@@ -92,9 +94,6 @@ class Marginal(Inference):
 
     def walk(self, f):
         return f(Marginal(self.target.walk(f), dims=self._dims))
-
-    def cond(self, qs):
-        return Marginal(self.target.cond(qs), dims=self._dims)
 
 def marginalize(target, dims=(0,)):
     return Marginal(target, dims=dims)
