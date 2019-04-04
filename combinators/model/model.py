@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from contextlib import contextmanager
 import torch
 
 import probtorch
@@ -42,8 +43,9 @@ class Deterministic(Model):
         empty_graph = graphs.ComputationGraph(traces={self.name: probtorch.Trace()})
         return self._args, empty_graph, torch.zeros(self.batch_shape)
 
+    @contextmanager
     def cond(self, qs):
-        return Deterministic(*self._args)
+        yield self
 
     def walk(self, f):
         return f(self)
@@ -119,10 +121,14 @@ class Primitive(Model):
     def walk(self, f):
         return f(self)
 
+    @contextmanager
     def cond(self, qs):
-        return self.__class__(*self.arguments, params=self.args_vardict(False),
-                              trainable=self._hyperparams_trainable,
-                              batch_shape=self.batch_shape, q=qs[self.name])
+        q = self.q
+        try:
+            self.q = qs[self.name]
+            yield self
+        finally:
+            self.q = q
 
     def forward(self, *args, **kwargs):
         self.p = probtorch.Trace()
@@ -173,10 +179,11 @@ class Compose(Model):
         xi.insert(self.name, xi_f)
         return zf, xi, w_g + w_f
 
+    @contextmanager
     def cond(self, qs):
-        fq = self.f.cond(qs[self.name:])
-        gq = self.g.cond(qs[self.name:])
-        return Compose(fq, gq, self._kw)
+        with self.f.cond(qs[self.name:]) as fq:
+            with self.g.cond(qs[self.name:]) as gq:
+                yield self
 
     def walk(self, f):
         walk_f = self.f.walk(f)
@@ -207,9 +214,10 @@ class Partial(Model):
         return f(Partial(walk_curried, *self._curry_arguments,
                          **self._curry_kwargs))
 
+    @contextmanager
     def cond(self, qs):
-        curried_q = self.curried.cond(qs[self.name + '/' + self.curried.name:])
-        return Partial(curried_q, *self._curry_arguments, **self._curry_kwargs)
+        with self.curried.cond(qs[self.name + '/' + self.curried.name:]) as cq:
+            yield self
 
 def partial(func, *arguments, **keywords):
     return Partial(func, *arguments, **keywords)
@@ -241,9 +249,10 @@ class MapIid(Model):
     def walk(self, f):
         return f(MapIid(self.func.walk(f)))
 
+    @contextmanager
     def cond(self, qs):
-        funcq = self.func.cond(qs['/' + self.func.name:])
-        return MapIid(funcq)
+        with self.func.cond(qs['/' + self.func.name:]) as funcq:
+            yield self
 
 def map_iid(func):
     return MapIid(func)

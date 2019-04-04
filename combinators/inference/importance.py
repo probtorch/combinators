@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import collections
+from contextlib import contextmanager
 import logging
 
 from probtorch.stochastic import RandomVariable
@@ -29,7 +29,8 @@ def conditioning_factor(dest, src, batch_shape):
     return log_omega_q
 
 def conditioned_evaluate(target, xiq, *args, **kwargs):
-    zs, xi, log_w = target.cond(xiq)(*args, **kwargs)
+    with target.cond(xiq) as targetq:
+        zs, xi, log_w = targetq(*args, **kwargs)
     log_omega_q = conditioning_factor(xi, xiq, target.batch_shape)
     return zs, xi, log_w - log_omega_q
 
@@ -48,8 +49,10 @@ class Propose(inference.Inference):
     def walk(self, f):
         return f(Propose(self.target.walk(f), self.proposal))
 
+    @contextmanager
     def cond(self, qs):
-        return Propose(self.target, self.proposal.cond(qs))
+        with self.proposal.cond(qs) as proposal:
+            yield self
 
 def propose(target, proposal):
     return Propose(target, proposal)
@@ -96,9 +99,6 @@ class Importance(inference.Inference):
     def walk(self, f):
         return f(Importance(self.target.walk(f)))
 
-    def cond(self, qs):
-        return Importance(self.target.cond(qs))
-
 def importance(target):
     return Importance(target)
 
@@ -128,9 +128,6 @@ class Resample(inference.Inference):
 
     def walk(self, f):
         return f(Resample(self.target.walk(f)))
-
-    def cond(self, qs):
-        return Resample(self.target.cond(qs))
 
 def resample(target):
     return Resample(target)

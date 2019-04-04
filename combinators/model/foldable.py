@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from contextlib import contextmanager
 import probtorch
 import torch
 
@@ -68,9 +69,14 @@ class Step(Model):
         return f(Step(self.operator.walk(f), initializer, walker=f,
                       **self._kwargs))
 
+    @contextmanager
     def cond(self, qs):
-        return Step(self.operator, self._initializer, self._iteration, qs,
-                    walker=self._walker, **self._kwargs)
+        original_qs = self._qs
+        try:
+            self._qs = qs
+            yield self
+        finally:
+            self._qs = original_qs
 
 def step(operator, initializer=None, qs=None, **kwargs):
     return Step(operator, initializer=initializer, qs=qs, **kwargs)
@@ -106,9 +112,10 @@ class Reduce(Model):
     def walk(self, f):
         return f(Reduce(self.folder.walk(f), self._generator))
 
+    @contextmanager
     def cond(self, qs):
-        qs_folder = qs[self.name:]
-        return Reduce(self.folder.cond(qs_folder), self._generator)
+        with self.folder.cond(qs[self.name:]) as folder_qs:
+            yield self
 
 def reduce(folder, generator):
     return Reduce(folder, generator)
