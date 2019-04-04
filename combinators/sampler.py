@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import collections
+from contextlib import contextmanager
 
 from probtorch.stochastic import Provenance
 import torch
@@ -26,13 +27,15 @@ class Sampler(nn.Module):
     def walk(self, f):
         raise NotImplementedError()
 
+    @contextmanager
     def cond(self, qs):
         raise NotImplementedError()
 
+    @contextmanager
     def rescore(self, qs):
         for (_, v) in qs.variables():
             v._provenance = Provenance.RESCORE
-        return self.cond(qs)
+        yield self.cond(qs)
 
     @property
     def _expander(self):
