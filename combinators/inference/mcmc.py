@@ -45,10 +45,6 @@ class Move(Inference):
         return f(Move(self.target.walk(f), self.kernel, self._moves,
                       self._count_target))
 
-    def cond(self, qs):
-        return Move(self.target.cond(qs), self.kernel, self._moves,
-                    self._count_target)
-
 class MetropolisHastings(Inference):
     def __init__(self, target, kernel, moves=1, count_target=False):
         super(MetropolisHastings, self).__init__(target)
@@ -61,10 +57,6 @@ class MetropolisHastings(Inference):
         return f(MetropolisHastings(self.target.walk(f), self.kernel,
                                     self._moves, self._count_target))
 
-    def cond(self, qs):
-        return MetropolisHastings(self.target.cond(qs), self.kernel,
-                                  self._moves, self._count_target)
-
     def forward(self, *args, **kwargs):
         zs, xi, log_weight = self.target(*args, **kwargs)
         multiple_zs = isinstance(zs, tuple)
@@ -73,7 +65,8 @@ class MetropolisHastings(Inference):
 
         for t in range(self._moves):
             # Rescore the current trace under any change of target based on t.
-            _, xi, log_weight = self.target.rescore(xi)(*args, **kwargs)
+            with self.target.rescore(xi) as rescorer:
+                _, xi, log_weight = rescorer(*args, **kwargs)
             kwargs['t'] = t
             xiq, log_weight_q = self.kernel(zs, xi, log_weight, *args,
                                             **kwargs)
