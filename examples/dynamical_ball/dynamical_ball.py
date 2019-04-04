@@ -108,11 +108,6 @@ class StepBallGuide(combinators.model.Primitive):
     def name(self):
         return 'StepBallDynamics'
 
-    def cond(self, qs):
-        return StepBallGuide(self._num_steps, self.args_vardict(False),
-                             self._hyperparams_trainable, self.batch_shape,
-                             qs[self.name])
-
     def _forward(self, theta, t, data={}):
         velocities = self.args_vardict()['velocities']
 
