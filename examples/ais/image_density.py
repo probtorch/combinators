@@ -57,9 +57,6 @@ class AnnealingProposal(inference.Inference):
         super(AnnealingProposal, self).__init__(target)
         self._annealing_steps = annealing_steps
 
-    def cond(self, qs):
-        return AnnealingProposal(self.target.cond(qs), self._annealing_steps)
-
     def walk(self, f):
         return f(AnnealingProposal(self.target.walk(f), self._annealing_steps))
 
