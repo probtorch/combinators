@@ -87,13 +87,6 @@ class ProposalStep(model.Primitive):
             return self._name
         return super(ProposalStep, self).name
 
-    def cond(self, qs):
-        result = ProposalStep(name=self.name, params=self.args_vardict(False),
-                              trainable=self._hyperparams_trainable,
-                              batch_shape=self.batch_shape, q=qs[self.name])
-        result.direction_predictor = self.direction_predictor
-        return result
-
     def _forward(self, theta, t, data={}):
         position, _, transition, dir_locs, dir_covs = theta
         directions = {
