@@ -53,55 +53,6 @@ class CartpoleStep(model.Primitive):
 
         return state
 
-class MountainCarStep(model.Primitive):
-    def __init__(self, *args, **kwargs):
-        self._state_dim = kwargs.pop('state_dim', 2)
-        self._action_dim = kwargs.pop('action_dim', 1)
-        self._observation_dim = kwargs.pop('observation_dim', 2)
-        if 'params' not in kwargs:
-            kwargs['params'] = {
-                'next_state': {
-                    'loc': torch.zeros(self._observation_dim),
-                    'scale': torch.ones(self._observation_dim),
-                },
-                'control': {
-                    'loc': torch.zeros(self._action_dim),
-                    'scale': torch.ones(self._action_dim),
-                },
-                'observation_noise': {
-                    'loc': torch.ones(self._observation_dim) * 1e-4,
-                    'scale': torch.ones(self._observation_dim),
-                },
-            }
-            kwargs['params']['next_state']['loc'][0] = 0.45
-            kwargs['params']['next_state']['scale'][0] = 0.045
-            kwargs['params']['next_state']['scale'][1] = 0.14 / 3
-        super(MountainCarStep, self).__init__(*args, **kwargs)
-
-    def _forward(self, theta, t, env=None):
-        control = self.param_sample(Normal, name='control').expand(
-            *self.batch_shape, 1
-        )
-        state = self.param_sample(Normal, 'next_state')
-
-        if isinstance(control, torch.Tensor):
-            action = control[0].cpu().detach().numpy()
-        else:
-            action = control
-        observation, _, done, _ = env.retrieve_step(t, action,
-                                                    override_done=True)
-        if observation is not None and not done:
-            observation = torch.Tensor(observation).to(state.device).expand(
-                self.batch_shape + observation.shape
-            )
-        else:
-            observation = None
-        observation_noise = self.param_sample(Normal, 'observation_noise')
-        state = self.observe('observation', observation, Normal, state,
-                             softplus(observation_noise))
-
-        return state
-
 class GenerativeStep(model.Primitive):
     def __init__(self, *args, **kwargs):
         self._state_dim = kwargs.pop('state_dim', 2)
@@ -310,3 +261,11 @@ class RecognitionStep(model.Primitive):
         self.sample(Normal, state_uncertainty[:, :, 0],
                     softplus(state_uncertainty[:, :, 1]),
                     name='state_uncertainty')
+
+class MountainCarStep(GenerativeStep):
+    def __init__(self, *args, **kwargs):
+        kwargs['discrete_actions'] = False
+        kwargs['observation_dim'] = 2
+        super(MountainCarStep, self).__init__(*args, **kwargs)
+        self.goal__loc = torch.tensor([0.45, 0], requires_grad=True)
+        self.goal__scale = torch.tensor([0.045, 1], requires_grad=True)
