@@ -11,48 +11,6 @@ from torch.nn.functional import softplus
 
 import combinators.model as model
 
-class CartpoleStep(model.Primitive):
-    def __init__(self, *args, **kwargs):
-        self._state_dim = kwargs.pop('state_dim', 4)
-        self._action_dim = kwargs.pop('action_dim', 2)
-        self._observation_dim = kwargs.pop('observation_dim', 4)
-        if 'params' not in kwargs:
-            kwargs['params'] = {
-                'next_state': {
-                    'loc': torch.zeros(self._observation_dim),
-                    'scale': torch.ones(self._observation_dim),
-                },
-                'control': {
-                    'probs': torch.ones(self._action_dim),
-                },
-                'observation_noise': {
-                    'loc': torch.ones(self._observation_dim),
-                    'scale': torch.ones(self._observation_dim),
-                },
-            }
-            kwargs['params']['next_state']['scale'][0] = 2.4 / 2
-            kwargs['params']['next_state']['scale'][2] = np.pi / (15 * 2)
-        super(CartpoleStep, self).__init__(*args, **kwargs)
-
-    def _forward(self, theta, t, env=None):
-        prev_state = theta
-
-        control = self.param_sample(OneHotCategorical, name='control')
-        state = self.param_sample(Normal, name='next_state')
-
-        observation, _, _, _ = env.retrieve_step(
-            t + 1, control.argmax(dim=-1)[0].item(), override_done=True
-        )
-        if observation is not None:
-            observation = torch.Tensor(observation).to(state.device).expand(
-                self.batch_shape + observation.shape
-            )
-        observation_noise = self.param_sample(Normal, 'observation_noise')
-        state = self.observe('observation_%d' % (t+1), observation, Normal,
-                             state, softplus(observation_noise))
-
-        return state
-
 class GenerativeStep(model.Primitive):
     def __init__(self, *args, **kwargs):
         self._state_dim = kwargs.pop('state_dim', 2)
@@ -269,3 +227,12 @@ class MountainCarStep(GenerativeStep):
         super(MountainCarStep, self).__init__(*args, **kwargs)
         self.goal__loc = torch.tensor([0.45, 0], requires_grad=True)
         self.goal__scale = torch.tensor([0.045, 1], requires_grad=True)
+
+class CartpoleStep(GenerativeStep):
+    def __init__(self, *args, **kwargs):
+        kwargs['discrete_actions'] = True
+        kwargs['observation_dim'] = 4
+        super(CartpoleStep, self).__init__(*args, **kwargs)
+        self.goal__loc = torch.tensor([2.4 / 2, 0, 0, 0], requires_grad=True)
+        self.goal__scale = torch.tensor([1, 1, np.pi / (15 * 2), 1],
+                                        requires_grad=True)
