@@ -237,3 +237,19 @@ class CartpoleStep(GenerativeStep):
         self.goal__loc = torch.tensor([2.4 / 2, 0, 0, 0], requires_grad=True)
         self.goal__scale = torch.tensor([1, 1, np.pi / (15 * 2), 1],
                                         requires_grad=True)
+
+class BipedalWalkerStep(GenerativeStep):
+    def __init__(self, *args, **kwargs):
+        kwargs['discrete_actions'] = False
+        kwargs['observation_dim'] = 24
+        kwargs['action_dim'] = 4
+        super(BipedalWalkerStep, self).__init__(*args, **kwargs)
+        self.goal__loc = torch.cat(
+            (torch.zeros(2), torch.ones(1), torch.zeros(4), torch.ones(1),
+             torch.zeros(4), torch.ones(1), torch.zeros(11)),
+            dim=0
+        )
+        self.goal__scale = torch.cat(
+            (torch.ones(2) * 10, torch.ones(1) * 0.25, torch.ones(21) * 10),
+            dim=0
+        )
