@@ -56,8 +56,10 @@ def batch_sum(tensor):
     batch_tensor, _ = batch_collapse(tensor, tensor.shape)
     return batch_tensor.sum(dim=0)
 
-def batch_mean(tensor):
-    batch_tensor, _ = batch_collapse(tensor, tensor.shape)
+def batch_mean(tensor, batch_shape=None):
+    if not batch_shape:
+        batch_shape = tensor.shape
+    batch_tensor, _ = batch_collapse(tensor, batch_shape)
     return batch_tensor.mean(dim=0)
 
 def batch_marginalize(tensor):

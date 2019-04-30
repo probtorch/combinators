@@ -101,14 +101,22 @@ class Primitive(Model):
     def observe(self, name, value, Dist, *args, **kwargs):
         assert name not in self.q or self.q[name].observed
         for arg in args:
-            if isinstance(arg, torch.Tensor):
+            if isinstance(arg, torch.Tensor) and value is not None:
                 value = value.to(device=arg.device)
                 break
         for kwarg in kwargs.values():
-            if isinstance(kwarg, torch.Tensor):
+            if isinstance(kwarg, torch.Tensor) and value is not None:
                 value = value.to(device=kwarg.device)
                 break
         return self.sample(Dist, *args, name=name, value=value, **kwargs)
+
+    def param_observe(self, Dist, name, value):
+        params = self.args_vardict()[name]
+        for arg, val in params.items():
+            matches = [k for k in utils.PARAM_TRANSFORMS if k in arg]
+            if matches:
+                params[arg] = utils.PARAM_TRANSFORMS[matches[0]](val)
+        return self.observe(name, value, Dist, **params)
 
     def factor(self, log_prob, name=None):
         assert name not in self.q or isinstance(self.q[name], probtorch.Factor)
