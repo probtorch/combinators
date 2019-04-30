@@ -35,7 +35,8 @@ class Sampler(nn.Module):
     def rescore(self, qs):
         for (_, v) in qs.variables():
             v._provenance = Provenance.RESCORE
-        yield self.cond(qs)
+        with self.cond(qs) as _:
+            yield self
 
     @property
     def _expander(self):
