@@ -66,14 +66,14 @@ class AiGymEnv:
         return (None, None, self._observations[-1][2], None)
 
 def active_inference_episode(agent, env, episode_length=10, dream=True,
-                             render=False):
+                             render=False, finish=False):
     last_iteration = episode_length
     t = 0
     theta = None
     graph = graphs.ComputationGraph()
 
     episode_log_weight = torch.zeros(*agent.batch_shape)
-    while t < episode_length:
+    while t < episode_length and not (env.done and finish):
         if render:
             env.render()
         theta, step_graph, step_log_weight = agent(theta, t, env=env)
@@ -158,7 +158,8 @@ def active_inference_test(agent, env_name, use_cuda=True, iterations=200,
         focus = 1
         while not env.done and focus < iterations:
             zs, log_weight, _, egraph = active_inference_episode(
-                agent, env, episode_length=iterations, dream=True, render=False
+                agent, env, episode_length=iterations, dream=True, render=False,
+                finish=True
             )
 
             elbo = importance.elbo(log_weight, iwae_objective=False,
@@ -170,7 +171,8 @@ def active_inference_test(agent, env_name, use_cuda=True, iterations=200,
             env.render()
     else:
         zs, log_weight, _, egraph = active_inference_episode(
-            agent, env, episode_length=iterations, dream=False, render=True
+            agent, env, episode_length=iterations, dream=False, render=True,
+            finish=True
         )
 
     graph.insert('0', egraph)
