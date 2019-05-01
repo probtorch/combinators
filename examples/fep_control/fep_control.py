@@ -200,16 +200,10 @@ class RecognitionStep(model.Primitive):
             action = control[0].cpu().detach().numpy()
         else:
             action = control
-        observation, _, done, _ = env.retrieve_step(t, action,
-                                                    override_done=True)
-        if observation is not None and not done:
-            observation = torch.Tensor(observation).to(control.device).expand(
-                self.batch_shape + observation.shape
-            )
-        else:
-            observation = torch.zeros(
-                self.batch_shape + (self._observation_dim,)
-            ).to(control.device)
+        observation, _, _, _ = env.retrieve_step(t, action, override_done=True)
+        observation = torch.Tensor(observation).to(control.device).expand(
+            self.batch_shape + observation.shape
+        )
 
         if theta is not None:
             state_uncertainty = self.encode_uncertainty(
