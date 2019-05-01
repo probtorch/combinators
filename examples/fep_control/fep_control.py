@@ -227,6 +227,7 @@ class RecognitionStep(model.Primitive):
 class MountainCarStep(GenerativeStep):
     def __init__(self, *args, **kwargs):
         kwargs['discrete_actions'] = False
+        kwargs['action_dim'] = 1
         kwargs['observation_dim'] = 2
         super(MountainCarStep, self).__init__(*args, **kwargs)
         self.goal__loc = torch.tensor([0.45, 0], requires_grad=True)
