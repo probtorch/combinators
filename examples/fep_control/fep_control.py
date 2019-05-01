@@ -73,23 +73,24 @@ class GenerativeStep(model.Primitive):
 
     def _forward(self, theta, t, env=None):
         if theta is None:
-            prev_state = self.param_sample(Normal, 'state_0')
-            prev_control = self.param_sample(Normal, 'control_0')
+            state = self.param_sample(Normal, 'state_0')
+            control = self.param_sample(Normal, 'control_0')
         else:
             prev_state, prev_control = theta
-        state_uncertainty = self.param_sample(MultivariateNormal,
-                                              name='state_uncertainty')
+            state_uncertainty = self.param_sample(MultivariateNormal,
+                                                  name='state_uncertainty')
 
-        if self._discrete_actions:
-            control = self.param_sample(OneHotCategorical, name='control')
-        else:
-            control = prev_control + self.param_sample(Normal, name='control')
-            control = control.expand(*self.batch_shape, self._action_dim)
+            if self._discrete_actions:
+                control = self.param_sample(OneHotCategorical, name='control')
+            else:
+                control = prev_control + self.param_sample(Normal,
+                                                           name='control')
+                control = control.expand(*self.batch_shape, self._action_dim)
 
-        state = self.state_transition(torch.cat(
-            (prev_state, prev_control, control), dim=-1
-        ))
-        state = state + state_uncertainty
+            state = self.state_transition(torch.cat(
+                (prev_state, prev_control, control), dim=-1
+            ))
+            state = state + state_uncertainty
 
         if isinstance(control, torch.Tensor):
             action = control[0].cpu().detach().numpy()
