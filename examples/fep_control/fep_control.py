@@ -98,27 +98,22 @@ class GenerativeStep(model.Primitive):
             action = control
         observation, _, done, _ = env.retrieve_step(t, action,
                                                     override_done=True)
-        if done:
-            _, _, prev_done, _ = env.retrieve_step(t-1, None)
-            finished = done and not prev_done
-        else:
-            finished = False
-        if observation is not None and not done:
+        if observation is not None:
             observation = torch.Tensor(observation).to(state.device).expand(
                 self.batch_shape + observation.shape
             )
         else:
             observation = None
 
-        if not done or finished:
-            prediction = self.predict_observation(state)
-            observation_noise = self.param_sample(Normal,
-                                                  name='observation_noise')
-            observation_scale = LowerCholeskyTransform()(observation_noise)
-            self.observe('observation', observation, MultivariateNormal,
-                         prediction, scale_tril=observation_scale)
+        prediction = self.predict_observation(state)
+        observation_noise = self.param_sample(Normal,
+                                              name='observation_noise')
+        observation_scale = LowerCholeskyTransform()(observation_noise)
+        self.observe('observation', observation, MultivariateNormal,
+                     prediction, scale_tril=observation_scale)
+        if not done:
             self.observe('goal', prediction, Normal, self.goal__loc,
-                         softplus(self.goal__scale))
+                         self.goal__scale)
 
         return state, control
 
