@@ -183,23 +183,23 @@ class RecognitionStep(model.Primitive):
 
     def _forward(self, theta, t, env=None):
         if theta is None:
-            prev_state = self.param_sample(Normal, 'state_0')
-            prev_control = self.param_sample(Normal, 'control_0')
+            self.param_sample(Normal, 'state_0')
+            control = self.param_sample(Normal, 'control_0')
         else:
             prev_state, prev_control = theta
-        self.param_sample(Normal, name='observation_noise')
+            self.param_sample(Normal, name='observation_noise')
 
-        control = self.decode_policy(
-            torch.cat((prev_state, prev_control), dim=-1)
-        )
-        if self._discrete_actions:
-            control = self.sample(OneHotCategorical, probs=control,
-                                  name='control')
-        else:
-            control = control.reshape(-1, self._action_dim, 2)
-            control = prev_control + self.sample(Normal, control[:, :, 0],
-                                                 softplus(control[:, :, 1]),
-                                                 name='control')
+            control = self.decode_policy(
+                torch.cat((prev_state, prev_control), dim=-1)
+            )
+            if self._discrete_actions:
+                control = self.sample(OneHotCategorical, probs=control,
+                                      name='control')
+            else:
+                control = control.reshape(-1, self._action_dim, 2)
+                control = prev_control + self.sample(Normal, control[:, :, 0],
+                                                     softplus(control[:, :, 1]),
+                                                     name='control')
 
         if isinstance(control, torch.Tensor):
             action = control[0].cpu().detach().numpy()
@@ -215,12 +215,14 @@ class RecognitionStep(model.Primitive):
             observation = torch.zeros(
                 self.batch_shape + (self._observation_dim,)
             ).to(control.device)
-        state_uncertainty = self.encode_uncertainty(
-            torch.cat((prev_state, observation, control), dim=-1)
-        ).reshape(-1, self._state_dim, 2)
-        self.sample(Normal, state_uncertainty[:, :, 0],
-                    softplus(state_uncertainty[:, :, 1]),
-                    name='state_uncertainty')
+
+        if theta is not None:
+            state_uncertainty = self.encode_uncertainty(
+                torch.cat((prev_state, observation, control), dim=-1)
+            ).reshape(-1, self._state_dim, 2)
+            self.sample(Normal, state_uncertainty[:, :, 0],
+                        softplus(state_uncertainty[:, :, 1]),
+                        name='state_uncertainty')
 
 class MountainCarStep(GenerativeStep):
     def __init__(self, *args, **kwargs):
