@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
 import torch
+from torch.distributions import Bernoulli
 
 from .inference import Inference
 from . import importance
 from ..kernel.kernel import TransitionKernel
 from ..kernel import mh
 from ..model import foldable
+from .. import graphs
 from .. import utils
 
 class Move(Inference):
@@ -73,25 +75,30 @@ class MetropolisHastings(Inference):
             if not self._count_target:
                 kwargs.pop('t')
             try:
-                zsp, xip, log_w = importance.conditioned_evaluate(self.target, xiq,
-                                                                  *args, **kwargs)
+                zsp, xip, log_w = importance.conditioned_evaluate(self.target,
+                                                                  xiq, *args,
+                                                                  **kwargs)
                 if not multiple_zs:
                     zsp = (zsp,)
                 log_transition = self.kernel.log_transition_prob(xi, xip)
-                log_reverse_transition = self.kernel.log_transition_prob(xip, xi)
+                log_reverse_transition = self.kernel.log_transition_prob(xip,
+                                                                         xi)
                 log_w = log_weight_q + log_w
-                log_alpha = utils.batch_marginalize(torch.min(
-                    torch.zeros(self.batch_shape),
-                    (log_w + log_reverse_transition) - (log_weight + log_transition)
-                ))
+                log_alpha = torch.min(torch.zeros(self.batch_shape),
+                                      (log_w + log_reverse_transition) -\
+                                      (log_weight + log_transition))
             except ValueError as err:
                 if 'NaN' in str(err):
                     log_alpha = torch.Tensor([float('nan')])
-            if utils.is_number(log_alpha) and\
-               (torch.bernoulli(log_alpha.exp()) == 1).all():
-                zs = zsp
-                xi = xip
-                log_weight = log_w
+            if utils.is_number(log_alpha):
+                acceptance = Bernoulli(logits=log_alpha).sample().to(
+                    dtype=torch.long
+                )
+                zs = [utils.batch_where(acceptance, zx, zy, self.batch_shape)
+                      for (zx, zy) in zip(zsp, zs)]
+                xi = graphs.graph_where(acceptance, xip, xi, self.batch_shape)
+                log_weight = utils.batch_where(acceptance, log_w, log_weight,
+                                               self.batch_shape)
 
         if not multiple_zs:
             zs = zs[0]
