@@ -68,7 +68,9 @@ class GaussianKernel(TransitionKernel):
         q = utils.slice_trace(xi[self._model], self._var)
         var = xi[self._model][self._var]
         val = torch.normal(var.value, torch.ones(var.value.shape) * self._scale)
-        q[self._var] = RandomVariable(var.dist, val, var.provenance, var.mask)
+        q[self._var] = RandomVariable(var.Dist, val, *var.dist_args,
+                                      provenance=var.provenance, mask=var.mask,
+                                      **var.dist_kwargs)
         xiq = xi.graft(self._model, q)
         return xiq, xiq.log_joint()
 
