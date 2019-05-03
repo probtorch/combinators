@@ -15,6 +15,12 @@ from torch.nn.functional import logsigmoid, log_softmax
 
 EMPTY_TRACE = collections.defaultdict(lambda: None)
 
+def batch_where(condition, yes, no, batch_shape):
+    yes, unique = batch_collapse(yes, batch_shape)
+    no, _ = batch_collapse(no, batch_shape)
+    ite = particle_index(torch.stack((no, yes), dim=1), condition)
+    return ite.reshape(batch_shape + unique)
+
 def is_number(tensor):
     return not torch.isnan(tensor).any() and not torch.isinf(tensor).any()
 
