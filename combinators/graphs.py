@@ -127,6 +127,14 @@ class ComputationGraph:
         for k, v in other.items():
             self[prefix + '/' + k] = v
 
+    def prefixed_nodes(self, prefix=pygtrie._SENTINEL,
+                       predicate=lambda k, v: True):
+        for tname, trace in self._trie.iteritems(prefix=prefix):
+            for k in trace:
+                v = trace[k]
+                if predicate(k, v):
+                    yield (tname, k, v)
+
     def nodes(self, prefix=pygtrie._SENTINEL, predicate=lambda k, v: True):
         for _, trace in self._trie.iteritems(prefix=prefix):
             for k in trace:
@@ -195,3 +203,32 @@ class ComputationGraph:
                 blanket.add(k)
 
         return blanket
+
+def graph_where(condition, gx, gy, batch_shape):
+    result = ComputationGraph()
+    for tname, name, node in gx.prefixed_nodes():
+        if tname not in result:
+            result[tname] = probtorch.Trace()
+        trace = result[tname]
+        if isinstance(node, probtorch.Factor):
+            log_prob = utils.batch_where(condition, node.log_prob,
+                                         gy[tname][name].log_prob, batch_shape)
+            trace.factor(log_prob, name=name)
+        elif isinstance(node, probtorch.stochastic.Loss):
+            value = utils.batch_where(condition, node.value, gy[tname][name].value,
+                                      batch_shape)
+            target = utils.batch_where(condition, node.target, gy[tname][name].target,
+                                       batch_shape)
+            trace.loss(node._loss, value, target, name=name)
+        elif isinstance(node, probtorch.RandomVariable):
+            dist_args = [utils.batch_where(condition, dax, day, batch_shape) for
+                         (dax, day) in zip(node.dist_args, gy[tname][name].dist_args)]
+            dist_kwargs = {k: utils.batch_where(condition, vx,
+                                                gy[tname][name].dist_kwargs[k],
+                                                batch_shape)
+                              for (k, v) in node.dist_kwargs.items()}
+            value = utils.batch_where(condition, node.value,
+                                      gy[tname][name].value, batch_shape)
+            trace.variable(node.Dist, *dist_args, **dist_kwargs, name=name,
+                           value=value)
+    return result
