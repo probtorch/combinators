@@ -90,15 +90,19 @@ class MetropolisHastings(Inference):
             except ValueError as err:
                 if 'NaN' in str(err):
                     log_alpha = torch.Tensor([float('nan')])
-            if utils.is_number(log_alpha):
-                acceptance = Bernoulli(logits=log_alpha).sample().to(
-                    dtype=torch.long
-                )
-                zs = [utils.batch_where(acceptance, zx, zy, self.batch_shape)
-                      for (zx, zy) in zip(zsp, zs)]
-                xi = graphs.graph_where(acceptance, xip, xi, self.batch_shape)
-                log_weight = utils.batch_where(acceptance, log_w, log_weight,
-                                               self.batch_shape)
+            nonan_log_alpha = torch.where(utils.isnum(log_alpha), log_alpha,
+                                          torch.zeros(self.batch_shape))
+            acceptance = Bernoulli(logits=nonan_log_alpha).sample().to(
+                dtype=torch.long
+            )
+            acceptance = torch.where(utils.isnum(log_alpha), acceptance,
+                                     torch.zeros(self.batch_shape,
+                                                 dtype=torch.long))
+            zs = [utils.batch_where(acceptance, zx, zy, self.batch_shape)
+                  for (zx, zy) in zip(zsp, zs)]
+            xi = graphs.graph_where(acceptance, xip, xi, self.batch_shape)
+            log_weight = utils.batch_where(acceptance, log_w, log_weight,
+                                           self.batch_shape)
 
         if not multiple_zs:
             zs = zs[0]
