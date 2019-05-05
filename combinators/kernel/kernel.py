@@ -76,8 +76,9 @@ class GaussianKernel(TransitionKernel):
         return xiq, xiq.log_joint()
 
 class LinScaledGaussianKernel(GaussianKernel):
-    def __init__(self, model, var, scale=1.0, n_steps=1):
-        super(LinScaledGaussianKernel, self).__init__(model, var, scale=scale)
+    def __init__(self, model, var, scale=1.0, n_steps=1, **kwargs):
+        super(LinScaledGaussianKernel, self).__init__(model, var, scale=scale,
+                                                      **kwargs)
         self._n_steps = n_steps
         self._init_scale = scale
 
@@ -93,5 +94,8 @@ class LinScaledGaussianKernel(GaussianKernel):
         return 'LinScaledGaussianKernel'
 
     def forward(self, zs, xi, log_weight, *args, **kwargs):
-        self._scale = self._init_scale*max([1-(kwargs['t']/self._n_steps), 0.1])
+        ts = kwargs['ts'].to(dtype=torch.float)
+        self._scale = self._init_scale * torch.max(
+            1. - ts/self._n_steps, torch.ones(kwargs['ts'].shape) * 0.1
+        )
         return super(LinScaledGaussianKernel, self).forward(zs, xi, log_weight, *args, **kwargs)
