@@ -48,8 +48,8 @@ class TransitionKernel(Sampler):
         return None
 
 class GaussianKernel(TransitionKernel):
-    def __init__(self, model, var, scale=1.0):
-        super(GaussianKernel, self).__init__()
+    def __init__(self, model, var, scale=1.0, **kwargs):
+        super(GaussianKernel, self).__init__(**kwargs)
         self._model = model
         self._scale = scale
         self._var = var
@@ -67,7 +67,8 @@ class GaussianKernel(TransitionKernel):
     def forward(self, zs, xi, log_weight, *args, **kwargs):
         q = utils.slice_trace(xi[self._model], self._var)
         var = xi[self._model][self._var]
-        val = torch.normal(var.value, torch.ones(var.value.shape) * self._scale)
+        val = torch.normal(var.value,
+                           self._scale.unsqueeze(-1).expand(var.value.shape))
         q[self._var] = RandomVariable(var.Dist, val, *var.dist_args,
                                       provenance=var.provenance, mask=var.mask,
                                       **var.dist_kwargs)
