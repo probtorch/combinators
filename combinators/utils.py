@@ -22,7 +22,10 @@ def batch_where(condition, yes, no, batch_shape):
     return ite.reshape(batch_shape + unique)
 
 def is_number(tensor):
-    return not torch.isnan(tensor).any() and not torch.isinf(tensor).any()
+    return isnum(tensor).all()
+
+def isnum(tensor):
+    return ~(torch.isnan(tensor) | torch.isinf(tensor))
 
 def reused_variable(v):
     return isinstance(v, probtorch.RandomVariable) and\
