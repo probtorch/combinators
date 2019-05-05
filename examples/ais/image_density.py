@@ -60,8 +60,14 @@ class AnnealingProposal(inference.Inference):
     def walk(self, f):
         return f(AnnealingProposal(self.target.walk(f), self._annealing_steps))
 
-    def forward(self, *args, t=0, **kwargs):
-        beta = torch.linspace(1e-6, 1, self._annealing_steps)[t]
+    def forward(self, *args, ts=None, **kwargs):
+        if ts is None:
+            ts = torch.zeros(self.batch_shape, dtype=torch.long)
+        else:
+            ts = torch.where(ts < self._annealing_steps, ts,
+                             torch.ones(self.batch_shape, dtype=torch.long) *\
+                             (self._annealing_steps - 1))
+        beta = torch.linspace(1e-6, 1, self._annealing_steps)[ts]
 
         zs, xi, log_weight = self.target(*args, **kwargs)
         xi[self.target.name].factor(log_weight * (1 - beta),
