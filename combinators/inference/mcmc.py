@@ -65,15 +65,16 @@ class MetropolisHastings(Inference):
         if not multiple_zs:
             zs = (zs,)
 
-        for t in range(self._moves):
+        ts = torch.zeros(self.batch_shape, dtype=torch.long)
+        while (ts < self._moves).any():
             # Rescore the current trace under any change of target based on t.
             with self.target.rescore(xi) as rescorer:
                 _, xi, log_weight = rescorer(*args, **kwargs)
-            kwargs['t'] = t
+            kwargs['ts'] = ts
             xiq, log_weight_q = self.kernel(zs, xi, log_weight, *args,
                                             **kwargs)
             if not self._count_target:
-                kwargs.pop('t')
+                kwargs.pop('ts')
             try:
                 zsp, xip, log_w = importance.conditioned_evaluate(self.target,
                                                                   xiq, *args,
@@ -103,6 +104,11 @@ class MetropolisHastings(Inference):
             xi = graphs.graph_where(acceptance, xip, xi, self.batch_shape)
             log_weight = utils.batch_where(acceptance, log_w, log_weight,
                                            self.batch_shape)
+            ts = ts + torch.where(utils.isnum(log_alpha) & (ts < self._moves),
+                                  torch.ones(self.batch_shape,
+                                             dtype=torch.long),
+                                  torch.zeros(self.batch_shape,
+                                              dtype=torch.long))
 
         if not multiple_zs:
             zs = zs[0]
