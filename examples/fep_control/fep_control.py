@@ -243,6 +243,6 @@ class BipedalWalkerStep(GenerativeStep):
             dim=0
         )
         self.goal__scale = torch.cat(
-            (torch.ones(2) * 10, torch.ones(1) * 0.25, torch.ones(21) * 10),
+            (torch.ones(3) * 0.0025, torch.ones(21) * 10),
             dim=0
         )
