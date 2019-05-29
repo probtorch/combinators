@@ -110,6 +110,8 @@ def active_inference(agent, env_name, lr=1e-6, episode_length=10, use_cuda=True,
 
         if dream:
             while not env.done and focus < episode_length:
+                optimizer.zero_grad()
+
                 zs, log_weight, length, graph = active_inference_episode(
                     agent, env, episode_length=episode_length, dream=True,
                 )
@@ -124,6 +126,8 @@ def active_inference(agent, env_name, lr=1e-6, episode_length=10, use_cuda=True,
                 focus += 1
                 env.focus(focus)
         else:
+            optimizer.zero_grad()
+
             zs, log_weight, length, graph = active_inference_episode(
                 agent, env, episode_length=episode_length, dream=False,
             )
@@ -157,6 +161,8 @@ def active_inference_test(agent, env_name, use_cuda=True, iterations=200,
         optimizer = torch.optim.Adam(list(agent.parameters()), lr=lr)
         focus = 1
         while not env.done and focus < iterations:
+            optimizer.zero_grad()
+
             zs, log_weight, _, egraph = active_inference_episode(
                 agent, env, episode_length=iterations, dream=True, render=False,
                 finish=True
