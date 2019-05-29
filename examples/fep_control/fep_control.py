@@ -3,13 +3,24 @@
 import gym
 import numpy as np
 import torch
-from torch.distributions import MultivariateNormal, Normal, OneHotCategorical
-from torch.distributions import RelaxedOneHotCategorical
+from torch.distributions import Bernoulli, MultivariateNormal, Normal
+from torch.distributions import OneHotCategorical, RelaxedOneHotCategorical
 from torch.distributions.transforms import LowerCholeskyTransform
 import torch.nn as nn
 from torch.nn.functional import softplus, softsign
 
 import combinators.model as model
+
+class NormalCredibleInterval(nn.Module):
+    def __init__(self, loc, scale, num_scales):
+        super(NormalCredibleInterval, self).__init__()
+        self.dist = Normal(loc, softplus(scale))
+        self.num_scales = num_scales
+
+    def forward(self, loc, scale):
+        upper = loc + self.num_scales * scale
+        lower = loc - self.num_scales * scale
+        return self.dist.cdf(upper) - self.dist.cdf(lower)
 
 class GenerativeStep(model.Primitive):
     def __init__(self, *args, **kwargs):
@@ -17,6 +28,7 @@ class GenerativeStep(model.Primitive):
         self._action_dim = kwargs.pop('action_dim', 1)
         self._observation_dim = kwargs.pop('observation_dim', 2)
         self._discrete_actions = kwargs.pop('discrete_actions', True)
+        goal = kwargs.pop('goal')
         if 'params' not in kwargs:
             kwargs['params'] = {
                 'state_0': {
@@ -47,10 +59,7 @@ class GenerativeStep(model.Primitive):
                     'scale': torch.ones(self._action_dim),
                 }
         super(GenerativeStep, self).__init__(*args, **kwargs)
-        self.register_buffer('goal__loc', torch.zeros(self._observation_dim,
-                                                      requires_grad=True))
-        self.register_buffer('goal__scale', torch.ones(self._observation_dim,
-                                                       requires_grad=True))
+        self.goal = goal
         self.state_transition = nn.Sequential(
             nn.Linear(self._state_dim + self._action_dim * 2,
                       self._state_dim * 4),
@@ -112,8 +121,10 @@ class GenerativeStep(model.Primitive):
         self.observe('observation', observation, MultivariateNormal,
                      prediction, scale_tril=observation_scale)
         if not done:
-            self.observe('goal', prediction, Normal, self.goal__loc,
-                         self.goal__scale)
+            goal_prob = self.goal(prediction, torch.diagonal(observation_scale,
+                                                             dim1=-2, dim2=-1))
+            self.observe('goal', torch.ones(self.batch_shape), Bernoulli,
+                         probs=goal_prob)
 
         return state, control
 
@@ -213,36 +224,55 @@ class RecognitionStep(model.Primitive):
                         softplus(state_uncertainty[:, :, 1]),
                         name='state_uncertainty')
 
+class MountainCarCredibleInterval(NormalCredibleInterval):
+    def __init__(self, batch_shape):
+        loc = torch.tensor([0.45]).expand(*batch_shape, 1)
+        scale = torch.tensor([0.045]).expand(*batch_shape, 1)
+        super(MountainCarCredibleInterval, self).__init__(loc, scale, 1)
+
+    def forward(self, loc, scale):
+        return super(MountainCarCredibleInterval, self).forward(loc[:, 0],
+                                                                scale[:, 0])
+
 class MountainCarStep(GenerativeStep):
     def __init__(self, *args, **kwargs):
         kwargs['discrete_actions'] = False
         kwargs['action_dim'] = 1
         kwargs['observation_dim'] = 2
+        kwargs['goal'] = MountainCarCredibleInterval(kwargs['batch_shape'])
         super(MountainCarStep, self).__init__(*args, **kwargs)
-        self.goal__loc = torch.tensor([0.45, 0], requires_grad=True)
-        self.goal__scale = torch.tensor([0.045, 1], requires_grad=True)
+
+class CartpoleCredibleInterval(NormalCredibleInterval):
+    def __init__(self, batch_shape):
+        loc = torch.zeros(*batch_shape, 1)
+        scale = torch.tensor([np.pi / (15 * 2)]).expand(*batch_shape, 1)
+        super(CartpoleCredibleInterval, self).__init__(loc, scale, 1)
+
+    def forward(self, loc, scale):
+        return super(CartpoleCredibleInterval, self).forward(loc[:, 2],
+                                                             scale[:, 2])
 
 class CartpoleStep(GenerativeStep):
     def __init__(self, *args, **kwargs):
         kwargs['discrete_actions'] = True
         kwargs['observation_dim'] = 4
+        kwargs['goal'] = CartpoleCredibleInterval(kwargs['batch_shape'])
         super(CartpoleStep, self).__init__(*args, **kwargs)
-        self.goal__loc = torch.tensor([2.4 / 2, 0, 0, 0], requires_grad=True)
-        self.goal__scale = torch.tensor([1, 1, np.pi / (15 * 2), 1],
-                                        requires_grad=True)
+
+class BipedalWalkerCredibleInterval(NormalCredibleInterval):
+    def __init__(self, batch_shape):
+        loc = torch.tensor([0, 1]).expand(*batch_shape, 2)
+        scale = torch.ones(*batch_shape, 2) * 0.0025
+        super(BipedalWalkerCredibleInterval, self).__init__(loc, scale, 1)
+
+    def forward(self, loc, scale):
+        return super(BipedalWalkerCredibleInterval, self).forward(loc[:, 1:3],
+                                                                  scale[:, 1:3])
 
 class BipedalWalkerStep(GenerativeStep):
     def __init__(self, *args, **kwargs):
         kwargs['discrete_actions'] = False
         kwargs['observation_dim'] = 24
         kwargs['action_dim'] = 4
+        kwargs['goal'] = BipedalWalkerCredibleInterval(kwargs['batch_shape'])
         super(BipedalWalkerStep, self).__init__(*args, **kwargs)
-        self.goal__loc = torch.cat(
-            (torch.zeros(2), torch.ones(1), torch.zeros(4), torch.ones(1),
-             torch.zeros(4), torch.ones(1), torch.zeros(11)),
-            dim=0
-        )
-        self.goal__scale = torch.cat(
-            (torch.ones(3) * 0.0025, torch.ones(21) * 10),
-            dim=0
-        )
