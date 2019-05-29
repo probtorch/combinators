@@ -273,7 +273,7 @@ class CartpoleActor(GenerativeActor):
 
 class BipedalWalkerInterval(NormalInterval):
     def __init__(self, batch_shape):
-        loc = torch.tensor([0, 1]).expand(*batch_shape, 2)
+        loc = torch.tensor([0., 1.]).expand(*batch_shape, 2)
         scale = torch.ones(*batch_shape, 2) * 0.0025
         super(BipedalWalkerInterval, self).__init__(loc, scale, 1)
 
