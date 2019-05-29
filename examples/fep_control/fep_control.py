@@ -3,13 +3,24 @@
 import gym
 import numpy as np
 import torch
-from torch.distributions import MultivariateNormal, Normal, OneHotCategorical
-from torch.distributions import RelaxedOneHotCategorical
+from torch.distributions import Bernoulli, MultivariateNormal, Normal
+from torch.distributions import OneHotCategorical, RelaxedOneHotCategorical
 from torch.distributions.transforms import LowerCholeskyTransform
 import torch.nn as nn
 from torch.nn.functional import softplus, softsign
 
 import combinators.model as model
+
+class NormalCredibleInterval(nn.Module):
+    def __init__(self, loc, scale, num_scales):
+        super(NormalCredibleInterval, self).__init__()
+        self.dist = Normal(loc, softplus(scale))
+        self.num_scales = num_scales
+
+    def forward(self, loc, scale):
+        upper = loc + self.num_scales * scale
+        lower = loc - self.num_scales * scale
+        return self.dist.cdf(upper) - self.dist.cdf(lower)
 
 class GenerativeStep(model.Primitive):
     def __init__(self, *args, **kwargs):
