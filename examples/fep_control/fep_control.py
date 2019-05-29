@@ -28,6 +28,7 @@ class GenerativeStep(model.Primitive):
         self._action_dim = kwargs.pop('action_dim', 1)
         self._observation_dim = kwargs.pop('observation_dim', 2)
         self._discrete_actions = kwargs.pop('discrete_actions', True)
+        goal = kwargs.pop('goal')
         if 'params' not in kwargs:
             kwargs['params'] = {
                 'state_0': {
@@ -58,10 +59,7 @@ class GenerativeStep(model.Primitive):
                     'scale': torch.ones(self._action_dim),
                 }
         super(GenerativeStep, self).__init__(*args, **kwargs)
-        self.register_buffer('goal__loc', torch.zeros(self._observation_dim,
-                                                      requires_grad=True))
-        self.register_buffer('goal__scale', torch.ones(self._observation_dim,
-                                                       requires_grad=True))
+        self.goal = goal
         self.state_transition = nn.Sequential(
             nn.Linear(self._state_dim + self._action_dim * 2,
                       self._state_dim * 4),
@@ -123,8 +121,10 @@ class GenerativeStep(model.Primitive):
         self.observe('observation', observation, MultivariateNormal,
                      prediction, scale_tril=observation_scale)
         if not done:
-            self.observe('goal', prediction, Normal, self.goal__loc,
-                         self.goal__scale)
+            goal_prob = self.goal(prediction, torch.diagonal(observation_scale,
+                                                             dim1=-2, dim2=-1))
+            self.observe('goal', torch.ones(self.batch_shape), Bernoulli,
+                         probs=goal_prob)
 
         return state, control
 
