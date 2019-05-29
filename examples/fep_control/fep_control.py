@@ -17,6 +17,7 @@ class NormalInterval(nn.Module):
         self.register_buffer('loc', loc)
         self.register_buffer('scale', scale)
         self.num_scales = num_scales
+        self.all_steps = False
 
     def forward(self, observation):
         p = Normal(self.loc, self.scale).cdf(observation)
@@ -91,7 +92,7 @@ class GenerativeActor(model.Primitive):
             state = state + state_uncertainty
 
         prediction = self.predict_observation(state)
-        if not env.done:
+        if not env.done or self.goal.all_steps:
             goal_prob, comparator = self.goal(prediction)
             self.observe('goal', torch.ones_like(comparator), Bernoulli,
                          probs=goal_prob)
