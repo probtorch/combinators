@@ -261,6 +261,7 @@ class CartpoleInterval(NormalInterval):
         loc = torch.zeros(*batch_shape, 1)
         scale = torch.tensor([np.pi / (15 * 2)]).expand(*batch_shape, 1)
         super(CartpoleInterval, self).__init__(loc, scale, 1)
+        self.all_steps = True
 
     def forward(self, observation):
         return super(CartpoleInterval, self).forward(observation)
@@ -277,6 +278,7 @@ class BipedalWalkerInterval(NormalInterval):
         loc = torch.tensor([0., 1.]).expand(*batch_shape, 2)
         scale = torch.ones(*batch_shape, 2) * 0.0025
         super(BipedalWalkerInterval, self).__init__(loc, scale, 1)
+        self.all_steps = True
 
     def forward(self, observation):
         p, _ = super(BipedalWalkerInterval, self).forward(observation[:, 0:3])
