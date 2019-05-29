@@ -19,7 +19,7 @@ class NormalCredibleInterval(nn.Module):
         self.num_scales = num_scales
 
     def forward(self, loc, scale):
-        dist = Normal(self.loc, softplus(self.scale))
+        dist = Normal(self.loc, self.scale)
         upper = loc + self.num_scales * scale
         lower = loc - self.num_scales * scale
         return dist.cdf(upper) - dist.cdf(lower)
