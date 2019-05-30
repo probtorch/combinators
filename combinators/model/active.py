@@ -116,7 +116,7 @@ def active_inference(agent, env_name, lr=1e-6, episode_length=10, use_cuda=True,
                     agent, env, episode_length=episode_length, dream=True,
                 )
 
-                elbo = importance.elbo(log_weight, iwae_objective=False,
+                elbo = importance.elbo(log_weight, iwae_objective=True,
                                        xi=graph)
                 (-elbo).backward()
                 optimizer.step()
@@ -132,7 +132,7 @@ def active_inference(agent, env_name, lr=1e-6, episode_length=10, use_cuda=True,
                 agent, env, episode_length=episode_length, dream=False,
             )
 
-            elbo = importance.elbo(log_weight, iwae_objective=False, xi=graph)
+            elbo = importance.elbo(log_weight, iwae_objective=True, xi=graph)
             (-elbo).backward()
             optimizer.step()
             if patience:
@@ -168,7 +168,7 @@ def active_inference_test(agent, env_name, use_cuda=True, iterations=200,
                 finish=True
             )
 
-            elbo = importance.elbo(log_weight, iwae_objective=False,
+            elbo = importance.elbo(log_weight, iwae_objective=True,
                                    xi=egraph)
             (-elbo).backward()
             optimizer.step()
