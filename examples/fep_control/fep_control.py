@@ -7,7 +7,7 @@ from torch.distributions import Bernoulli, MultivariateNormal, Normal
 from torch.distributions import OneHotCategorical, RelaxedOneHotCategorical
 from torch.distributions.transforms import LowerCholeskyTransform
 import torch.nn as nn
-from torch.nn.functional import softplus, softsign
+from torch.nn.functional import softplus
 
 import combinators.model as model
 
