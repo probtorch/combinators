@@ -166,12 +166,10 @@ class RecognitionStep(model.Primitive):
                 nn.Linear(self._state_dim + self._action_dim,
                           self._state_dim * 4),
                 nn.PReLU(),
-                nn.Linear(self._state_dim * 4, self._state_dim * 8),
+                nn.Linear(self._state_dim * 4, self._action_dim * 16),
                 nn.PReLU(),
-                nn.Linear(self._state_dim * 8, self._state_dim * 16),
-                nn.PReLU(),
-                nn.Linear(self._state_dim * 16, self._action_dim * 2),
-                nn.Softsign(),
+                nn.Linear(self._action_dim * 16, self._action_dim * 2),
+                nn.Tanh(),
             )
         self.encode_uncertainty = nn.Sequential(
             nn.Linear(self._state_dim + self._observation_dim +
