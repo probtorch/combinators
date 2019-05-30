@@ -225,8 +225,8 @@ class RecognitionStep(model.Primitive):
 
 class MountainCarCredibleInterval(NormalCredibleInterval):
     def __init__(self, batch_shape):
-        loc = torch.tensor([0.45]).expand(*batch_shape, 1)
-        scale = torch.tensor([0.045]).expand(*batch_shape, 1)
+        loc = torch.tensor([0.5]).expand(*batch_shape, 1)
+        scale = torch.tensor([0.05]).expand(*batch_shape, 1)
         super(MountainCarCredibleInterval, self).__init__(loc, scale, 1)
 
     def forward(self, loc, scale):
