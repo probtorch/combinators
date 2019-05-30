@@ -46,10 +46,6 @@ class GenerativeStep(model.Primitive):
                     'scale': torch.ones(self._observation_dim,
                                         self._observation_dim),
                 },
-                'control_0': {
-                    'loc': torch.zeros(self._action_dim),
-                    'scale': torch.ones(self._action_dim),
-                },
             }
             if self._discrete_actions:
                 kwargs['params']['control'] = {
@@ -85,7 +81,7 @@ class GenerativeStep(model.Primitive):
     def _forward(self, theta, t, env=None):
         if theta is None:
             state = self.param_sample(Normal, 'state_0')
-            control = self.param_sample(Normal, 'control_0')
+            control = self.param_sample(Normal, 'control')
         else:
             prev_state, prev_control = theta
             state_uncertainty = self.param_sample(Normal,
