@@ -209,7 +209,7 @@ class RecognitionStep(model.Primitive):
                                                      name='control')
 
         if isinstance(control, torch.Tensor):
-            action = control[0].cpu().detach().numpy()
+            action = torch.tanh(control[0]).cpu().detach().numpy()
         else:
             action = control
         observation, _, _, _ = env.retrieve_step(t, action, override_done=True)
