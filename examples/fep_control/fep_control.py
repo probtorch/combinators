@@ -124,8 +124,8 @@ class GenerativeStep(model.Primitive):
         if not done:
             goal_prob = self.goal(prediction, torch.diagonal(observation_scale,
                                                              dim1=-2, dim2=-1))
-            self.observe('goal', torch.ones(self.batch_shape), Bernoulli,
-                         probs=goal_prob)
+            self.observe('goal', torch.ones(self.batch_shape).to(prediction),
+                         Bernoulli, probs=goal_prob)
 
         return state, control
 
