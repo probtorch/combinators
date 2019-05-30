@@ -39,7 +39,7 @@ class GenerativeStep(model.Primitive):
                 },
                 'state_uncertainty': {
                     'loc': torch.zeros(self._state_dim),
-                    'covariance_matrix': torch.eye(self._state_dim),
+                    'scale': torch.ones(self._state_dim),
                 },
                 'observation_noise': {
                     'loc': torch.eye(self._observation_dim),
@@ -88,7 +88,7 @@ class GenerativeStep(model.Primitive):
             control = self.param_sample(Normal, 'control_0')
         else:
             prev_state, prev_control = theta
-            state_uncertainty = self.param_sample(MultivariateNormal,
+            state_uncertainty = self.param_sample(Normal,
                                                   name='state_uncertainty')
 
             if self._discrete_actions:
