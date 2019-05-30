@@ -143,7 +143,7 @@ class RecognitionStep(model.Primitive):
                     'scale': torch.ones(self._observation_dim,
                                         self._observation_dim),
                 },
-                'control_0': {
+                'control': {
                     'loc': torch.zeros(self._action_dim),
                     'scale': torch.ones(self._action_dim),
                 }
@@ -185,7 +185,7 @@ class RecognitionStep(model.Primitive):
     def _forward(self, theta, t, env=None):
         if theta is None:
             self.param_sample(Normal, 'state_0')
-            control = self.param_sample(Normal, 'control_0')
+            control = self.param_sample(Normal, 'control')
         else:
             prev_state, prev_control = theta
             self.param_sample(Normal, name='observation_noise')
