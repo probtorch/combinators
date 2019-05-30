@@ -96,7 +96,6 @@ class GenerativeStep(model.Primitive):
             else:
                 control = prev_control + self.param_sample(Normal,
                                                            name='control')
-                control = control.expand(*self.batch_shape, self._action_dim)
 
             state = self.state_transition(torch.cat(
                 (prev_state, prev_control, control), dim=-1
@@ -104,7 +103,7 @@ class GenerativeStep(model.Primitive):
             state = state + state_uncertainty
 
         if isinstance(control, torch.Tensor):
-            action = control[0].cpu().detach().numpy()
+            action = torch.tanh(control[0]).cpu().detach().numpy()
         else:
             action = control
         observation, _, done, _ = env.retrieve_step(t, action,
