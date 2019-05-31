@@ -133,7 +133,7 @@ class GenerativeObserver(model.Primitive):
 
         return state, control
 
-class RecognitionStep(model.Primitive):
+class RecognitionActor(model.Primitive):
     def __init__(self, *args, **kwargs):
         self._state_dim = kwargs.pop('state_dim', 2)
         self._action_dim = kwargs.pop('action_dim', 1)
@@ -156,7 +156,7 @@ class RecognitionStep(model.Primitive):
                     'scale': torch.ones(self._action_dim),
                 }
             }
-        super(RecognitionStep, self).__init__(*args, **kwargs)
+        super(RecognitionActor, self).__init__(*args, **kwargs)
         if self._discrete_actions:
             self.decode_policy = nn.Sequential(
                 nn.Linear(self._state_dim + self._action_dim,
@@ -175,15 +175,6 @@ class RecognitionStep(model.Primitive):
                 nn.Linear(self._action_dim * 16, self._action_dim * 2),
                 nn.Tanh(),
             )
-        self.encode_uncertainty = nn.Sequential(
-            nn.Linear(self._observation_dim, self._state_dim * 4),
-            nn.PReLU(),
-            nn.Linear(self._state_dim * 4, self._state_dim * 8),
-            nn.PReLU(),
-            nn.Linear(self._state_dim * 8, self._state_dim * 16),
-            nn.PReLU(),
-            nn.Linear(self._state_dim * 16, self._state_dim * 2),
-        )
 
     @property
     def name(self):
@@ -209,12 +200,33 @@ class RecognitionStep(model.Primitive):
                                                      softplus(control[:, :, 1]),
                                                      name='control')
 
+class RecognitionEncoder(model.Primitive):
+    def __init__(self, *args, **kwargs):
+        self._state_dim = kwargs.pop('state_dim', 2)
+        self._observation_dim = kwargs.pop('observation_dim', 2)
+        super(RecognitionEncoder, self).__init__(*args, **kwargs)
+        self.encode_uncertainty = nn.Sequential(
+            nn.Linear(self._observation_dim, self._state_dim * 4),
+            nn.PReLU(),
+            nn.Linear(self._state_dim * 4, self._state_dim * 8),
+            nn.PReLU(),
+            nn.Linear(self._state_dim * 8, self._state_dim * 16),
+            nn.PReLU(),
+            nn.Linear(self._state_dim * 16, self._state_dim * 2),
+        )
+
+    @property
+    def name(self):
+        return 'GenerativeObserver'
+
+    def _forward(self, theta, t, env=None):
+        _, control, _ = theta
         if isinstance(control, torch.Tensor):
             action = torch.tanh(control[0]).cpu().detach().numpy()
         else:
             action = control
         observation, _, _, _ = env.retrieve_step(t, action, override_done=True)
-        if observation is not None and theta is not None:
+        if observation is not None:
             observation = torch.Tensor(observation).to(control).expand(
                 self.batch_shape + observation.shape
             )
