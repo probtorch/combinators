@@ -198,6 +198,7 @@ class RecognitionActor(model.Primitive):
 class RecognitionEncoder(model.Primitive):
     def __init__(self, *args, **kwargs):
         self._state_dim = kwargs.pop('state_dim', 2)
+        self._action_dim = kwargs.pop('action_dim', 1)
         self._observation_dim = kwargs.pop('observation_dim', 2)
         if 'params' not in kwargs:
             kwargs['params'] = {
@@ -209,7 +210,7 @@ class RecognitionEncoder(model.Primitive):
             }
         super(RecognitionEncoder, self).__init__(*args, **kwargs)
         self.encode_uncertainty = nn.Sequential(
-            nn.Linear(self._observation_dim, self._state_dim * 4),
+            nn.Linear(self._observation_dim + self._action_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -234,9 +235,9 @@ class RecognitionEncoder(model.Primitive):
             observation = torch.Tensor(observation).to(control).expand(
                 self.batch_shape + observation.shape
             )
-            state_uncertainty = self.encode_uncertainty(observation).reshape(
-                -1, self._state_dim, 2
-            )
+            state_uncertainty = self.encode_uncertainty(torch.cat(
+                (observation, control), dim=-1
+            )).reshape(-1, self._state_dim, 2)
             self.sample(Normal, state_uncertainty[:, :, 0],
                         softplus(state_uncertainty[:, :, 1]),
                         name='state_uncertainty')
