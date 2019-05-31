@@ -244,7 +244,8 @@ class MountainCarInterval(NormalInterval):
         super(MountainCarInterval, self).__init__(loc, scale, 1)
 
     def forward(self, observation):
-        return super(MountainCarInterval, self).forward(observation[:, 0])
+        p, _ = super(MountainCarInterval, self).forward(observation[:, 0])
+        return p, observation[:, 0]
 
 class MountainCarActor(GenerativeActor):
     def __init__(self, *args, **kwargs):
@@ -277,7 +278,8 @@ class BipedalWalkerInterval(NormalInterval):
         super(BipedalWalkerInterval, self).__init__(loc, scale, 1)
 
     def forward(self, observation):
-        return super(BipedalWalkerInterval, self).forward(observation[:, 1:3])
+        p, _ = super(BipedalWalkerInterval, self).forward(observation[:, 0:3])
+        return p, observation[:, 0:3]
 
 class BipedalWalkerActor(GenerativeActor):
     def __init__(self, *args, **kwargs):
