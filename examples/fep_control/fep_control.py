@@ -92,9 +92,9 @@ class GenerativeActor(model.Primitive):
 
         prediction = self.predict_observation(state)
         if not env.done:
-            goal_prob = self.goal(prediction)
-            self.observe('goal', torch.ones(self.batch_shape).to(prediction),
-                         Bernoulli, probs=goal_prob)
+            goal_prob, comparator = self.goal(prediction)
+            self.observe('goal', torch.ones_like(comparator), Bernoulli,
+                         probs=goal_prob)
 
         return (state, control, prediction), t, env
 
