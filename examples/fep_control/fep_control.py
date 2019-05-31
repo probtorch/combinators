@@ -21,7 +21,7 @@ class NormalInterval(nn.Module):
     def forward(self, observation):
         p = Normal(self.loc, self.scale).cdf(observation)
         p = torch.where(p > 0.5, 1. - p, p)
-        return 2 * p
+        return 2 * p, observation
 
 class GenerativeActor(model.Primitive):
     def __init__(self, *args, **kwargs):
