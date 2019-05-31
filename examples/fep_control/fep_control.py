@@ -237,55 +237,52 @@ class RecognitionEncoder(model.Primitive):
                         softplus(state_uncertainty[:, :, 1]),
                         name='state_uncertainty')
 
-class MountainCarCredibleInterval(NormalCredibleInterval):
+class MountainCarInterval(NormalInterval):
     def __init__(self, batch_shape):
         loc = torch.tensor([0.5]).expand(*batch_shape, 1)
         scale = torch.tensor([0.05]).expand(*batch_shape, 1)
-        super(MountainCarCredibleInterval, self).__init__(loc, scale, 1)
+        super(MountainCarInterval, self).__init__(loc, scale, 1)
 
-    def forward(self, loc, scale):
-        return super(MountainCarCredibleInterval, self).forward(loc[:, 0],
-                                                                scale[:, 0])
+    def forward(self, observation):
+        return super(MountainCarInterval, self).forward(observation[:, 0])
 
-class MountainCarStep(GenerativeStep):
+class MountainCarActor(GenerativeActor):
     def __init__(self, *args, **kwargs):
         kwargs['discrete_actions'] = False
         kwargs['action_dim'] = 1
         kwargs['observation_dim'] = 2
-        kwargs['goal'] = MountainCarCredibleInterval(kwargs['batch_shape'])
-        super(MountainCarStep, self).__init__(*args, **kwargs)
+        kwargs['goal'] = MountainCarInterval(kwargs['batch_shape'])
+        super(MountainCarActor, self).__init__(*args, **kwargs)
 
-class CartpoleCredibleInterval(NormalCredibleInterval):
+class CartpoleInterval(NormalInterval):
     def __init__(self, batch_shape):
         loc = torch.zeros(*batch_shape, 1)
         scale = torch.tensor([np.pi / (15 * 2)]).expand(*batch_shape, 1)
-        super(CartpoleCredibleInterval, self).__init__(loc, scale, 1)
+        super(CartpoleInterval, self).__init__(loc, scale, 1)
 
-    def forward(self, loc, scale):
-        return super(CartpoleCredibleInterval, self).forward(loc[:, 2],
-                                                             scale[:, 2])
+    def forward(self, observation):
+        return super(CartpoleInterval, self).forward(observation)
 
-class CartpoleStep(GenerativeStep):
+class CartpoleActor(GenerativeActor):
     def __init__(self, *args, **kwargs):
         kwargs['discrete_actions'] = True
         kwargs['observation_dim'] = 4
-        kwargs['goal'] = CartpoleCredibleInterval(kwargs['batch_shape'])
-        super(CartpoleStep, self).__init__(*args, **kwargs)
+        kwargs['goal'] = CartpoleInterval(kwargs['batch_shape'])
+        super(CartpoleActor, self).__init__(*args, **kwargs)
 
-class BipedalWalkerCredibleInterval(NormalCredibleInterval):
+class BipedalWalkerInterval(NormalInterval):
     def __init__(self, batch_shape):
         loc = torch.tensor([0, 1]).expand(*batch_shape, 2)
         scale = torch.ones(*batch_shape, 2) * 0.0025
-        super(BipedalWalkerCredibleInterval, self).__init__(loc, scale, 1)
+        super(BipedalWalkerInterval, self).__init__(loc, scale, 1)
 
-    def forward(self, loc, scale):
-        return super(BipedalWalkerCredibleInterval, self).forward(loc[:, 1:3],
-                                                                  scale[:, 1:3])
+    def forward(self, observation):
+        return super(BipedalWalkerInterval, self).forward(observation[:, 1:3])
 
-class BipedalWalkerStep(GenerativeStep):
+class BipedalWalkerActor(GenerativeActor):
     def __init__(self, *args, **kwargs):
         kwargs['discrete_actions'] = False
         kwargs['observation_dim'] = 24
         kwargs['action_dim'] = 4
-        kwargs['goal'] = BipedalWalkerCredibleInterval(kwargs['batch_shape'])
-        super(BipedalWalkerStep, self).__init__(*args, **kwargs)
+        kwargs['goal'] = BipedalWalkerInterval(kwargs['batch_shape'])
+        super(BipedalWalkerActor, self).__init__(*args, **kwargs)
