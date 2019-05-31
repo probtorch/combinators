@@ -188,7 +188,6 @@ class RecognitionActor(model.Primitive):
             control = self.param_sample(Normal, 'control')
         else:
             prev_state, prev_control = theta
-            self.param_sample(Normal, name='observation_noise')
 
             control = self.decode_policy(
                 torch.cat((prev_state, prev_control), dim=-1)
@@ -206,6 +205,14 @@ class RecognitionEncoder(model.Primitive):
     def __init__(self, *args, **kwargs):
         self._state_dim = kwargs.pop('state_dim', 2)
         self._observation_dim = kwargs.pop('observation_dim', 2)
+        if 'params' not in kwargs:
+            kwargs['params'] = {
+                'observation_noise': {
+                    'loc': torch.eye(self._observation_dim),
+                    'scale': torch.ones(self._observation_dim,
+                                        self._observation_dim),
+                },
+            }
         super(RecognitionEncoder, self).__init__(*args, **kwargs)
         self.encode_uncertainty = nn.Sequential(
             nn.Linear(self._observation_dim, self._state_dim * 4),
@@ -229,6 +236,7 @@ class RecognitionEncoder(model.Primitive):
             action = control
         observation, _, _, _ = env.retrieve_step(t, action, override_done=True)
         if observation is not None:
+            self.param_sample(Normal, name='observation_noise')
             observation = torch.Tensor(observation).to(control).expand(
                 self.batch_shape + observation.shape
             )
