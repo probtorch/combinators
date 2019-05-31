@@ -168,8 +168,7 @@ class RecognitionStep(model.Primitive):
                 nn.Tanh(),
             )
         self.encode_uncertainty = nn.Sequential(
-            nn.Linear(self._state_dim + self._observation_dim +
-                      self._action_dim, self._state_dim * 4),
+            nn.Linear(self._observation_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -212,9 +211,9 @@ class RecognitionStep(model.Primitive):
         )
 
         if theta is not None:
-            state_uncertainty = self.encode_uncertainty(
-                torch.cat((prev_state, observation, control), dim=-1)
-            ).reshape(-1, self._state_dim, 2)
+            state_uncertainty = self.encode_uncertainty(observation).reshape(
+                -1, self._state_dim, 2
+            )
             self.sample(Normal, state_uncertainty[:, :, 0],
                         softplus(state_uncertainty[:, :, 1]),
                         name='state_uncertainty')
