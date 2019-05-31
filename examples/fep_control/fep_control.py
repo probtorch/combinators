@@ -17,6 +17,7 @@ class NormalInterval(nn.Module):
         self.register_buffer('loc', loc)
         self.register_buffer('scale', scale)
         self.num_scales = num_scales
+        self.all_steps = False
 
     def forward(self, observation):
         p = Normal(self.loc, self.scale).cdf(observation)
@@ -91,7 +92,7 @@ class GenerativeActor(model.Primitive):
             state = state + state_uncertainty
 
         prediction = self.predict_observation(state)
-        if not env.done:
+        if not env.done or self.goal.all_steps:
             goal_prob, comparator = self.goal(prediction)
             self.observe('goal', torch.ones_like(comparator), Bernoulli,
                          probs=goal_prob)
@@ -260,6 +261,7 @@ class CartpoleInterval(NormalInterval):
         loc = torch.zeros(*batch_shape, 1)
         scale = torch.tensor([np.pi / (15 * 2)]).expand(*batch_shape, 1)
         super(CartpoleInterval, self).__init__(loc, scale, 1)
+        self.all_steps = True
 
     def forward(self, observation):
         return super(CartpoleInterval, self).forward(observation)
@@ -273,9 +275,10 @@ class CartpoleActor(GenerativeActor):
 
 class BipedalWalkerInterval(NormalInterval):
     def __init__(self, batch_shape):
-        loc = torch.tensor([0, 1]).expand(*batch_shape, 2)
-        scale = torch.ones(*batch_shape, 2) * 0.0025
+        loc = torch.tensor([0., 0., 1.]).expand(*batch_shape, 3)
+        scale = torch.ones(*batch_shape, 3) * 0.0025
         super(BipedalWalkerInterval, self).__init__(loc, scale, 1)
+        self.all_steps = True
 
     def forward(self, observation):
         p, _ = super(BipedalWalkerInterval, self).forward(observation[:, 0:3])
