@@ -103,18 +103,17 @@ class GenerativeStep(model.Primitive):
         observation, _, done, _ = env.retrieve_step(t, action,
                                                     override_done=True)
         if observation is not None:
-            observation = torch.Tensor(observation).to(state.device).expand(
+            observation = torch.Tensor(observation).to(state).expand(
                 self.batch_shape + observation.shape
             )
-        else:
-            observation = None
 
         prediction = self.predict_observation(state)
         observation_noise = self.param_sample(Normal,
                                               name='observation_noise')
         observation_scale = LowerCholeskyTransform()(observation_noise)
-        self.observe('observation', observation, MultivariateNormal,
-                     prediction, scale_tril=observation_scale)
+        if observation is not None:
+            self.observe('observation', observation, MultivariateNormal,
+                         prediction, scale_tril=observation_scale)
         if not done:
             goal_prob = self.goal(prediction, torch.diagonal(observation_scale,
                                                              dim1=-2, dim2=-1))
@@ -204,11 +203,10 @@ class RecognitionStep(model.Primitive):
         else:
             action = control
         observation, _, _, _ = env.retrieve_step(t, action, override_done=True)
-        observation = torch.Tensor(observation).to(control.device).expand(
-            self.batch_shape + observation.shape
-        )
-
-        if theta is not None:
+        if observation is not None and theta is not None:
+            observation = torch.Tensor(observation).to(control).expand(
+                self.batch_shape + observation.shape
+            )
             state_uncertainty = self.encode_uncertainty(observation).reshape(
                 -1, self._state_dim, 2
             )
