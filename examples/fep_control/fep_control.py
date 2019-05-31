@@ -162,24 +162,15 @@ class RecognitionActor(model.Primitive):
                 }
             }
         super(RecognitionActor, self).__init__(*args, **kwargs)
-        if self._discrete_actions:
-            self.decode_policy = nn.Sequential(
-                nn.Linear(self._state_dim + self._action_dim,
-                          self._state_dim * 4),
-                nn.PReLU(),
-                nn.Linear(self._state_dim * 4, self._action_dim),
-                nn.Softmax(dim=-1),
-            )
-        else:
-            self.decode_policy = nn.Sequential(
-                nn.Linear(self._state_dim + self._action_dim,
-                          self._state_dim * 4),
-                nn.PReLU(),
-                nn.Linear(self._state_dim * 4, self._action_dim * 16),
-                nn.PReLU(),
-                nn.Linear(self._action_dim * 16, self._action_dim * 2),
-                nn.Tanh(),
-            )
+        self.decode_policy = nn.Sequential(
+            nn.Linear(self._state_dim + self._action_dim,
+                      self._state_dim * 4),
+            nn.PReLU(),
+            nn.Linear(self._state_dim * 4, self._action_dim * 16),
+            nn.PReLU(),
+            nn.Linear(self._action_dim * 16, self._action_dim * 2),
+            nn.Softmax(dim=-1) if self._discrete_actions else nn.Tanh(),
+        )
 
     @property
     def name(self):
