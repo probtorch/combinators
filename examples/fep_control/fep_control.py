@@ -203,11 +203,10 @@ class RecognitionStep(model.Primitive):
         else:
             action = control
         observation, _, _, _ = env.retrieve_step(t, action, override_done=True)
-        observation = torch.Tensor(observation).to(control.device).expand(
-            self.batch_shape + observation.shape
-        )
-
-        if theta is not None:
+        if observation is not None and theta is not None:
+            observation = torch.Tensor(observation).to(control).expand(
+                self.batch_shape + observation.shape
+            )
             state_uncertainty = self.encode_uncertainty(observation).reshape(
                 -1, self._state_dim, 2
             )
