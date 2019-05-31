@@ -23,7 +23,7 @@ class NormalInterval(nn.Module):
         p = torch.where(p > 0.5, 1. - p, p)
         return 2 * p
 
-class GenerativeStep(model.Primitive):
+class GenerativeActor(model.Primitive):
     def __init__(self, *args, **kwargs):
         self._state_dim = kwargs.pop('state_dim', 2)
         self._action_dim = kwargs.pop('action_dim', 1)
@@ -40,11 +40,6 @@ class GenerativeStep(model.Primitive):
                     'loc': torch.zeros(self._state_dim),
                     'scale': torch.ones(self._state_dim),
                 },
-                'observation_noise': {
-                    'loc': torch.eye(self._observation_dim),
-                    'scale': torch.ones(self._observation_dim,
-                                        self._observation_dim),
-                },
             }
             if self._discrete_actions:
                 kwargs['params']['control'] = {
@@ -55,7 +50,7 @@ class GenerativeStep(model.Primitive):
                     'loc': torch.zeros(self._action_dim),
                     'scale': torch.ones(self._action_dim),
                 }
-        super(GenerativeStep, self).__init__(*args, **kwargs)
+        super(GenerativeActor, self).__init__(*args, **kwargs)
         self.goal = goal
         self.state_transition = nn.Sequential(
             nn.Linear(self._state_dim + self._action_dim, self._state_dim * 4),
@@ -95,29 +90,46 @@ class GenerativeStep(model.Primitive):
                                                     dim=-1))
             state = state + state_uncertainty
 
+        prediction = self.predict_observation(state)
+        if not env.done:
+            goal_prob = self.goal(prediction)
+            self.observe('goal', torch.ones(self.batch_shape).to(prediction),
+                         Bernoulli, probs=goal_prob)
+
+        return (state, control, prediction), t, env
+
+class GenerativeObserver(model.Primitive):
+    def __init__(self, *args, **kwargs):
+        self._observation_dim = kwargs.pop('observation_dim')
+        if 'params' not in kwargs:
+            kwargs['params'] = {
+                'observation_noise': {
+                    'loc': torch.eye(self._observation_dim),
+                    'scale': torch.ones(self._observation_dim,
+                                        self._observation_dim),
+                },
+            }
+        super(GenerativeObserver, self).__init__(*args, **kwargs)
+
+    def _forward(self, theta, t, env=None):
+        state, control, prediction = theta
+
         if isinstance(control, torch.Tensor):
             action = torch.tanh(control[0]).cpu().detach().numpy()
         else:
             action = control
-        observation, _, done, _ = env.retrieve_step(t, action,
-                                                    override_done=True)
+        observation, _, _, _ = env.retrieve_step(t, action, override_done=True)
         if observation is not None:
             observation = torch.Tensor(observation).to(state).expand(
                 self.batch_shape + observation.shape
             )
 
-        prediction = self.predict_observation(state)
         observation_noise = self.param_sample(Normal,
                                               name='observation_noise')
         observation_scale = LowerCholeskyTransform()(observation_noise)
         if observation is not None:
             self.observe('observation', observation, MultivariateNormal,
                          prediction, scale_tril=observation_scale)
-        if not done:
-            goal_prob = self.goal(prediction, torch.diagonal(observation_scale,
-                                                             dim1=-2, dim2=-1))
-            self.observe('goal', torch.ones(self.batch_shape).to(prediction),
-                         Bernoulli, probs=goal_prob)
 
         return state, control
 
