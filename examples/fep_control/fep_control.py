@@ -7,7 +7,7 @@ from torch.distributions import Bernoulli, MultivariateNormal, Normal
 from torch.distributions import OneHotCategorical, RelaxedOneHotCategorical
 from torch.distributions.transforms import LowerCholeskyTransform
 import torch.nn as nn
-from torch.nn.functional import softplus, softsign
+from torch.nn.functional import softplus
 
 import combinators.model as model
 
@@ -39,16 +39,12 @@ class GenerativeStep(model.Primitive):
                 },
                 'state_uncertainty': {
                     'loc': torch.zeros(self._state_dim),
-                    'covariance_matrix': torch.eye(self._state_dim),
+                    'scale': torch.ones(self._state_dim),
                 },
                 'observation_noise': {
                     'loc': torch.eye(self._observation_dim),
                     'scale': torch.ones(self._observation_dim,
                                         self._observation_dim),
-                },
-                'control_0': {
-                    'loc': torch.zeros(self._action_dim),
-                    'scale': torch.ones(self._action_dim),
                 },
             }
             if self._discrete_actions:
@@ -63,8 +59,7 @@ class GenerativeStep(model.Primitive):
         super(GenerativeStep, self).__init__(*args, **kwargs)
         self.goal = goal
         self.state_transition = nn.Sequential(
-            nn.Linear(self._state_dim + self._action_dim * 2,
-                      self._state_dim * 4),
+            nn.Linear(self._state_dim + self._action_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -85,10 +80,10 @@ class GenerativeStep(model.Primitive):
     def _forward(self, theta, t, env=None):
         if theta is None:
             state = self.param_sample(Normal, 'state_0')
-            control = self.param_sample(Normal, 'control_0')
+            control = self.param_sample(Normal, 'control')
         else:
             prev_state, prev_control = theta
-            state_uncertainty = self.param_sample(MultivariateNormal,
+            state_uncertainty = self.param_sample(Normal,
                                                   name='state_uncertainty')
 
             if self._discrete_actions:
@@ -96,15 +91,13 @@ class GenerativeStep(model.Primitive):
             else:
                 control = prev_control + self.param_sample(Normal,
                                                            name='control')
-                control = control.expand(*self.batch_shape, self._action_dim)
 
-            state = self.state_transition(torch.cat(
-                (prev_state, prev_control, control), dim=-1
-            ))
+            state = self.state_transition(torch.cat((prev_state, control),
+                                                    dim=-1))
             state = state + state_uncertainty
 
         if isinstance(control, torch.Tensor):
-            action = control[0].cpu().detach().numpy()
+            action = torch.tanh(control[0]).cpu().detach().numpy()
         else:
             action = control
         observation, _, done, _ = env.retrieve_step(t, action,
@@ -125,8 +118,8 @@ class GenerativeStep(model.Primitive):
         if not done:
             goal_prob = self.goal(prediction, torch.diagonal(observation_scale,
                                                              dim1=-2, dim2=-1))
-            self.observe('goal', torch.ones(self.batch_shape), Bernoulli,
-                         probs=goal_prob)
+            self.observe('goal', torch.ones(self.batch_shape).to(prediction),
+                         Bernoulli, probs=goal_prob)
 
         return state, control
 
@@ -148,7 +141,7 @@ class RecognitionStep(model.Primitive):
                     'scale': torch.ones(self._observation_dim,
                                         self._observation_dim),
                 },
-                'control_0': {
+                'control': {
                     'loc': torch.zeros(self._action_dim),
                     'scale': torch.ones(self._action_dim),
                 }
@@ -167,16 +160,13 @@ class RecognitionStep(model.Primitive):
                 nn.Linear(self._state_dim + self._action_dim,
                           self._state_dim * 4),
                 nn.PReLU(),
-                nn.Linear(self._state_dim * 4, self._state_dim * 8),
+                nn.Linear(self._state_dim * 4, self._action_dim * 16),
                 nn.PReLU(),
-                nn.Linear(self._state_dim * 8, self._state_dim * 16),
-                nn.PReLU(),
-                nn.Linear(self._state_dim * 16, self._action_dim * 2),
-                nn.Softsign(),
+                nn.Linear(self._action_dim * 16, self._action_dim * 2),
+                nn.Tanh(),
             )
         self.encode_uncertainty = nn.Sequential(
-            nn.Linear(self._state_dim + self._observation_dim +
-                      self._action_dim, self._state_dim * 4),
+            nn.Linear(self._observation_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -192,7 +182,7 @@ class RecognitionStep(model.Primitive):
     def _forward(self, theta, t, env=None):
         if theta is None:
             self.param_sample(Normal, 'state_0')
-            control = self.param_sample(Normal, 'control_0')
+            control = self.param_sample(Normal, 'control')
         else:
             prev_state, prev_control = theta
             self.param_sample(Normal, name='observation_noise')
@@ -210,7 +200,7 @@ class RecognitionStep(model.Primitive):
                                                      name='control')
 
         if isinstance(control, torch.Tensor):
-            action = control[0].cpu().detach().numpy()
+            action = torch.tanh(control[0]).cpu().detach().numpy()
         else:
             action = control
         observation, _, _, _ = env.retrieve_step(t, action, override_done=True)
@@ -219,17 +209,17 @@ class RecognitionStep(model.Primitive):
         )
 
         if theta is not None:
-            state_uncertainty = self.encode_uncertainty(
-                torch.cat((prev_state, observation, control), dim=-1)
-            ).reshape(-1, self._state_dim, 2)
+            state_uncertainty = self.encode_uncertainty(observation).reshape(
+                -1, self._state_dim, 2
+            )
             self.sample(Normal, state_uncertainty[:, :, 0],
                         softplus(state_uncertainty[:, :, 1]),
                         name='state_uncertainty')
 
 class MountainCarCredibleInterval(NormalCredibleInterval):
     def __init__(self, batch_shape):
-        loc = torch.tensor([0.45]).expand(*batch_shape, 1)
-        scale = torch.tensor([0.045]).expand(*batch_shape, 1)
+        loc = torch.tensor([0.5]).expand(*batch_shape, 1)
+        scale = torch.tensor([0.05]).expand(*batch_shape, 1)
         super(MountainCarCredibleInterval, self).__init__(loc, scale, 1)
 
     def forward(self, loc, scale):
