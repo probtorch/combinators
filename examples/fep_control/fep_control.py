@@ -11,18 +11,17 @@ from torch.nn.functional import softplus
 
 import combinators.model as model
 
-class NormalCredibleInterval(nn.Module):
+class NormalInterval(nn.Module):
     def __init__(self, loc, scale, num_scales):
-        super(NormalCredibleInterval, self).__init__()
+        super(NormalInterval, self).__init__()
         self.register_buffer('loc', loc)
         self.register_buffer('scale', scale)
         self.num_scales = num_scales
 
-    def forward(self, loc, scale):
-        dist = Normal(self.loc, self.scale)
-        upper = loc + self.num_scales * scale
-        lower = loc - self.num_scales * scale
-        return dist.cdf(upper) - dist.cdf(lower)
+    def forward(self, observation):
+        p = Normal(self.loc, self.scale).cdf(observation)
+        p = torch.where(p > 0.5, 1. - p, p)
+        return 2 * p
 
 class GenerativeStep(model.Primitive):
     def __init__(self, *args, **kwargs):
