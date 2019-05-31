@@ -54,7 +54,8 @@ class GenerativeActor(model.Primitive):
         super(GenerativeActor, self).__init__(*args, **kwargs)
         self.goal = goal
         self.state_transition = nn.Sequential(
-            nn.Linear(self._state_dim + self._action_dim, self._state_dim * 4),
+            nn.Linear(self._state_dim * 2 + self._action_dim,
+                      self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -87,9 +88,9 @@ class GenerativeActor(model.Primitive):
                 control = prev_control + self.param_sample(Normal,
                                                            name='control')
 
-            state = self.state_transition(torch.cat((prev_state, control),
-                                                    dim=-1))
-            state = state + state_uncertainty
+            state = self.state_transition(
+                torch.cat((prev_state, control, state_uncertainty), dim=-1)
+            )
 
         prediction = self.predict_observation(state)
         if not env.done or self.goal.all_steps:
