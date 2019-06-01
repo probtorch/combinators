@@ -27,7 +27,7 @@ class Move(Inference):
 
         for t in range(self._moves):
             kwargs['t'] = t
-            log_weight -= importance.conditioning_factor(
+            log_weight = log_weight - importance.conditioning_factor(
                 {}, xi, self.batch_shape
             )
             xiq, _ = self.kernel(zs, xi, log_weight, *args, **kwargs)
