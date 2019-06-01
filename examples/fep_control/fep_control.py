@@ -101,7 +101,7 @@ class GenerativeActor(model.Primitive):
             self.observe('goal', torch.ones_like(comparator), Bernoulli,
                          probs=goal_prob)
 
-        return (state, control, prediction), t, env
+        return state, control, prediction, t, env
 
 class GenerativeObserver(model.Primitive):
     def __init__(self, *args, **kwargs):
@@ -116,9 +116,7 @@ class GenerativeObserver(model.Primitive):
             }
         super(GenerativeObserver, self).__init__(*args, **kwargs)
 
-    def _forward(self, theta, t, env=None):
-        state, control, prediction = theta
-
+    def _forward(self, state, control, prediction, t, env=None):
         if isinstance(control, torch.Tensor):
             action = torch.tanh(control[0]).cpu().detach().numpy()
         else:
@@ -222,8 +220,7 @@ class RecognitionEncoder(model.Primitive):
     def name(self):
         return 'GenerativeObserver'
 
-    def _forward(self, theta, t, env=None):
-        _, control, _ = theta
+    def _forward(self, state, control, prediction, t, env=None):
         if isinstance(control, torch.Tensor):
             action = torch.tanh(control[0]).cpu().detach().numpy()
         else:
