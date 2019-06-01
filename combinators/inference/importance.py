@@ -66,8 +66,9 @@ def index_select_rv(rv, batch_shape, ancestors):
     result = rv
     if isinstance(rv, RandomVariable) and not rv.observed:
         value = collapsed_index_select(rv.value, batch_shape, ancestors)
-        result = RandomVariable(rv.dist, value, rv.provenance, rv.mask,
-                                rv.reparameterized)
+        result = RandomVariable(rv.Dist, value, *rv.dist_args,
+                                provenance=rv.provenance, mask=rv.mask,
+                                **rv.dist_kwargs)
     return result
 
 class Importance(inference.Inference):
