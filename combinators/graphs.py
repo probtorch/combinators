@@ -215,18 +215,19 @@ def graph_where(condition, gx, gy, batch_shape):
                                          gy[tname][name].log_prob, batch_shape)
             trace.factor(log_prob, name=name)
         elif isinstance(node, probtorch.stochastic.Loss):
-            value = utils.batch_where(condition, node.value, gy[tname][name].value,
-                                      batch_shape)
-            target = utils.batch_where(condition, node.target, gy[tname][name].target,
-                                       batch_shape)
+            value = utils.batch_where(condition, node.value,
+                                      gy[tname][name].value, batch_shape)
+            target = utils.batch_where(condition, node.target,
+                                       gy[tname][name].target, batch_shape)
             trace.loss(node._loss, value, target, name=name)
         elif isinstance(node, probtorch.RandomVariable):
-            dist_args = [utils.batch_where(condition, dax, day, batch_shape) for
-                         (dax, day) in zip(node.dist_args, gy[tname][name].dist_args)]
-            dist_kwargs = {k: utils.batch_where(condition, vx,
+            dist_args = [utils.batch_where(condition, dax, day, batch_shape)
+                         for (dax, day) in
+                         zip(node.dist_args, gy[tname][name].dist_args)]
+            dist_kwargs = {k: utils.batch_where(condition, node.dist_kwargs[k],
                                                 gy[tname][name].dist_kwargs[k],
                                                 batch_shape)
-                              for (k, v) in node.dist_kwargs.items()}
+                           for (k, v) in node.dist_kwargs.items()}
             value = utils.batch_where(condition, node.value,
                                       gy[tname][name].value, batch_shape)
             trace.variable(node.Dist, *dist_args, **dist_kwargs, name=name,
