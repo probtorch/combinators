@@ -62,8 +62,10 @@ class MetropolisHastings(Inference):
     def forward(self, *args, **kwargs):
         zs, xi, log_weight = self.target(*args, **kwargs)
         multiple_zs = isinstance(zs, tuple)
-        if not multiple_zs:
-            zs = (zs,)
+        if multiple_zs:
+            zs = list(zs)
+        else:
+            zs = [zs]
 
         ts = torch.zeros(self.batch_shape, dtype=torch.long)
         while (ts < self._moves).any():
@@ -71,8 +73,7 @@ class MetropolisHastings(Inference):
             with self.target.rescore(xi) as rescorer:
                 _, xi, log_weight = rescorer(*args, **kwargs)
             kwargs['ts'] = ts
-            xiq, log_weight_q = self.kernel(zs, xi, log_weight, *args,
-                                            **kwargs)
+            xiq, log_weight_q = self.kernel(zs, xi, *args, **kwargs)
             if not self._count_target:
                 kwargs.pop('ts')
             try:
@@ -99,8 +100,13 @@ class MetropolisHastings(Inference):
             acceptance = torch.where(utils.isnum(log_alpha), acceptance,
                                      torch.zeros(self.batch_shape,
                                                  dtype=torch.long))
-            zs = [utils.batch_where(acceptance, zx, zy, self.batch_shape)
-                  for (zx, zy) in zip(zsp, zs)]
+            for i, zy in enumerate(zs):
+                zx = zsp[i]
+                if torch.is_tensor(zx) and torch.is_tensor(zy):
+                    zs[i] = utils.batch_where(acceptance, zx, zy,
+                                              self.batch_shape)
+                else:
+                    zs[i] = zx
             xi = graphs.graph_where(acceptance, xip, xi, self.batch_shape)
             log_weight = utils.batch_where(acceptance, log_w, log_weight,
                                            self.batch_shape)
@@ -110,7 +116,9 @@ class MetropolisHastings(Inference):
                                   torch.zeros(self.batch_shape,
                                               dtype=torch.long))
 
-        if not multiple_zs:
+        if multiple_zs:
+            zs = tuple(zs)
+        else:
             zs = zs[0]
         return zs, xi, log_weight
 
