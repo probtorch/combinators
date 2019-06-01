@@ -123,7 +123,7 @@ class MetropolisHastings(Inference):
         return zs, xi, log_weight
 
 def move(target, kernel, moves=1):
-    return Move(target, kernel, moves=moves)
+    return MetropolisHastings(target, kernel, moves=moves)
 
 def lightweight_mh(target, moves=1):
     return move(target, mh.LightweightKernel(target.batch_shape), moves=moves)
