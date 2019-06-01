@@ -149,11 +149,6 @@ class RecognitionActor(model.Primitive):
                     'loc': torch.zeros(self._state_dim),
                     'scale': torch.ones(self._state_dim),
                 },
-                'observation_noise': {
-                    'loc': torch.eye(self._observation_dim),
-                    'scale': torch.ones(self._observation_dim,
-                                        self._observation_dim),
-                },
                 'control': {
                     'loc': torch.zeros(self._action_dim),
                     'scale': torch.ones(self._action_dim),
