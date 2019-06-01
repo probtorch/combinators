@@ -30,7 +30,7 @@ class Move(Inference):
             log_weight = log_weight - importance.conditioning_factor(
                 {}, xi, self.batch_shape
             )
-            xiq, _ = self.kernel(zs, xi, log_weight, *args, **kwargs)
+            xiq, _ = self.kernel(zs, xi, *args, **kwargs)
             if not self._count_target:
                 kwargs.pop('t')
             zs, xi, log_weight = importance.conditioned_evaluate(
