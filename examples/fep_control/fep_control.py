@@ -187,6 +187,7 @@ class RecognitionActor(model.Primitive):
                 control = prev_control + self.sample(Normal, control[:, :, 0],
                                                      softplus(control[:, :, 1]),
                                                      name='control')
+        return control, t, env
 
 class RecognitionEncoder(model.Primitive):
     def __init__(self, *args, **kwargs):
@@ -215,7 +216,7 @@ class RecognitionEncoder(model.Primitive):
     def name(self):
         return 'GenerativeObserver'
 
-    def _forward(self, state, control, prediction, t, env=None):
+    def _forward(self, control, t, env=None):
         if isinstance(control, torch.Tensor):
             action = torch.tanh(control[0]).cpu().detach().numpy()
         else:
