@@ -29,7 +29,8 @@ class TransitionKernel(Sampler):
         raise NotImplementedError()
 
     def log_transition_prob(self, origin, destination):
-        log_transition = torch.zeros(self.batch_shape)
+        log_transition = torch.zeros(self.batch_shape,
+                                     device=destination.device)
         origin_nodes = dict(origin.nodes())
         destination_nodes = dict(destination.nodes())
         for k, v in destination_nodes.items():
