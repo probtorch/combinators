@@ -67,7 +67,8 @@ class MetropolisHastings(Inference):
         else:
             zs = [zs]
 
-        ts = torch.zeros(self.batch_shape, dtype=torch.long)
+        ts = torch.zeros(self.batch_shape, dtype=torch.long,
+                         device=log_weight.device)
         while (ts < self._moves).any():
             # Rescore the current trace under any change of target based on t.
             with self.target.rescore(xi) as rescorer:
@@ -86,19 +87,23 @@ class MetropolisHastings(Inference):
                 log_reverse_transition = self.kernel.log_transition_prob(xip,
                                                                          xi)
                 log_w = log_weight_q + log_w
-                log_alpha = torch.min(torch.zeros(self.batch_shape),
+                log_alpha = torch.min(torch.zeros(self.batch_shape,
+                                                  device=log_w.device),
                                       (log_w + log_reverse_transition) -\
                                       (log_weight + log_transition))
             except ValueError as err:
                 if 'NaN' in str(err):
-                    log_alpha = torch.Tensor([float('nan')])
+                    log_alpha = torch.tensor([float('nan')],
+                                             device=log_weight.device)
             nonan_log_alpha = torch.where(utils.isnum(log_alpha), log_alpha,
-                                          torch.zeros(self.batch_shape))
+                                          torch.zeros(self.batch_shape,
+                                                      device=log_alpha.device))
             acceptance = Bernoulli(logits=nonan_log_alpha).sample().to(
-                dtype=torch.long
+                device=nonan_log_alpha.device, dtype=torch.long
             )
             acceptance = torch.where(utils.isnum(log_alpha), acceptance,
                                      torch.zeros(self.batch_shape,
+                                                 device=log_alpha.device,
                                                  dtype=torch.long))
             for i, zy in enumerate(zs):
                 zx = zsp[i]
@@ -111,9 +116,10 @@ class MetropolisHastings(Inference):
             log_weight = utils.batch_where(acceptance, log_w, log_weight,
                                            self.batch_shape)
             ts = ts + torch.where(utils.isnum(log_alpha) & (ts < self._moves),
-                                  torch.ones(self.batch_shape,
-                                             dtype=torch.long),
+                                  torch.ones(self.batch_shape, dtype=torch.long,
+                                             device=log_alpha.device),
                                   torch.zeros(self.batch_shape,
+                                              device=log_alpha.device,
                                               dtype=torch.long))
 
         if multiple_zs:
