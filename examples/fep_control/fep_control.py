@@ -203,7 +203,8 @@ class RecognitionEncoder(model.Primitive):
             }
         super(RecognitionEncoder, self).__init__(*args, **kwargs)
         self.encode_uncertainty = nn.Sequential(
-            nn.Linear(self._observation_dim, self._state_dim * 4),
+            nn.Linear(self._observation_dim + self._state_dim,
+                      self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -216,7 +217,7 @@ class RecognitionEncoder(model.Primitive):
     def name(self):
         return 'GenerativeObserver'
 
-    def _forward(self, control, t, env=None):
+    def _forward(self, prev_state, control, t, env=None):
         if isinstance(control, torch.Tensor):
             action = torch.tanh(control[0]).cpu().detach().numpy()
         else:
@@ -227,9 +228,9 @@ class RecognitionEncoder(model.Primitive):
             observation = torch.Tensor(observation).to(control).expand(
                 self.batch_shape + observation.shape
             )
-            state_uncertainty = self.encode_uncertainty(observation).reshape(
-                -1, self._state_dim, 2
-            )
+            state_uncertainty = self.encode_uncertainty(torch.cat(
+                (observation, prev_state), dim=-1
+            )).reshape(-1, self._state_dim, 2)
             self.sample(Normal, state_uncertainty[:, :, 0],
                         softplus(state_uncertainty[:, :, 1]),
                         name='state_uncertainty')
