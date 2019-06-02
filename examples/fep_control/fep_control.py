@@ -171,7 +171,7 @@ class RecognitionActor(model.Primitive):
 
     def _forward(self, theta, t, env=None):
         if theta is None:
-            self.param_sample(Normal, 'state_0')
+            prev_state = self.param_sample(Normal, 'state_0')
             control = self.param_sample(Normal, 'control')
         else:
             prev_state, prev_control = theta
@@ -187,7 +187,7 @@ class RecognitionActor(model.Primitive):
                 control = prev_control + self.sample(Normal, control[:, :, 0],
                                                      softplus(control[:, :, 1]),
                                                      name='control')
-        return control, t, env
+        return prev_state, control, t, env
 
 class RecognitionEncoder(model.Primitive):
     def __init__(self, *args, **kwargs):
