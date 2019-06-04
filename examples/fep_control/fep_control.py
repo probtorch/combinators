@@ -183,9 +183,10 @@ class RecognitionActor(model.Primitive):
                                       name='control')
             else:
                 control = control.reshape(-1, self._action_dim, 2)
-                control = prev_control + self.sample(Normal, control[:, :, 0],
-                                                     softplus(control[:, :, 1]),
-                                                     name='control')
+                control = self.sample(Normal, control[:, :, 0],
+                                      softplus(control[:, :, 1]),
+                                      name='control')
+
         return prev_state, control, t, env
 
 class RecognitionEncoder(model.Primitive):
