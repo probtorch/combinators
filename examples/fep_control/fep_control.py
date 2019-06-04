@@ -237,8 +237,8 @@ class RecognitionEncoder(model.Primitive):
 
 class MountainCarInterval(NormalInterval):
     def __init__(self, batch_shape):
-        loc = torch.tensor([0.5]).expand(*batch_shape, 1)
-        scale = torch.tensor([0.05]).expand(*batch_shape, 1)
+        loc = torch.tensor([0.6]).expand(*batch_shape, 1)
+        scale = torch.tensor([0.2]).expand(*batch_shape, 1)
         super(MountainCarInterval, self).__init__(loc, scale, 1)
 
     def forward(self, observation):
