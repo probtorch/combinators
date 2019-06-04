@@ -88,8 +88,7 @@ class GenerativeActor(model.Primitive):
             if self._discrete_actions:
                 control = self.param_sample(OneHotCategorical, name='control')
             else:
-                control = prev_control + self.param_sample(Normal,
-                                                           name='control')
+                control = self.param_sample(Normal, name='control')
 
             state = self.state_transition(
                 torch.cat((prev_state, control, state_uncertainty), dim=-1)
