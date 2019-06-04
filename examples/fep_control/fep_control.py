@@ -12,11 +12,10 @@ from torch.nn.functional import softplus
 import combinators.model as model
 
 class NormalInterval(nn.Module):
-    def __init__(self, loc, scale, num_scales):
+    def __init__(self, loc, scale):
         super(NormalInterval, self).__init__()
         self.register_buffer('loc', loc)
         self.register_buffer('scale', scale)
-        self.num_scales = num_scales
         self.all_steps = False
 
     def forward(self, observation):
