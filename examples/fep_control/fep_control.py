@@ -237,8 +237,8 @@ class RecognitionEncoder(model.Primitive):
 class MountainCarInterval(NormalInterval):
     def __init__(self, batch_shape):
         loc = torch.tensor([0.6]).expand(*batch_shape, 1)
-        scale = torch.tensor([0.2]).expand(*batch_shape, 1)
-        super(MountainCarInterval, self).__init__(loc, scale, 1)
+        scale = torch.tensor([0.05]).expand(*batch_shape, 1)
+        super(MountainCarInterval, self).__init__(loc, scale)
 
     def forward(self, observation):
         p, _ = super(MountainCarInterval, self).forward(observation[:, 0])
@@ -256,7 +256,7 @@ class CartpoleInterval(NormalInterval):
     def __init__(self, batch_shape):
         loc = torch.zeros(*batch_shape, 1)
         scale = torch.tensor([np.pi / (15 * 2)]).expand(*batch_shape, 1)
-        super(CartpoleInterval, self).__init__(loc, scale, 1)
+        super(CartpoleInterval, self).__init__(loc, scale)
         self.all_steps = True
 
     def forward(self, observation):
@@ -273,7 +273,7 @@ class BipedalWalkerInterval(NormalInterval):
     def __init__(self, batch_shape):
         loc = torch.tensor([0., 0., 1.]).expand(*batch_shape, 3)
         scale = torch.ones(*batch_shape, 3) * 0.0025
-        super(BipedalWalkerInterval, self).__init__(loc, scale, 1)
+        super(BipedalWalkerInterval, self).__init__(loc, scale)
         self.all_steps = True
 
     def forward(self, observation):
