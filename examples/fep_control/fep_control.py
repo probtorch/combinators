@@ -169,7 +169,7 @@ class RecognitionActor(model.Primitive):
             nn.Linear(self._state_dim * 4, self._action_dim * 16),
             nn.PReLU(),
             nn.Linear(self._action_dim * 16, self._action_dim * 2),
-            nn.Softmax(dim=-1) if self._discrete_actions else nn.Tanh(),
+            nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
         )
 
     @property
