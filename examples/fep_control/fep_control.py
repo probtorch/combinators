@@ -81,21 +81,18 @@ class GenerativeActor(model.Primitive):
         )
 
     def _forward(self, theta, t, env=None):
+        if self._discrete_actions:
+            control = self.param_sample(OneHotCategorical, name='control')
+        else:
+            control = self.param_sample(Normal, 'control')
+
         if theta is None:
             state = self.param_sample(Normal, 'state_0')
-            if self._discrete_actions:
-                control = self.param_sample(OneHotCategorical, name='control')
-            else:
-                control = self.param_sample(Normal, 'control')
+
         else:
             prev_state, prev_control = theta
             state_uncertainty = self.param_sample(Normal,
                                                   name='state_uncertainty')
-
-            if self._discrete_actions:
-                control = self.param_sample(OneHotCategorical, name='control')
-            else:
-                control = self.param_sample(Normal, name='control')
 
             affordance = self.control_affordance(control).reshape(
                 -1, self._state_dim, 2
