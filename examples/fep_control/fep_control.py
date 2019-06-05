@@ -164,8 +164,7 @@ class RecognitionActor(model.Primitive):
             }
         super(RecognitionActor, self).__init__(*args, **kwargs)
         self.decode_policy = nn.Sequential(
-            nn.Linear(self._state_dim + self._action_dim,
-                      self._state_dim * 4),
+            nn.Linear(self._state_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._action_dim * 16),
             nn.PReLU(),
@@ -182,11 +181,9 @@ class RecognitionActor(model.Primitive):
             prev_state = self.param_sample(Normal, 'state_0')
             control = self.param_sample(Normal, 'control')
         else:
-            prev_state, prev_control = theta
+            prev_state = theta
 
-            control = self.decode_policy(
-                torch.cat((prev_state, prev_control), dim=-1)
-            )
+            control = self.decode_policy(prev_state)
             if self._discrete_actions:
                 control = self.sample(OneHotCategorical, probs=control,
                                       name='control')
