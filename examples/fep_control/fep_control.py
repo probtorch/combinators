@@ -142,7 +142,7 @@ class GenerativeObserver(model.Primitive):
             self.observe('observation', observation, MultivariateNormal,
                          prediction, scale_tril=observation_scale)
 
-        return state, control
+        return state
 
 class RecognitionActor(model.Primitive):
     def __init__(self, *args, **kwargs):
