@@ -90,7 +90,7 @@ class GenerativeActor(model.Primitive):
             state = self.param_sample(Normal, 'state_0')
 
         else:
-            prev_state, prev_control = theta
+            prev_state = theta
             state_uncertainty = self.param_sample(Normal,
                                                   name='state_uncertainty')
 
