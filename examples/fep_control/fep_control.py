@@ -193,7 +193,7 @@ class RecognitionActor(model.Primitive):
                                       softplus(control[:, :, 1]),
                                       name='control')
 
-        return prev_state, control, t, env
+        return control, t, env
 
 class RecognitionEncoder(model.Primitive):
     def __init__(self, *args, **kwargs):
