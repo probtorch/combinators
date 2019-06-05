@@ -53,14 +53,22 @@ class GenerativeActor(model.Primitive):
         super(GenerativeActor, self).__init__(*args, **kwargs)
         self.goal = goal
         self.state_transition = nn.Sequential(
-            nn.Linear(self._state_dim * 2 + self._action_dim,
-                      self._state_dim * 4),
+            nn.Linear(self._state_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
             nn.Linear(self._state_dim * 8, self._state_dim * 16),
             nn.PReLU(),
             nn.Linear(self._state_dim * 16, self._state_dim),
+        )
+        self.control_affordance = nn.Sequential(
+            nn.Linear(self._action_dim, self._action_dim * 2),
+            nn.PReLU(),
+            nn.Linear(self._action_dim * 2, self._state_dim * 4),
+            nn.PReLU(),
+            nn.Linear(self._state_dim * 4, self._state_dim * 8),
+            nn.PReLU(),
+            nn.Linear(self._state_dim * 8, self._state_dim * 2)
         )
         self.predict_observation = nn.Sequential(
             nn.Linear(self._state_dim, self._state_dim * 4),
@@ -89,8 +97,13 @@ class GenerativeActor(model.Primitive):
             else:
                 control = self.param_sample(Normal, name='control')
 
-            state = self.state_transition(
-                torch.cat((prev_state, control, state_uncertainty), dim=-1)
+            affordance = self.control_affordance(control).reshape(
+                -1, self._state_dim, 2
+            )
+            state = self.sample(
+                Normal, self.state_transition(prev_state) + affordance[:, :, 0],
+                (state_uncertainty ** 2 + affordance[:, :, 1] ** 2).sqrt(),
+                name='state'
             )
 
         prediction = self.predict_observation(state)
