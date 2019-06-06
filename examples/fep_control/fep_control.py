@@ -205,7 +205,7 @@ class RecognitionEncoder(model.Primitive):
                 },
             }
         super(RecognitionEncoder, self).__init__(*args, **kwargs)
-        self.encode_uncertainty = nn.Sequential(
+        self.encode_state = nn.Sequential(
             nn.Linear(self._observation_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
@@ -230,12 +230,11 @@ class RecognitionEncoder(model.Primitive):
             observation = torch.Tensor(observation).to(control).expand(
                 self.batch_shape + observation.shape
             )
-            state_uncertainty = self.encode_uncertainty(observation).reshape(
+            state = self.encode_state(observation).reshape(
                 -1, self._state_dim, 2
             )
-            self.sample(Normal, state_uncertainty[:, :, 0],
-                        softplus(state_uncertainty[:, :, 1]),
-                        name='state_uncertainty')
+            self.sample(Normal, state[:, :, 0], softplus(state[:, :, 1]),
+                        name='state')
 
 class MountainCarInterval(NormalInterval):
     def __init__(self, batch_shape):
