@@ -178,7 +178,7 @@ class RecognitionActor(model.Primitive):
             prev_state = self.param_sample(Normal, 'state_0')
             control = self.param_sample(Normal, 'control')
         else:
-            prev_state = theta
+            prev_state, prev_control = theta
 
             control = self.decode_policy(prev_state)
             if self._discrete_actions:
@@ -186,7 +186,7 @@ class RecognitionActor(model.Primitive):
                                       name='control')
             else:
                 control = control.reshape(-1, self._action_dim, 2)
-                control = self.sample(Normal, control[:, :, 0],
+                control = self.sample(Normal, prev_control + control[:, :, 0],
                                       softplus(control[:, :, 1]),
                                       name='control')
 
