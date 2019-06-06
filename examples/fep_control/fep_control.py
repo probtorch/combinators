@@ -11,17 +11,15 @@ from torch.nn.functional import hardtanh, softplus
 
 import combinators.model as model
 
-class NormalInterval(nn.Module):
+class NormalEnergy(nn.Module):
     def __init__(self, loc, scale):
-        super(NormalInterval, self).__init__()
+        super(NormalEnergy, self).__init__()
         self.register_buffer('loc', loc)
         self.register_buffer('scale', scale)
         self.all_steps = False
 
-    def forward(self, observation):
-        p = Normal(self.loc, self.scale).cdf(observation)
-        p = torch.where(p > 0.5, 1. - p, p)
-        return 2 * p, observation
+    def forward(self, agent, observation):
+        return agent.observe('goal', observation, Normal, self.loc, self.scale)
 
 class GenerativeActor(model.Primitive):
     def __init__(self, *args, **kwargs):
