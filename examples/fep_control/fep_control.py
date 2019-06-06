@@ -86,7 +86,7 @@ class GenerativeActor(model.Primitive):
             state = self.param_sample(Normal, 'state_0')
 
         else:
-            prev_state = theta
+            prev_state, _ = theta
 
             dynamics = self.state_transition(prev_state).reshape(
                 -1, self._state_dim, 2
