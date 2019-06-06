@@ -36,10 +36,6 @@ class GenerativeActor(model.Primitive):
                     'loc': torch.zeros(self._state_dim),
                     'scale': torch.ones(self._state_dim),
                 },
-                'state_uncertainty': {
-                    'loc': torch.zeros(self._state_dim),
-                    'scale': torch.ones(self._state_dim),
-                },
             }
             if self._discrete_actions:
                 kwargs['params']['control'] = {
@@ -59,7 +55,7 @@ class GenerativeActor(model.Primitive):
             nn.PReLU(),
             nn.Linear(self._state_dim * 8, self._state_dim * 16),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 16, self._state_dim),
+            nn.Linear(self._state_dim * 16, self._state_dim * 2),
         )
         self.control_affordance = nn.Sequential(
             nn.Linear(self._action_dim, self._action_dim * 2),
@@ -91,15 +87,16 @@ class GenerativeActor(model.Primitive):
 
         else:
             prev_state = theta
-            state_uncertainty = self.param_sample(Normal,
-                                                  name='state_uncertainty')
 
+            dynamics = self.state_transition(prev_state).reshape(
+                -1, self._state_dim, 2
+            )
             affordance = self.control_affordance(control).reshape(
                 -1, self._state_dim, 2
             )
             state = self.sample(
-                Normal, self.state_transition(prev_state) + affordance[:, :, 0],
-                (state_uncertainty ** 2 + affordance[:, :, 1] ** 2).sqrt(),
+                Normal, dynamics[:, :, 0] + affordance[:, :, 0],
+                (dynamics[:, :, 1] ** 2 + affordance[:, :, 1] ** 2).sqrt(),
                 name='state'
             )
 
