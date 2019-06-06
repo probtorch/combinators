@@ -7,7 +7,7 @@ from torch.distributions import Bernoulli, MultivariateNormal, Normal
 from torch.distributions import OneHotCategorical, RelaxedOneHotCategorical
 from torch.distributions.transforms import LowerCholeskyTransform
 import torch.nn as nn
-from torch.nn.functional import softplus
+from torch.nn.functional import hardtanh, softplus
 
 import combinators.model as model
 
@@ -186,7 +186,8 @@ class RecognitionActor(model.Primitive):
                                       name='control')
             else:
                 control = control.reshape(-1, self._action_dim, 2)
-                control = self.sample(Normal, prev_control + control[:, :, 0],
+                control = self.sample(Normal,
+                                      hardtanh(prev_control + control[:, :, 0]),
                                       softplus(control[:, :, 1]),
                                       name='control')
 
