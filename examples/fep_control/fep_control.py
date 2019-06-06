@@ -119,7 +119,7 @@ class GenerativeObserver(model.Primitive):
 
     def _forward(self, state, control, prediction, t, env=None):
         if isinstance(control, torch.Tensor):
-            action = hardtanh(control[0]).cpu().detach().numpy()
+            action = control[0].cpu().detach().numpy()
         else:
             action = control
         observation, _, _, _ = env.retrieve_step(t, action, override_done=True)
