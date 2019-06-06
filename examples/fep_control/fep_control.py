@@ -100,9 +100,7 @@ class GenerativeActor(model.Primitive):
 
         prediction = self.predict_observation(state)
         if not env.done or self.goal.all_steps:
-            goal_prob, comparator = self.goal(prediction)
-            self.observe('goal', torch.ones_like(comparator), Bernoulli,
-                         probs=goal_prob)
+            self.goal(self, prediction)
 
         return state, control, prediction, t, env
 
