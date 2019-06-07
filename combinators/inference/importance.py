@@ -207,7 +207,7 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6
     sampler.eval()
 
     trained_params = sampler.args_vardict(False)
-    bounds = (torch.stack([bs['elbo'] for bs in bounds], dim=0),
-              torch.stack([bs['eubo'] for bs in bounds], dim=0))
+    bounds = (torch.stack([bs['elbo'] for bs in bounds], dim=0).detach().cpu(),
+              torch.stack([bs['eubo'] for bs in bounds], dim=0).detach().cpu())
 
     return xi, trained_params, bounds
