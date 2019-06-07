@@ -18,12 +18,6 @@ class Step(Model):
         self._qs = qs
         self._walker = walker
 
-        if self._qs and self._qs.contains_model(self.name):
-            qs = self._qs[self.name:]
-            operator = operator.cond(qs)
-            if isinstance(initializer, Sampler):
-                initializer = initializer.cond(qs)
-
         self.add_module('operator', operator)
         if isinstance(initializer, Sampler):
             self.add_module('_initializer', initializer)
