@@ -7,22 +7,19 @@ from torch.distributions import Bernoulli, MultivariateNormal, Normal
 from torch.distributions import OneHotCategorical, RelaxedOneHotCategorical
 from torch.distributions.transforms import LowerCholeskyTransform
 import torch.nn as nn
-from torch.nn.functional import softplus
+from torch.nn.functional import hardtanh, softplus
 
 import combinators.model as model
 
-class NormalInterval(nn.Module):
-    def __init__(self, loc, scale, num_scales):
-        super(NormalInterval, self).__init__()
+class NormalEnergy(nn.Module):
+    def __init__(self, loc, scale):
+        super(NormalEnergy, self).__init__()
         self.register_buffer('loc', loc)
         self.register_buffer('scale', scale)
-        self.num_scales = num_scales
         self.all_steps = False
 
-    def forward(self, observation):
-        p = Normal(self.loc, self.scale).cdf(observation)
-        p = torch.where(p > 0.5, 1. - p, p)
-        return 2 * p, observation
+    def forward(self, agent, observation):
+        return agent.observe('goal', observation, Normal, self.loc, self.scale)
 
 class GenerativeActor(model.Primitive):
     def __init__(self, *args, **kwargs):
@@ -34,10 +31,6 @@ class GenerativeActor(model.Primitive):
         if 'params' not in kwargs:
             kwargs['params'] = {
                 'state_0': {
-                    'loc': torch.zeros(self._state_dim),
-                    'scale': torch.ones(self._state_dim),
-                },
-                'state_uncertainty': {
                     'loc': torch.zeros(self._state_dim),
                     'scale': torch.ones(self._state_dim),
                 },
@@ -54,14 +47,22 @@ class GenerativeActor(model.Primitive):
         super(GenerativeActor, self).__init__(*args, **kwargs)
         self.goal = goal
         self.state_transition = nn.Sequential(
-            nn.Linear(self._state_dim * 2 + self._action_dim,
-                      self._state_dim * 4),
+            nn.Linear(self._state_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
             nn.Linear(self._state_dim * 8, self._state_dim * 16),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 16, self._state_dim),
+            nn.Linear(self._state_dim * 16, self._state_dim * 2),
+        )
+        self.control_affordance = nn.Sequential(
+            nn.Linear(self._action_dim, self._action_dim * 2),
+            nn.PReLU(),
+            nn.Linear(self._action_dim * 2, self._state_dim * 4),
+            nn.PReLU(),
+            nn.Linear(self._state_dim * 4, self._state_dim * 8),
+            nn.PReLU(),
+            nn.Linear(self._state_dim * 8, self._state_dim * 2)
         )
         self.predict_observation = nn.Sequential(
             nn.Linear(self._state_dim, self._state_dim * 4),
@@ -74,32 +75,32 @@ class GenerativeActor(model.Primitive):
         )
 
     def _forward(self, theta, t, env=None):
+        if self._discrete_actions:
+            control = self.param_sample(OneHotCategorical, name='control')
+        else:
+            control = self.param_sample(Normal, 'control')
+
         if theta is None:
             state = self.param_sample(Normal, 'state_0')
-            if self._discrete_actions:
-                control = self.param_sample(OneHotCategorical, name='control')
-            else:
-                control = self.param_sample(Normal, 'control')
+
         else:
-            prev_state, prev_control = theta
-            state_uncertainty = self.param_sample(Normal,
-                                                  name='state_uncertainty')
+            prev_state, _ = theta
 
-            if self._discrete_actions:
-                control = self.param_sample(OneHotCategorical, name='control')
-            else:
-                control = prev_control + self.param_sample(Normal,
-                                                           name='control')
-
-            state = self.state_transition(
-                torch.cat((prev_state, control, state_uncertainty), dim=-1)
+            dynamics = self.state_transition(prev_state).reshape(
+                -1, self._state_dim, 2
+            )
+            affordance = self.control_affordance(control).reshape(
+                -1, self._state_dim, 2
+            )
+            state = self.sample(
+                Normal, dynamics[:, :, 0] + affordance[:, :, 0],
+                (dynamics[:, :, 1] ** 2 + affordance[:, :, 1] ** 2).sqrt(),
+                name='state'
             )
 
         prediction = self.predict_observation(state)
         if not env.done or self.goal.all_steps:
-            goal_prob, comparator = self.goal(prediction)
-            self.observe('goal', torch.ones_like(comparator), Bernoulli,
-                         probs=goal_prob)
+            self.goal(self, prediction)
 
         return state, control, prediction, t, env
 
@@ -118,7 +119,7 @@ class GenerativeObserver(model.Primitive):
 
     def _forward(self, state, control, prediction, t, env=None):
         if isinstance(control, torch.Tensor):
-            action = torch.tanh(control[0]).cpu().detach().numpy()
+            action = control[0].cpu().detach().numpy()
         else:
             action = control
         observation, _, _, _ = env.retrieve_step(t, action, override_done=True)
@@ -156,13 +157,12 @@ class RecognitionActor(model.Primitive):
             }
         super(RecognitionActor, self).__init__(*args, **kwargs)
         self.decode_policy = nn.Sequential(
-            nn.Linear(self._state_dim + self._action_dim,
-                      self._state_dim * 4),
+            nn.Linear(self._state_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._action_dim * 16),
             nn.PReLU(),
             nn.Linear(self._action_dim * 16, self._action_dim * 2),
-            nn.Softmax(dim=-1) if self._discrete_actions else nn.Tanh(),
+            nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
         )
 
     @property
@@ -176,18 +176,18 @@ class RecognitionActor(model.Primitive):
         else:
             prev_state, prev_control = theta
 
-            control = self.decode_policy(
-                torch.cat((prev_state, prev_control), dim=-1)
-            )
+            control = self.decode_policy(prev_state)
             if self._discrete_actions:
                 control = self.sample(OneHotCategorical, probs=control,
                                       name='control')
             else:
                 control = control.reshape(-1, self._action_dim, 2)
-                control = prev_control + self.sample(Normal, control[:, :, 0],
-                                                     softplus(control[:, :, 1]),
-                                                     name='control')
-        return prev_state, control, t, env
+                control = self.sample(Normal,
+                                      hardtanh(prev_control + control[:, :, 0]),
+                                      softplus(control[:, :, 1]),
+                                      name='control')
+
+        return control, t, env
 
 class RecognitionEncoder(model.Primitive):
     def __init__(self, *args, **kwargs):
@@ -202,9 +202,8 @@ class RecognitionEncoder(model.Primitive):
                 },
             }
         super(RecognitionEncoder, self).__init__(*args, **kwargs)
-        self.encode_uncertainty = nn.Sequential(
-            nn.Linear(self._observation_dim + self._state_dim,
-                      self._state_dim * 4),
+        self.encode_state = nn.Sequential(
+            nn.Linear(self._observation_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -217,9 +216,9 @@ class RecognitionEncoder(model.Primitive):
     def name(self):
         return 'GenerativeObserver'
 
-    def _forward(self, prev_state, control, t, env=None):
+    def _forward(self, control, t, env=None):
         if isinstance(control, torch.Tensor):
-            action = torch.tanh(control[0]).cpu().detach().numpy()
+            action = control[0].cpu().detach().numpy()
         else:
             action = control
         observation, _, _, _ = env.retrieve_step(t, action, override_done=True)
@@ -228,63 +227,60 @@ class RecognitionEncoder(model.Primitive):
             observation = torch.Tensor(observation).to(control).expand(
                 self.batch_shape + observation.shape
             )
-            state_uncertainty = self.encode_uncertainty(torch.cat(
-                (observation, prev_state), dim=-1
-            )).reshape(-1, self._state_dim, 2)
-            self.sample(Normal, state_uncertainty[:, :, 0],
-                        softplus(state_uncertainty[:, :, 1]),
-                        name='state_uncertainty')
+            state = self.encode_state(observation).reshape(
+                -1, self._state_dim, 2
+            )
+            self.sample(Normal, state[:, :, 0], softplus(state[:, :, 1]),
+                        name='state')
 
-class MountainCarInterval(NormalInterval):
+class MountainCarEnergy(NormalEnergy):
     def __init__(self, batch_shape):
-        loc = torch.tensor([0.5]).expand(*batch_shape, 1)
+        loc = torch.tensor([0.6]).expand(*batch_shape, 1)
         scale = torch.tensor([0.05]).expand(*batch_shape, 1)
-        super(MountainCarInterval, self).__init__(loc, scale, 1)
+        super(MountainCarEnergy, self).__init__(loc, scale)
 
-    def forward(self, observation):
-        p, _ = super(MountainCarInterval, self).forward(observation[:, 0])
-        return p, observation[:, 0]
+    def forward(self, agent, observation):
+        return super(MountainCarEnergy, self).forward(agent, observation[:, 0])
 
 class MountainCarActor(GenerativeActor):
     def __init__(self, *args, **kwargs):
         kwargs['discrete_actions'] = False
         kwargs['action_dim'] = 1
         kwargs['observation_dim'] = 2
-        kwargs['goal'] = MountainCarInterval(kwargs['batch_shape'])
+        kwargs['goal'] = MountainCarEnergy(kwargs['batch_shape'])
         super(MountainCarActor, self).__init__(*args, **kwargs)
 
-class CartpoleInterval(NormalInterval):
+class CartpoleEnergy(NormalEnergy):
     def __init__(self, batch_shape):
         loc = torch.zeros(*batch_shape, 1)
         scale = torch.tensor([np.pi / (15 * 2)]).expand(*batch_shape, 1)
-        super(CartpoleInterval, self).__init__(loc, scale, 1)
+        super(CartpoleEnergy, self).__init__(loc, scale)
         self.all_steps = True
 
-    def forward(self, observation):
-        return super(CartpoleInterval, self).forward(observation)
+    def forward(self, agent, observation):
+        return super(CartpoleEnergy, self).forward(agent, observation)
 
 class CartpoleActor(GenerativeActor):
     def __init__(self, *args, **kwargs):
         kwargs['discrete_actions'] = True
         kwargs['observation_dim'] = 4
-        kwargs['goal'] = CartpoleInterval(kwargs['batch_shape'])
+        kwargs['goal'] = CartpoleEnergy(kwargs['batch_shape'])
         super(CartpoleActor, self).__init__(*args, **kwargs)
 
-class BipedalWalkerInterval(NormalInterval):
+class BipedalWalkerEnergy(NormalEnergy):
     def __init__(self, batch_shape):
         loc = torch.tensor([0., 0., 1.]).expand(*batch_shape, 3)
         scale = torch.ones(*batch_shape, 3) * 0.0025
-        super(BipedalWalkerInterval, self).__init__(loc, scale, 1)
+        super(BipedalWalkerEnergy, self).__init__(loc, scale)
         self.all_steps = True
 
-    def forward(self, observation):
-        p, _ = super(BipedalWalkerInterval, self).forward(observation[:, 0:3])
-        return p, observation[:, 0:3]
+    def forward(self, agent, observation):
+        return super(BipedalWalkerEnergy, self).forward(agent, observation[:, 0:3])
 
 class BipedalWalkerActor(GenerativeActor):
     def __init__(self, *args, **kwargs):
         kwargs['discrete_actions'] = False
         kwargs['observation_dim'] = 24
         kwargs['action_dim'] = 4
-        kwargs['goal'] = BipedalWalkerInterval(kwargs['batch_shape'])
+        kwargs['goal'] = BipedalWalkerEnergy(kwargs['batch_shape'])
         super(BipedalWalkerActor, self).__init__(*args, **kwargs)
