@@ -9,13 +9,12 @@ from .model import Model
 from ..sampler import Sampler
 
 class Step(Model):
-    def __init__(self, operator, initializer=None, iteration=0, qs=None,
-                 walker=None, **kwargs):
+    def __init__(self, operator, initializer=None, iteration=0, walker=None,
+                 **kwargs):
         assert isinstance(operator, Sampler)
         super(Step, self).__init__(batch_shape=operator.batch_shape)
         self._kwargs = kwargs
         self._iteration = iteration
-        self._qs = qs
         self._walker = walker
 
         self.add_module('operator', operator)
@@ -39,8 +38,8 @@ class Step(Model):
             seed_log_weight = torch.zeros(self.batch_shape)
         result, op_trace, log_weight = self.operator(seed, *args, **kwargs)
         next_step = Step(self.operator, initializer=result,
-                         iteration=self._iteration + 1, qs=self._qs,
-                         walker=self._walker, **self._kwargs)
+                         iteration=self._iteration + 1, walker=self._walker,
+                         **self._kwargs)
         if self._walker:
             next_step = self._walker(next_step)
 
@@ -64,12 +63,12 @@ class Step(Model):
 
     @contextmanager
     def cond(self, qs):
-        original_qs = self._qs
-        try:
-            self._qs = qs
-            yield self
-        finally:
-            self._qs = original_qs
+        with self.operator.cond(qs[self.name:]) as opq:
+            if isinstance(self._initializer, Sampler):
+                with self._initializer.cond(qs[self.name:]) as opinit:
+                    yield self
+            else:
+                yield self
 
 def step(operator, initializer=None, qs=None, **kwargs):
     return Step(operator, initializer=initializer, qs=qs, **kwargs)
