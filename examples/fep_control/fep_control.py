@@ -108,25 +108,14 @@ class GenerativeAgent(model.Primitive):
 
         return control, prediction
 
-class RecognitionActor(model.Primitive):
+class RecognitionAgent(model.Primitive):
     def __init__(self, *args, **kwargs):
         self._state_dim = kwargs.pop('state_dim', 2)
         self._action_dim = kwargs.pop('action_dim', 1)
         self._observation_dim = kwargs.pop('observation_dim', 2)
         self._discrete_actions = kwargs.pop('discrete_actions', True)
         self._name = kwargs.pop('name')
-        if 'params' not in kwargs:
-            kwargs['params'] = {
-                'state_0': {
-                    'loc': torch.zeros(self._state_dim),
-                    'scale': torch.ones(self._state_dim),
-                },
-                'control': {
-                    'loc': torch.zeros(self._action_dim),
-                    'scale': torch.ones(self._action_dim),
-                }
-            }
-        super(RecognitionActor, self).__init__(*args, **kwargs)
+        super(RecognitionAgent, self).__init__(*args, **kwargs)
         self.decode_policy = nn.Sequential(
             nn.Linear(self._state_dim, self._state_dim * 4),
             nn.PReLU(),
@@ -135,46 +124,9 @@ class RecognitionActor(model.Primitive):
             nn.Linear(self._action_dim * 16, self._action_dim * 2),
             nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
         )
-
-    @property
-    def name(self):
-        return self._name
-
-    def _forward(self, theta, t, env=None):
-        if theta is None:
-            prev_state = self.param_sample(Normal, 'state_0')
-            control = self.param_sample(Normal, 'control')
-        else:
-            prev_state, prev_control = theta
-
-            control = self.decode_policy(prev_state)
-            if self._discrete_actions:
-                control = self.sample(OneHotCategorical, probs=control,
-                                      name='control')
-            else:
-                control = control.reshape(-1, self._action_dim, 2)
-                control = self.sample(Normal,
-                                      hardtanh(prev_control + control[:, :, 0]),
-                                      softplus(control[:, :, 1]),
-                                      name='control')
-
-        return control, t, env
-
-class RecognitionEncoder(model.Primitive):
-    def __init__(self, *args, **kwargs):
-        self._state_dim = kwargs.pop('state_dim', 2)
-        self._observation_dim = kwargs.pop('observation_dim', 2)
-        if 'params' not in kwargs:
-            kwargs['params'] = {
-                'observation_noise': {
-                    'loc': torch.eye(self._observation_dim),
-                    'scale': torch.ones(self._observation_dim,
-                                        self._observation_dim),
-                },
-            }
-        super(RecognitionEncoder, self).__init__(*args, **kwargs)
         self.encode_state = nn.Sequential(
-            nn.Linear(self._observation_dim, self._state_dim * 4),
+            nn.Linear(self._observation_dim + 3 + self._action_dim,
+                      self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -185,24 +137,43 @@ class RecognitionEncoder(model.Primitive):
 
     @property
     def name(self):
-        return 'GenerativeObserver'
+        return self._name
 
-    def _forward(self, control, t, env=None):
-        if isinstance(control, torch.Tensor):
-            action = control[0].cpu().detach().numpy()
-        else:
-            action = control
-        observation, _, _, _ = env.retrieve_step(t, action, override_done=True)
+    def _forward(self, prev_control=None, prediction=None, observation=None):
+        if prev_control is None:
+            prev_control = torch.zeros(*self.batch_shape, self._action_dim).to(
+                observation
+            )
         if observation is not None:
-            self.param_sample(Normal, name='observation_noise')
-            observation = torch.Tensor(observation).to(control).expand(
-                self.batch_shape + observation.shape
-            )
-            state = self.encode_state(observation).reshape(
-                -1, self._state_dim, 2
-            )
-            self.sample(Normal, state[:, :, 0], softplus(state[:, :, 1]),
-                        name='state')
+            info = torch.cat((observation, prev_control), dim=-1)
+            state = self.encode_state(info).reshape(-1, self._state_dim, 2)
+            prediction = {
+                'loc': state[:, :, 0],
+                'scale': state[:, :, 1],
+            }
+        state = self.sample(Normal, prediction['loc'],
+                            softplus(prediction['scale']) + 1e-9, name='state')
+
+        control = self.decode_policy(state)
+        if self._discrete_actions:
+            control = self.sample(OneHotCategorical, probs=control,
+                                  name='control')
+        else:
+            control = control.reshape(-1, self._action_dim, 2)
+            if not self.q and observation is not None:
+                action = torch.normal(
+                    hardtanh(prev_control[0] + control[0, :, 0]),
+                    softplus(control[0, :, 1]) + 1e-9
+                )
+                action = action.expand(*self.batch_shape, self._action_dim)
+            elif self.q:
+                action = self.q['control'].value
+            else:
+                action = None
+            control = self.sample(Normal,
+                                  hardtanh(prev_control + control[:, :, 0]),
+                                  softplus(control[:, :, 1]) + 1e-9,
+                                  value=action, name='control')
 
 class MountainCarEnergy(NormalEnergy):
     def __init__(self, batch_shape):
