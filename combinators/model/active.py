@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 
+from contextlib import contextmanager
 import gym
 import logging
 import torch
 
 from .. import graphs
 from ..inference import importance
+from .model import Model
+from ..sampler import Sampler
 
 class AiGymEnv:
     def __init__(self, gym_env):
@@ -65,144 +68,105 @@ class AiGymEnv:
             return self._observations[t]
         return (None, None, self._observations[-1][2], None)
 
-def active_inference_episode(agent, env, episode_length=10, dream=True,
-                             render=False, finish=False):
-    last_iteration = episode_length
-    t = 0
-    control = None
-    prediction = None
-    observation = None
-    graph = graphs.ComputationGraph()
+class ActiveEpisode(Model):
+    def __init__(self, agent, env_name, target_weights=None,
+                 max_episode_length=2000):
+        assert isinstance(agent, Sampler)
+        super(ActiveEpisode, self).__init__(batch_shape=agent.batch_shape)
+        self.add_module('agent', agent)
+        self._env_name = env_name
+        self._env = AiGymEnv(gym.make(env_name))
+        self._max_episode_length = max_episode_length
+        self._qs = None
+        self._target_weights = target_weights
 
-    param = list(agent.parameters())[0]
-    episode_log_weight = torch.zeros(*agent.batch_shape).to(param)
-    while t < episode_length and not (env.done and finish):
-        if render:
-            env.render()
-        if control is not None:
-            action = control[0].cpu().detach().numpy()
-        else:
-            action = None
-        observation, reward, done, _ = env.retrieve_step(t, action)
-        if observation is not None:
-            observation = torch.Tensor(observation).to(episode_log_weight)
-            reward = torch.Tensor([reward]).to(episode_log_weight)
-            obs_done = torch.eye(2)[1 if done else 0].to(episode_log_weight)
-            observation = torch.cat((observation, reward, obs_done), dim=-1)
-            observation = observation.expand(*agent.batch_shape,
-                                             *observation.shape)
-        (control, prediction), step_graph, step_log_weight = agent(control,
-                                                                   prediction,
-                                                                   observation)
-        t += 1
-        if not dream:
-            env.focus(t)
-        graph.insert(str(t), step_graph)
+    @contextmanager
+    def cond(self, qs):
+        original_qs = self._qs
+        try:
+            self._qs = qs
+            yield self
+        finally:
+            self._qs = original_qs
 
-        if env.done and last_iteration == episode_length:
-            last_iteration = t
+    @contextmanager
+    def weight_target(self, weights=None):
+        original_target_weights = self._target_weights
+        try:
+            self._target_weights = weights
+            yield self
+        finally:
+            self._target_weights = original_target_weights
 
-        episode_log_weight = episode_log_weight.to(device=graph.device)
-        episode_log_weight = episode_log_weight + step_log_weight
+    @contextmanager
+    def _ready(self, t):
+        with self.agent.weight_target(self._target_weights) as agent:
+            original_agent = self.agent
+            self.agent = agent
+            if self._qs and self._qs.contains_model(self.name + '/' + str(t)):
+                with agent.cond(self._qs[self.name + '/' + str(t):]) as aq:
+                    self.agent = aq
+                    yield self
+            else:
+                yield self
+            self.agent = original_agent
 
-    return (control, prediction), episode_log_weight, last_iteration, graph
+    @property
+    def name(self):
+        return 'ActiveEpisode(%s)' % self._env_name
 
-def active_inference(agent, env_name, lr=1e-6, episode_length=10, use_cuda=True,
-                     episodes=1, dream=True, patience=None):
-    agent.train()
-    if torch.cuda.is_available() and use_cuda:
-        agent.cuda()
-    env = AiGymEnv(gym.make(env_name))
+    def walk(self, f):
+        walk_agent = self.agent.walk(f)
+        return f(ActiveEpisode(walk_agent, self._env))
 
-    optimizer = torch.optim.Adam(list(agent.parameters()), lr=lr)
-    if patience:
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, factor=0.5, min_lr=1e-6, patience=patience, verbose=True,
-            mode='max', cooldown=patience/2,
+    def forward(self, render=False, data={}):
+        t = 0
+        prediction = None
+        control = None
+        observation = None
+        done = False
+        self._env.reset()
+
+        graph = graphs.ComputationGraph()
+        log_weight = torch.zeros(self.agent.batch_shape).to(
+            list(self.parameters())[0]
         )
-
-    for episode in range(episodes):
-        focus = 1
-        env.reset()
-
-        if dream:
-            while not env.done and focus < episode_length:
-                optimizer.zero_grad()
-
-                zs, log_weight, length, graph = active_inference_episode(
-                    agent, env, episode_length=episode_length, dream=True,
+        while not done:
+            if control is not None:
+                action = control[0].cpu().detach().numpy()
+            else:
+                action = None
+            if self._qs and self._qs.contains_model(self.name + '/' + str(t)):
+                agent_name = self.name + '/' + str(t) + '/' + self.agent.name
+                next_name = self.name + '/' + str(t + 1)
+                done = not self._qs.contains_model(next_name)
+                observation = self._qs[agent_name]['observation'].value
+            else:
+                observation, reward, done, _ = self._env.retrieve_step(
+                    t, action, override_done=True
                 )
+                observation = torch.Tensor(observation).expand(
+                    *self.batch_shape, *observation.shape
+                ).to(log_weight)
+                reward = torch.tensor([reward]).expand(*self.batch_shape, 1)
+                reward = reward.to(observation)
+                obs_done = torch.eye(2)[1 if done else 0].expand(
+                    *self.batch_shape, 2
+                ).to(observation)
+                observation = torch.cat((observation, reward, obs_done), dim=-1)
+            if render:
+                self._env.render()
+            with self._ready(t) as _:
+                (control, prediction), graph_t, log_weight_t = self.agent(
+                    control, prediction, observation
+                )
+            graph.insert(self.name + '/' + str(t), graph_t)
+            log_weight = log_weight.to(device=graph.device) + log_weight_t
 
-                elbo = importance.elbo(log_weight, iwae_objective=True,
-                                       xi=graph)
-                (-elbo).backward()
-                optimizer.step()
-                if patience:
-                    scheduler.step(elbo)
+            t += 1
+            self._env.focus(t)
 
-                focus += 1
-                env.focus(focus)
-        else:
-            optimizer.zero_grad()
-
-            zs, log_weight, length, graph = active_inference_episode(
-                agent, env, episode_length=episode_length, dream=False,
-            )
-
-            elbo = importance.elbo(log_weight, iwae_objective=True, xi=graph) / len(graph)
-            (-elbo).backward()
-            optimizer.step()
-            if patience:
-                scheduler.step(elbo)
-        logging.info('ELBO=%.8e at episode %d of length %d', elbo, episode,
-                     length)
-        env.close()
-
-    if torch.cuda.is_available() and use_cuda:
-        agent.cpu()
-        torch.cuda.empty_cache()
-    agent.eval()
-
-    return zs[:-1], graph, log_weight
-
-def active_inference_test(agent, env_name, use_cuda=True, iterations=200,
-                          online_inference=True, lr=1e-4):
-    if torch.cuda.is_available() and use_cuda:
-        agent.cuda()
-    env = AiGymEnv(gym.make(env_name))
-    graph = graphs.ComputationGraph()
-    env.reset()
-    env.render()
-
-    if online_inference:
-        optimizer = torch.optim.Adam(list(agent.parameters()), lr=lr)
-        focus = 1
-        while not env.done and focus < iterations:
-            optimizer.zero_grad()
-
-            zs, log_weight, _, egraph = active_inference_episode(
-                agent, env, episode_length=iterations, dream=True, render=False,
-                finish=True
-            )
-
-            elbo = importance.elbo(log_weight, iwae_objective=True,
-                                   xi=egraph)
-            (-elbo).backward()
-            optimizer.step()
-            focus += 1
-            env.focus(focus)
-            env.render()
-    else:
-        zs, log_weight, _, egraph = active_inference_episode(
-            agent, env, episode_length=iterations, dream=False, render=True,
-            finish=True
-        )
-
-    graph.insert('0', egraph)
-    env.close()
-
-    if torch.cuda.is_available() and use_cuda:
-        agent.cpu()
-        torch.cuda.empty_cache()
-
-    return zs, graph, log_weight
+        self._env.close()
+        if not render and not self._qs:
+            logging.info('Episode length: %d', t)
+        return (control, prediction, t), graph, log_weight
