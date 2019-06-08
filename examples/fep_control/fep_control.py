@@ -21,7 +21,7 @@ class NormalEnergy(nn.Module):
     def forward(self, agent, observation):
         return agent.observe('goal', observation, Normal, self.loc, self.scale)
 
-class GenerativeActor(model.Primitive):
+class GenerativeAgent(model.Primitive):
     def __init__(self, *args, **kwargs):
         self._state_dim = kwargs.pop('state_dim', 2)
         self._action_dim = kwargs.pop('action_dim', 1)
@@ -30,7 +30,7 @@ class GenerativeActor(model.Primitive):
         goal = kwargs.pop('goal')
         if 'params' not in kwargs:
             kwargs['params'] = {
-                'state_0': {
+                'state': {
                     'loc': torch.zeros(self._state_dim),
                     'scale': torch.ones(self._state_dim),
                 },
@@ -44,10 +44,10 @@ class GenerativeActor(model.Primitive):
                     'loc': torch.zeros(self._action_dim),
                     'scale': torch.ones(self._action_dim),
                 }
-        super(GenerativeActor, self).__init__(*args, **kwargs)
+        super(GenerativeAgent, self).__init__(*args, **kwargs)
         self.goal = goal
         self.state_transition = nn.Sequential(
-            nn.Linear(self._state_dim, self._state_dim * 4),
+            nn.Linear(self._state_dim + self._action_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -55,87 +55,58 @@ class GenerativeActor(model.Primitive):
             nn.PReLU(),
             nn.Linear(self._state_dim * 16, self._state_dim * 2),
         )
-        self.control_affordance = nn.Sequential(
-            nn.Linear(self._action_dim, self._action_dim * 2),
-            nn.PReLU(),
-            nn.Linear(self._action_dim * 2, self._state_dim * 4),
-            nn.PReLU(),
-            nn.Linear(self._state_dim * 4, self._state_dim * 8),
-            nn.PReLU(),
-            nn.Linear(self._state_dim * 8, self._state_dim * 2)
-        )
-        self.predict_observation = nn.Sequential(
+        self.predictor = nn.Sequential(
             nn.Linear(self._state_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
             nn.Linear(self._state_dim * 8, self._state_dim * 16),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 16, self._observation_dim),
+        )
+        self.predict_observation = nn.Linear(self._state_dim * 16,
+                                             (self._observation_dim + 1) * 2)
+        self.predict_done = nn.Sequential(
+            nn.Linear(self._state_dim * 16, 2),
+            nn.Softmax(dim=-1),
         )
 
-    def _forward(self, theta, t, env=None):
+    def _forward(self, prev_control=None, prediction=None, observation=None):
+        if prediction is None:
+            state = self.param_sample(Normal, 'state')
+        else:
+            state = self.sample(Normal, **prediction, name='state')
+        if prev_control is None:
+            prev_control = torch.zeros(self._action_dim).to(state)
+
+        predictor = self.predictor(state)
+        observable = self.predict_observation(predictor).reshape(
+            -1, self._observation_dim + 1, 2
+        )
+        if observation is not None:
+            done = observation[:, -2:]
+            observation = observation[:, :-2]
+        else:
+            done = None
+        observation = self.observe('observation', observation, Normal,
+                                   observable[:, :, 0],
+                                   softplus(observable[:, :, 1]))
+        self.observe('done', done, OneHotCategorical,
+                     self.predict_done(predictor))
+        self.goal(self, observation)
+
         if self._discrete_actions:
             control = self.param_sample(OneHotCategorical, name='control')
         else:
             control = self.param_sample(Normal, 'control')
 
-        if theta is None:
-            state = self.param_sample(Normal, 'state_0')
+        dynamics = self.state_transition(torch.cat((state, control), dim=-1))
+        dynamics = dynamics.reshape(-1, self._state_dim, 2)
+        prediction = {
+            'loc': dynamics[:, :, 0],
+            'scale': softplus(dynamics[:, :, 1]),
+        }
 
-        else:
-            prev_state, _ = theta
-
-            dynamics = self.state_transition(prev_state).reshape(
-                -1, self._state_dim, 2
-            )
-            affordance = self.control_affordance(control).reshape(
-                -1, self._state_dim, 2
-            )
-            state = self.sample(
-                Normal, dynamics[:, :, 0] + affordance[:, :, 0],
-                (dynamics[:, :, 1] ** 2 + affordance[:, :, 1] ** 2).sqrt(),
-                name='state'
-            )
-
-        prediction = self.predict_observation(state)
-        if not env.done or self.goal.all_steps:
-            self.goal(self, prediction)
-
-        return state, control, prediction, t, env
-
-class GenerativeObserver(model.Primitive):
-    def __init__(self, *args, **kwargs):
-        self._observation_dim = kwargs.pop('observation_dim')
-        if 'params' not in kwargs:
-            kwargs['params'] = {
-                'observation_noise': {
-                    'loc': torch.eye(self._observation_dim),
-                    'scale': torch.ones(self._observation_dim,
-                                        self._observation_dim),
-                },
-            }
-        super(GenerativeObserver, self).__init__(*args, **kwargs)
-
-    def _forward(self, state, control, prediction, t, env=None):
-        if isinstance(control, torch.Tensor):
-            action = control[0].cpu().detach().numpy()
-        else:
-            action = control
-        observation, _, _, _ = env.retrieve_step(t, action, override_done=True)
-        if observation is not None:
-            observation = torch.Tensor(observation).to(state).expand(
-                self.batch_shape + observation.shape
-            )
-
-        observation_noise = self.param_sample(Normal,
-                                              name='observation_noise')
-        observation_scale = LowerCholeskyTransform()(observation_noise)
-        if observation is not None:
-            self.observe('observation', observation, MultivariateNormal,
-                         prediction, scale_tril=observation_scale)
-
-        return state, control
+        return control, prediction
 
 class RecognitionActor(model.Primitive):
     def __init__(self, *args, **kwargs):
