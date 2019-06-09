@@ -171,10 +171,11 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6
                            bound='elbo', log_all_bounds=False, patience=50,
                            log_estimator=False):
     optimizer = torch.optim.Adam(list(sampler.parameters()), lr=lr)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.5, min_lr=1e-6, patience=patience, verbose=True,
-        mode='min' if bound == 'eubo' else 'max',
-    )
+    if patience:
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, factor=0.5, min_lr=1e-6, patience=patience,
+            verbose=True, mode='min' if bound == 'eubo' else 'max',
+        )
 
     sampler.train()
     if torch.cuda.is_available() and use_cuda:
@@ -200,7 +201,8 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6
             free_energy = -free_energy
         free_energy.backward()
         optimizer.step()
-        scheduler.step(bounds[t][bound])
+        if patience:
+            scheduler.step(bounds[t][bound])
 
     if torch.cuda.is_available() and use_cuda:
         sampler.cpu()
