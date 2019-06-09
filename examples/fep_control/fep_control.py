@@ -177,20 +177,20 @@ class RecognitionAgent(model.Primitive):
 
 class MountainCarEnergy(NormalEnergy):
     def __init__(self, batch_shape):
-        loc = torch.tensor([0.6]).expand(*batch_shape, 1)
+        loc = torch.tensor([0.45]).expand(*batch_shape, 1)
         scale = torch.tensor([0.05]).expand(*batch_shape, 1)
         super(MountainCarEnergy, self).__init__(loc, scale)
 
     def forward(self, agent, observation):
         return super(MountainCarEnergy, self).forward(agent, observation[:, 0])
 
-class MountainCarActor(GenerativeActor):
+class MountainCarAgent(GenerativeAgent):
     def __init__(self, *args, **kwargs):
         kwargs['discrete_actions'] = False
         kwargs['action_dim'] = 1
         kwargs['observation_dim'] = 2
         kwargs['goal'] = MountainCarEnergy(kwargs['batch_shape'])
-        super(MountainCarActor, self).__init__(*args, **kwargs)
+        super(MountainCarAgent, self).__init__(*args, **kwargs)
 
 class CartpoleEnergy(NormalEnergy):
     def __init__(self, batch_shape):
@@ -202,27 +202,28 @@ class CartpoleEnergy(NormalEnergy):
     def forward(self, agent, observation):
         return super(CartpoleEnergy, self).forward(agent, observation)
 
-class CartpoleActor(GenerativeActor):
+class CartpoleAgent(GenerativeAgent):
     def __init__(self, *args, **kwargs):
         kwargs['discrete_actions'] = True
         kwargs['observation_dim'] = 4
         kwargs['goal'] = CartpoleEnergy(kwargs['batch_shape'])
-        super(CartpoleActor, self).__init__(*args, **kwargs)
+        super(CartpoleAgent, self).__init__(*args, **kwargs)
 
 class BipedalWalkerEnergy(NormalEnergy):
     def __init__(self, batch_shape):
-        loc = torch.tensor([0., 0., 1.]).expand(*batch_shape, 3)
-        scale = torch.ones(*batch_shape, 3) * 0.0025
+        loc = torch.tensor([0., 0., 1., 0.]).expand(*batch_shape, 4)
+        scale = torch.tensor([0.25, 1., 0.0025, 0.0025]).expand(*batch_shape, 4)
         super(BipedalWalkerEnergy, self).__init__(loc, scale)
         self.all_steps = True
 
     def forward(self, agent, observation):
-        return super(BipedalWalkerEnergy, self).forward(agent, observation[:, 0:3])
+        return super(BipedalWalkerEnergy, self).forward(agent,
+                                                        observation[:, 0:4])
 
-class BipedalWalkerActor(GenerativeActor):
+class BipedalWalkerAgent(GenerativeAgent):
     def __init__(self, *args, **kwargs):
         kwargs['discrete_actions'] = False
         kwargs['observation_dim'] = 24
         kwargs['action_dim'] = 4
         kwargs['goal'] = BipedalWalkerEnergy(kwargs['batch_shape'])
-        super(BipedalWalkerActor, self).__init__(*args, **kwargs)
+        super(BipedalWalkerAgent, self).__init__(*args, **kwargs)
