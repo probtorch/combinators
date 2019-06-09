@@ -194,7 +194,8 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6
             logging.info('ELBO=%.8e at epoch %d', bounds[t]['elbo'], t + 1)
             logging.info('EUBO=%.8e at epoch %d', bounds[t]['eubo'], t + 1)
         else:
-            logging.info('%s=%.8e at epoch %d', bound.upper(), bounds[t][bound], t + 1)
+            logging.info('%s=%.8e at epoch %d', bound.upper(), bounds[t][bound],
+                         t + 1)
 
         free_energy = bounds[t][bound]
         if bound == 'elbo':
