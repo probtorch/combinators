@@ -189,17 +189,18 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6
 
         eubo_t = eubo(log_weight, iwae_objective=log_estimator, xi=xi)
         elbo_t = elbo(log_weight, iwae_objective=log_estimator, xi=xi)
-        bounds[t] = {'eubo': eubo_t, 'elbo': elbo_t}
+        bounds[t] = {'eubo': eubo_t.detach(), 'elbo': elbo_t.detach()}
         if log_all_bounds:
-            logging.info('ELBO=%.8e at epoch %d', bounds[t]['elbo'], t + 1)
-            logging.info('EUBO=%.8e at epoch %d', bounds[t]['eubo'], t + 1)
+            logging.info('ELBO=%.8e at epoch %d', elbo_t, t + 1)
+            logging.info('EUBO=%.8e at epoch %d', eubo_t, t + 1)
         else:
             logging.info('%s=%.8e at epoch %d', bound.upper(), bounds[t][bound],
                          t + 1)
 
-        free_energy = bounds[t][bound]
         if bound == 'elbo':
-            free_energy = -free_energy
+            free_energy = -elbo_t
+        else:
+            free_energy = eubo_t
         free_energy.backward()
         optimizer.step()
         if patience:
