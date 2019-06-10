@@ -156,15 +156,16 @@ def elbo(log_weight, iwae_objective=False, xi=None):
         return utils.batch_marginalize(log_weight)
     return utils.batch_mean(log_weight)
 
-def eubo(log_weight, iwae_objective=False, xi=None):
+def eubo(log_weight, iwae_objective=False, xi=None, inference_params=True):
+    sign = -1.0 if inference_params else 1.0
     if xi and xi.reparameterized():
-        return -dreg(log_weight, alpha=torch.ones(()))
+        return sign * dreg(log_weight, alpha=torch.ones(()))
     else:
         probs = utils.normalize_weights(log_weight).detach().exp()
         eubo_particles = probs * log_weight
         if iwae_objective:
-            return utils.log_sum_exp(eubo_particles)
-        return utils.batch_sum(eubo_particles)
+            return sign * utils.log_sum_exp(eubo_particles)
+        return sign * utils.batch_sum(eubo_particles)
 
 def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6,
                            bound='elbo', log_all_bounds=False, patience=50,
