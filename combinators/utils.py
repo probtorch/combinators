@@ -147,7 +147,7 @@ def conjunct_events(conjunct_log_prob, log_prob):
 def dict_lookup(d):
     return lambda name, dist: d.get(name, None)
 
-def plot_evidence_bounds(bounds, lower=True, figsize=(10, 10)):
+def plot_evidence_bounds(bounds, lower=True, figsize=(10, 10), scale='linear'):
     epochs = range(len(bounds))
     bound_name = 'ELBO' if lower else 'EUBO'
 
@@ -160,6 +160,7 @@ def plot_evidence_bounds(bounds, lower=True, figsize=(10, 10)):
     plt.title('%s over training' % bound_name)
     free_energy_fig.axes[0].set_xlabel('Epoch')
     free_energy_fig.axes[0].set_ylabel('%s (nats)' % bound_name)
+    free_energy_fig.axes[0].set_yscale(scale)
 
     plt.show()
 
