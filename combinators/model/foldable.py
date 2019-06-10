@@ -70,8 +70,8 @@ class Step(Model):
             else:
                 yield self
 
-def step(operator, initializer=None, qs=None, **kwargs):
-    return Step(operator, initializer=initializer, qs=qs, **kwargs)
+def step(operator, initializer=None, **kwargs):
+    return Step(operator, initializer=initializer, **kwargs)
 
 class Reduce(Model):
     def __init__(self, folder, generator):
