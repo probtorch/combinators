@@ -99,7 +99,6 @@ class Primitive(Model):
         return self.sample(Dist, name=name, **params)
 
     def observe(self, name, value, Dist, *args, **kwargs):
-        assert name not in self.q or self.q[name].observed
         for arg in args:
             if isinstance(arg, torch.Tensor) and value is not None:
                 value = value.to(device=arg.device)
