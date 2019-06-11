@@ -68,6 +68,57 @@ class AiGymEnv:
             return self._observations[t]
         return (None, None, self._observations[-1][2], None)
 
+class ActiveSimulation(Model):
+    def __init__(self, agent, horizon=5):
+        assert isinstance(agent, Sampler)
+        super(ActiveSimulation, self).__init__(batch_shape=agent.batch_shape)
+        self.add_module('agent', agent)
+        self._horizon = horizon
+
+    @property
+    def horizon(self):
+        return self._horizon
+
+    @contextmanager
+    def cond(self, qs):
+        with self.agent.cond(qs[self.name:]) as self.agent:
+            yield self
+
+    @contextmanager
+    def weight_target(self, weights=None):
+        with self.agent.weight_target(weights) as self.agent:
+            yield self
+
+    @property
+    def name(self):
+        return 'ActiveSimulation'
+
+    def walk(self, f):
+        walk_agent = self.agent.walk(f)
+        return f(ActiveSimulation(walk_agent))
+
+    def forward(self, prediction, control, observation):
+        graph = graphs.ComputationGraph()
+        log_weight = torch.zeros(self.batch_shape).to(control)
+
+        predictions = [{} for _ in range(self.horizon + 1)]
+        predictions[0] = prediction
+        controls = [torch.zeros(self.batch_shape).to(control)
+                    for _ in range(self.horizon + 1)]
+        controls[0] = control
+        observations = [None for _ in range(self.horizon)]
+        observations[0] = observation
+        sim_graphs = [None for _ in range(self.horizon)]
+
+        for i in range(self.horizon):
+            obs = observation if i == 0 else None
+            (controls[i+1], predictions[i+1]), sim_graphs[i], log_weight_i =\
+                self.agent(predictions[i], controls[i], obs)
+            log_weight = log_weight.to(log_weight_i) + log_weight_i
+
+        graph.insert(self.name, sim_graphs[0])
+        return (controls[1], predictions[1]), graph, log_weight
+
 class ActiveEpisode(Model):
     def __init__(self, agent, env_name, target_weights=None,
                  max_episode_length=2000):
