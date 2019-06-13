@@ -221,3 +221,27 @@ class ActiveEpisode(Model):
         if not render and not self._qs:
             logging.info('Episode length: %d', t)
         return (control, prediction, t), graph, log_weight
+
+def active_logger(objectives, t):
+    logging.info('ELBO=%.8e at epoch %d', -objectives[0], t + 1)
+
+def active_variational(episode, num_iterations, use_cuda=True, lr=1e-3,
+                       log_estimator=False, patience=10):
+    active_elbo = {
+        'name': 'elbo',
+        'function': lambda log_weight, xi=None: -importance.elbo(
+            log_weight, iwae_objective=log_estimator, xi=xi
+        ) / len(xi),
+    }
+    param_groups = [{
+        'objective': active_elbo,
+        'optimizer_args': {
+            'params': episode.parameters(),
+            'lr': lr,
+        },
+        'patience': patience,
+    }]
+
+    return importance.multiobjective_variational(episode, param_groups,
+                                                 num_iterations, {}, use_cuda,
+                                                 logger=active_logger)
