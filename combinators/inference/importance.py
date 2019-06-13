@@ -204,6 +204,39 @@ class EvBoOptimizer:
             objectives.append(objective.detach().cpu())
         return objectives
 
+def default_elbo_logger(objectives, t):
+    logging.info('ELBO=%.8e at epoch %d', -objectives[0], t + 1)
+
+def default_eubo_logger(objectives, t):
+    logging.info('EUBO=%.8e at epoch %d', objectives[1], t + 1)
+
+def multiobjective_variational(sampler, param_groups, num_iterations, data,
+                               use_cuda=True, logger=default_elbo_logger):
+    sampler.train()
+    if torch.cuda.is_available() and use_cuda:
+        sampler.cuda()
+
+    evbo_optim = EvBoOptimizer(param_groups, torch.optim.Adam)
+    iteration_bounds = list(range(num_iterations))
+    for i in range(num_iterations):
+        evbo_optim.zero_grads()
+        _, xi, _ = sampler(data=data)
+        iteration_bounds[i] = evbo_optim.step_grads(sampler, xi, data=data)
+        if logger is not None:
+            logger(iteration_bounds[i], i)
+
+    if torch.cuda.is_available() and use_cuda:
+        sampler.cpu()
+        torch.cuda.empty_cache()
+    sampler.eval()
+
+    trained_params = sampler.args_vardict(False)
+
+    iteration_bounds = torch.stack([
+        torch.stack(bounds, dim=-1) for bounds in iteration_bounds
+    ], dim=0)
+    return xi, trained_params, iteration_bounds
+
 def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6,
                            bound='elbo', log_all_bounds=False, patience=50,
                            log_estimator=False):
