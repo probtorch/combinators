@@ -9,12 +9,13 @@ from .model import Model
 from ..sampler import Sampler
 
 class Step(Model):
-    def __init__(self, operator, initializer=None, iteration=0, walker=None,
-                 **kwargs):
+    def __init__(self, operator, initializer=None, iteration=0, qs=None,
+                 walker=None, **kwargs):
         assert isinstance(operator, Sampler)
         super(Step, self).__init__(batch_shape=operator.batch_shape)
         self._kwargs = kwargs
         self._iteration = iteration
+        self._qs = qs
         self._walker = walker
 
         self.add_module('operator', operator)
@@ -31,15 +32,26 @@ class Step(Model):
     def forward(self, *args, **kwargs):
         graph = graphs.ComputationGraph()
         if isinstance(self._initializer, Sampler):
-            seed, init_trace, seed_log_weight = self._initializer(**kwargs)
+            if self._qs and self._qs.contains_model(self.name):
+                with self._initializer.cond(self._qs[self.name:]) as initq:
+                    seed, init_trace, seed_log_weight = initq(**kwargs)
+            else:
+                seed, init_trace, seed_log_weight = self._initializer(**kwargs)
             graph.insert(self.name, init_trace)
         else:
             seed = self._initializer
             seed_log_weight = torch.zeros(self.batch_shape)
-        result, op_trace, log_weight = self.operator(seed, *args, **kwargs)
-        next_step = Step(self.operator, initializer=result,
-                         iteration=self._iteration + 1, walker=self._walker,
-                         **self._kwargs)
+        if self._qs and self._qs.contains_model(self.name):
+            with self.operator.cond(self._qs[self.name:]) as opq:
+                result, op_trace, log_weight = opq(seed, *args, **kwargs)
+                next_step = Step(opq, initializer=result, qs=self._qs,
+                                 iteration=self._iteration + 1,
+                                 walker=self._walker, **self._kwargs)
+        else:
+            result, op_trace, log_weight = self.operator(seed, *args, **kwargs)
+            next_step = Step(self.operator, initializer=result,
+                             iteration=self._iteration + 1, qs=self._qs,
+                             walker=self._walker, **self._kwargs)
         if self._walker:
             next_step = self._walker(next_step)
 
@@ -63,12 +75,12 @@ class Step(Model):
 
     @contextmanager
     def cond(self, qs):
-        with self.operator.cond(qs[self.name:]) as opq:
-            if isinstance(self._initializer, Sampler):
-                with self._initializer.cond(qs[self.name:]) as opinit:
-                    yield self
-            else:
-                yield self
+        original_qs = self._qs
+        try:
+            self._qs = qs
+            yield self
+        finally:
+            self._qs = original_qs
 
 def step(operator, initializer=None, **kwargs):
     return Step(operator, initializer=initializer, **kwargs)
