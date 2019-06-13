@@ -65,7 +65,7 @@ class GaussianKernel(TransitionKernel):
     def name(self):
         return 'GaussianKernel'
 
-    def forward(self, zs, xi, log_weight, *args, **kwargs):
+    def forward(self, zs, xi, *args, **kwargs):
         q = utils.slice_trace(xi[self._model], self._var)
         var = xi[self._model][self._var]
         val = torch.normal(var.value,
@@ -94,9 +94,10 @@ class LinScaledGaussianKernel(GaussianKernel):
     def name(self):
         return 'LinScaledGaussianKernel'
 
-    def forward(self, zs, xi, log_weight, *args, **kwargs):
+    def forward(self, zs, xi, *args, **kwargs):
         ts = kwargs['ts'].to(dtype=torch.float)
         self._scale = self._init_scale * torch.max(
             1. - ts/self._n_steps, torch.ones(kwargs['ts'].shape) * 0.1
         )
-        return super(LinScaledGaussianKernel, self).forward(zs, xi, log_weight, *args, **kwargs)
+        return super(LinScaledGaussianKernel, self).forward(zs, xi, *args,
+                                                            **kwargs)
