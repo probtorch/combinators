@@ -207,20 +207,33 @@ class EvBoOptimizer:
 def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6,
                            bound='elbo', log_all_bounds=False, patience=50,
                            log_estimator=False):
-    optimizer = torch.optim.Adam(list(sampler.parameters()), lr=lr)
-    if patience:
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, factor=0.5, min_lr=1e-6, patience=patience,
-            verbose=True, mode='min' if bound == 'eubo' else 'max',
-        )
-
     sampler.train()
     if torch.cuda.is_available() and use_cuda:
         sampler.cuda()
 
+    if bound == 'elbo':
+        objective = {
+            'name': bound,
+            'function': lambda lw, xi=None: -elbo(lw,
+                                                  iwae_objective=log_estimator,
+                                                  xi=xi),
+        }
+    elif bound == 'eubo':
+        objective = {
+            'name': bound,
+            'function': lambda lw, xi=None: eubo(lw,
+                                                 iwae_objective=log_estimator,
+                                                 xi=xi),
+        }
+    evbo_optim = EvBoOptimizer([{
+        'kwargs': {}, 'objective': objective,
+        'optimizer_args': {'params': list(sampler.parameters()), 'lr': lr},
+        'patience': patience,
+    }], torch.optim.Adam)
+
     bounds = list(range(num_iterations))
     for t in range(num_iterations):
-        optimizer.zero_grad()
+        evbo_optim.zero_grads()
 
         _, xi, log_weight = sampler(data=data)
 
@@ -234,14 +247,7 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6
             logging.info('%s=%.8e at epoch %d', bound.upper(), bounds[t][bound],
                          t + 1)
 
-        if bound == 'elbo':
-            free_energy = -elbo_t
-        else:
-            free_energy = eubo_t
-        free_energy.backward()
-        optimizer.step()
-        if patience:
-            scheduler.step(bounds[t][bound])
+        evbo_optim.step_grads(sampler, xi, data=data)
 
     if torch.cuda.is_available() and use_cuda:
         sampler.cpu()
