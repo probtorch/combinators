@@ -167,6 +167,43 @@ def eubo(log_weight, iwae_objective=False, xi=None, inference_params=True):
             return sign * utils.log_sum_exp(eubo_particles)
         return sign * utils.batch_sum(eubo_particles)
 
+class EvBoOptimizer:
+    def __init__(self, param_groups, optimizer_constructor):
+        self._kwargs = [g['kwargs'] for g in param_groups]
+        self._num_groups = len(param_groups)
+        self._objectives = [g['objective'] for g in param_groups]
+        self._optimizers = [optimizer_constructor([g['optimizer_args']])
+                            for g in param_groups]
+        self._schedules = [None for g in param_groups]
+        for g, group in enumerate(param_groups):
+            if 'patience' in group and group['patience'] is not None:
+                self._schedules[g] = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                    self._optimizers[g], factor=0.5, min_lr=1e-6,
+                    patience=group['patience'], verbose=True, mode='min',
+                )
+
+    def zero_grads(self):
+        for optimizer in self._optimizers:
+            optimizer.zero_grad()
+
+    def step_grads(self, sampler, xi, *args, **kwargs):
+        objectives = []
+        for g in range(self._num_groups):
+            with sampler.rescore(xi) as rescorer:
+                g_kwargs = {**kwargs, **self._kwargs[g]}
+                _, _, log_weight = rescorer(*args, **g_kwargs)
+
+            objective = self._objectives[g]['function'](log_weight, xi=xi)
+            if g == self._num_groups - 1:
+                objective.backward()
+            else:
+                objective.backward(retain_graph=True)
+            self._optimizers[g].step()
+            if self._schedules[g]:
+                self._schedules[g].step(objective)
+            objectives.append(objective.detach().cpu())
+        return objectives
+
 def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6,
                            bound='elbo', log_all_bounds=False, patience=50,
                            log_estimator=False):
