@@ -18,12 +18,6 @@ class Step(Model):
         self._qs = qs
         self._walker = walker
 
-        if self._qs and self._qs.contains_model(self.name):
-            qs = self._qs[self.name:]
-            operator = operator.cond(qs)
-            if isinstance(initializer, Sampler):
-                initializer = initializer.cond(qs)
-
         self.add_module('operator', operator)
         if isinstance(initializer, Sampler):
             self.add_module('_initializer', initializer)
@@ -38,15 +32,26 @@ class Step(Model):
     def forward(self, *args, **kwargs):
         graph = graphs.ComputationGraph()
         if isinstance(self._initializer, Sampler):
-            seed, init_trace, seed_log_weight = self._initializer(**kwargs)
+            if self._qs and self._qs.contains_model(self.name):
+                with self._initializer.cond(self._qs[self.name:]) as initq:
+                    seed, init_trace, seed_log_weight = initq(**kwargs)
+            else:
+                seed, init_trace, seed_log_weight = self._initializer(**kwargs)
             graph.insert(self.name, init_trace)
         else:
             seed = self._initializer
             seed_log_weight = torch.zeros(self.batch_shape)
-        result, op_trace, log_weight = self.operator(seed, *args, **kwargs)
-        next_step = Step(self.operator, initializer=result,
-                         iteration=self._iteration + 1, qs=self._qs,
-                         walker=self._walker, **self._kwargs)
+        if self._qs and self._qs.contains_model(self.name):
+            with self.operator.cond(self._qs[self.name:]) as opq:
+                result, op_trace, log_weight = opq(seed, *args, **kwargs)
+                next_step = Step(opq, initializer=result, qs=self._qs,
+                                 iteration=self._iteration + 1,
+                                 walker=self._walker, **self._kwargs)
+        else:
+            result, op_trace, log_weight = self.operator(seed, *args, **kwargs)
+            next_step = Step(self.operator, initializer=result,
+                             iteration=self._iteration + 1, qs=self._qs,
+                             walker=self._walker, **self._kwargs)
         if self._walker:
             next_step = self._walker(next_step)
 
