@@ -167,23 +167,106 @@ def eubo(log_weight, iwae_objective=False, xi=None, inference_params=True):
             return sign * utils.log_sum_exp(eubo_particles)
         return sign * utils.batch_sum(eubo_particles)
 
-def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6,
-                           bound='elbo', log_all_bounds=False, patience=50,
-                           log_estimator=False):
-    optimizer = torch.optim.Adam(list(sampler.parameters()), lr=lr)
-    if patience:
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, factor=0.5, min_lr=1e-6, patience=patience,
-            verbose=True, mode='min' if bound == 'eubo' else 'max',
-        )
+class EvBoOptimizer:
+    def __init__(self, param_groups, optimizer_constructor):
+        self._kwargs = [g['kwargs'] for g in param_groups]
+        self._num_groups = len(param_groups)
+        self._objectives = [g['objective'] for g in param_groups]
+        self._optimizers = [optimizer_constructor([g['optimizer_args']])
+                            for g in param_groups]
+        self._schedules = [None for g in param_groups]
+        for g, group in enumerate(param_groups):
+            if 'patience' in group and group['patience'] is not None:
+                self._schedules[g] = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                    self._optimizers[g], factor=0.5, min_lr=1e-6,
+                    patience=group['patience'], verbose=True, mode='min',
+                )
 
+    def zero_grads(self):
+        for optimizer in self._optimizers:
+            optimizer.zero_grad()
+
+    def step_grads(self, sampler, xi, *args, **kwargs):
+        objectives = []
+        for g in range(self._num_groups):
+            with sampler.rescore(xi) as rescorer:
+                g_kwargs = {**kwargs, **self._kwargs[g]}
+                _, _, log_weight = rescorer(*args, **g_kwargs)
+
+            objective = self._objectives[g]['function'](log_weight, xi=xi)
+            if g == self._num_groups - 1:
+                objective.backward()
+            else:
+                objective.backward(retain_graph=True)
+            self._optimizers[g].step()
+            if self._schedules[g]:
+                self._schedules[g].step(objective)
+            objectives.append(objective.detach().cpu())
+        return objectives
+
+def default_elbo_logger(objectives, t):
+    logging.info('ELBO=%.8e at epoch %d', -objectives[0], t + 1)
+
+def default_eubo_logger(objectives, t):
+    logging.info('EUBO=%.8e at epoch %d', objectives[1], t + 1)
+
+def multiobjective_variational(sampler, param_groups, num_iterations, data,
+                               use_cuda=True, logger=default_elbo_logger):
     sampler.train()
     if torch.cuda.is_available() and use_cuda:
         sampler.cuda()
 
+    evbo_optim = EvBoOptimizer(param_groups, torch.optim.Adam)
+    iteration_bounds = list(range(num_iterations))
+    for i in range(num_iterations):
+        evbo_optim.zero_grads()
+        _, xi, _ = sampler(data=data)
+        iteration_bounds[i] = evbo_optim.step_grads(sampler, xi, data=data)
+        if logger is not None:
+            logger(iteration_bounds[i], i)
+
+    if torch.cuda.is_available() and use_cuda:
+        sampler.cpu()
+        torch.cuda.empty_cache()
+    sampler.eval()
+
+    trained_params = sampler.args_vardict(False)
+
+    iteration_bounds = torch.stack([
+        torch.stack(bounds, dim=-1) for bounds in iteration_bounds
+    ], dim=0)
+    return xi, trained_params, iteration_bounds
+
+def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6,
+                           bound='elbo', log_all_bounds=False, patience=50,
+                           log_estimator=False):
+    sampler.train()
+    if torch.cuda.is_available() and use_cuda:
+        sampler.cuda()
+
+    if bound == 'elbo':
+        objective = {
+            'name': bound,
+            'function': lambda lw, xi=None: -elbo(lw,
+                                                  iwae_objective=log_estimator,
+                                                  xi=xi),
+        }
+    elif bound == 'eubo':
+        objective = {
+            'name': bound,
+            'function': lambda lw, xi=None: eubo(lw,
+                                                 iwae_objective=log_estimator,
+                                                 xi=xi),
+        }
+    evbo_optim = EvBoOptimizer([{
+        'kwargs': {}, 'objective': objective,
+        'optimizer_args': {'params': list(sampler.parameters()), 'lr': lr},
+        'patience': patience,
+    }], torch.optim.Adam)
+
     bounds = list(range(num_iterations))
     for t in range(num_iterations):
-        optimizer.zero_grad()
+        evbo_optim.zero_grads()
 
         _, xi, log_weight = sampler(data=data)
 
@@ -197,14 +280,7 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6
             logging.info('%s=%.8e at epoch %d', bound.upper(), bounds[t][bound],
                          t + 1)
 
-        if bound == 'elbo':
-            free_energy = -elbo_t
-        else:
-            free_energy = eubo_t
-        free_energy.backward()
-        optimizer.step()
-        if patience:
-            scheduler.step(bounds[t][bound])
+        evbo_optim.step_grads(sampler, xi, data=data)
 
     if torch.cuda.is_available() and use_cuda:
         sampler.cpu()
