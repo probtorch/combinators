@@ -3,7 +3,7 @@
 import gym
 import numpy as np
 import torch
-from torch.distributions import Bernoulli, MultivariateNormal, Normal
+from torch.distributions import Bernoulli, Beta, Normal
 from torch.distributions import OneHotCategorical, RelaxedOneHotCategorical
 from torch.distributions.transforms import LowerCholeskyTransform
 import torch.nn as nn
@@ -20,6 +20,34 @@ class NormalEnergy(nn.Module):
 
     def forward(self, agent, observation):
         return agent.observe('goal', observation, Normal, self.loc, self.scale)
+
+class BoundedRewardEnergy(nn.Module):
+    def __init__(self):
+        super(BoundedRewardEnergy, self).__init__()
+        self.register_parameter('lower_loc', nn.Parameter(torch.zeros(1)))
+        self.register_parameter('lower_scale', nn.Parameter(torch.ones(1)*0.5))
+        self.register_parameter('upper_loc', nn.Parameter(torch.ones(1)))
+        self.register_parameter('upper_scale', nn.Parameter(torch.ones(1)*0.5))
+        self.register_parameter('alpha', nn.Parameter(torch.ones(1)))
+        self.register_parameter('beta', nn.Parameter(torch.ones(1)))
+        self.register_parameter('scale', nn.Parameter(torch.ones(1)))
+        self.all_steps = True
+
+    def forward(self, agent, observation):
+        lower_bound = agent.sample(Normal, self.lower_loc,
+                                   softplus(self.lower_scale),
+                                   name='reward_lower_bound')
+        upper_bound = agent.sample(Normal, self.upper_loc,
+                                   softplus(self.upper_scale),
+                                   name='reward_upper_bound')
+        normalized_reward = agent.sample(Beta, self.alpha, self.beta,
+                                         name='normalized_reward')
+        optimality = torch.ones_like(normalized_reward)
+        reward_range = upper_bound - lower_bound
+        expected_reward = normalized_reward * reward_range + lower_bound
+        agent.observe('goal', optimality, Bernoulli, normalized_reward)
+        agent.observe('reward', observation[:, -1], Normal, expected_reward,
+                      self.scale)
 
 class GenerativeAgent(model.Primitive):
     def __init__(self, *args, **kwargs):
