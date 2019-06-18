@@ -204,6 +204,23 @@ class ComputationGraph:
 
         return blanket
 
+    def conditioning_factor(self, qs, batch_shape):
+        log_omega = torch.zeros(batch_shape, device=self.device)
+        dims = tuple(range(len(batch_shape)))
+        for name in self:
+            conditioned = [k for k in self[name].conditioned()]
+            log_omega = log_omega + self[name].log_joint(
+                sample_dims=dims, nodes=conditioned, reparameterized=False
+            )
+            if qs and name in qs:
+                reused = [k for k in self[name] if k in qs[name] and\
+                          utils.reused_variable(self[name], qs[name], k)]
+                log_omega = log_omega + self[name].log_joint(
+                    sample_dims=dims, nodes=reused, reparameterized=False
+                )
+
+        return log_omega
+
 def graph_where(condition, gx, gy, batch_shape):
     result = ComputationGraph()
     for tname, name, node in gx.prefixed_nodes():
