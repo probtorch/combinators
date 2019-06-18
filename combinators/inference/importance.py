@@ -13,25 +13,10 @@ from . import inference
 from ..model import foldable
 from .. import utils
 
-def conditioning_factor(dest, src, batch_shape):
-    sample_dims = tuple(range(len(batch_shape)))
-    log_omega_q = torch.zeros(*batch_shape, device=src.device)
-    for name in src:
-        conditioned = [k for k in src[name].conditioned()]
-        log_omega_q += src[name].log_joint(sample_dims=sample_dims,
-                                           nodes=conditioned,
-                                           reparameterized=False)
-        if name in dest:
-            reused = [k for k in dest[name] if k in src[name]]
-            log_omega_q += src[name].log_joint(sample_dims=sample_dims,
-                                               nodes=reused,
-                                               reparameterized=False)
-    return log_omega_q
-
 def conditioned_evaluate(target, xiq, *args, **kwargs):
     with target.cond(xiq) as targetq:
         zs, xi, log_w = targetq(*args, **kwargs)
-    log_omega_q = conditioning_factor(xi, xiq, target.batch_shape)
+    log_omega_q = xiq.conditioning_factor(xi, target.batch_shape)
     return zs, xi, log_w - log_omega_q
 
 class Propose(inference.Inference):
