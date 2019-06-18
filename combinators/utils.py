@@ -27,9 +27,12 @@ def is_number(tensor):
 def isnum(tensor):
     return ~(torch.isnan(tensor) | torch.isinf(tensor))
 
-def reused_variable(v):
-    return isinstance(v, probtorch.RandomVariable) and\
-           v.provenance == probtorch.stochastic.Provenance.REUSED
+def reused_variable(px, py, k):
+    reused_px = isinstance(px[k], probtorch.RandomVariable) and\
+                px[k].provenance == probtorch.stochastic.Provenance.REUSED
+    reused_py = isinstance(py[k], probtorch.RandomVariable) and\
+                py[k].provenance == probtorch.stochastic.Provenance.REUSED
+    return reused_px or reused_py
 
 def gumbel_max_resample(log_weights):
     particle_logs, _ = batch_collapse(log_weights, log_weights.shape)
