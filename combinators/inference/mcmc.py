@@ -27,9 +27,8 @@ class Move(Inference):
 
         for t in range(self._moves):
             kwargs['t'] = t
-            log_weight = log_weight - importance.conditioning_factor(
-                {}, xi, self.batch_shape
-            )
+            log_weight = log_weight - xi.conditioning_factor(None,
+                                                             self.batch_shape)
             xiq, _ = self.kernel(zs, xi, *args, **kwargs)
             if not self._count_target:
                 kwargs.pop('t')
