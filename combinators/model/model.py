@@ -141,17 +141,8 @@ class Primitive(Model):
         self.p = probtorch.Trace()
         result = self._forward(*args, **kwargs)
         ps = graphs.ComputationGraph(traces={self.name: self.p})
-        reused = [k for k in self.p if k in self.q and\
-                  utils.reused_variable(self.p[k])]
-        log_weight = torch.zeros(self.batch_shape,
-                                 device=ps.device)
-        conditioned = [k for k in self.p.conditioned()]
-        sample_dims = tuple(range(len(self.batch_shape)))
-        log_weight += self.p.log_joint(sample_dims=sample_dims,
-                                       nodes=conditioned,
-                                       reparameterized=False) +\
-                      self.p.log_joint(sample_dims=sample_dims, nodes=reused,
-                                       reparameterized=False)
+        qs = graphs.ComputationGraph(traces={self.name: self.q})
+        log_weight = ps.conditioning_factor(qs, self.batch_shape)
         self.p = None
         assert log_weight.shape == self.batch_shape
         return result, ps, log_weight
