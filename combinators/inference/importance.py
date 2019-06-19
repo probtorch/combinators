@@ -154,8 +154,10 @@ def eubo(log_weight, iwae_objective=False, xi=None, inference_params=True):
 
 class EvBoOptimizer:
     def __init__(self, param_groups, optimizer_constructor):
-        self._kwargs = [g['kwargs'] for g in param_groups]
+        self._kwargs = [g.get('kwargs', {}) for g in param_groups]
         self._num_groups = len(param_groups)
+        self._target_weights = [g.get('target_weights', None)
+                                for g in param_groups]
         self._objectives = [g['objective'] for g in param_groups]
         self._optimizers = [optimizer_constructor([g['optimizer_args']])
                             for g in param_groups]
@@ -174,9 +176,10 @@ class EvBoOptimizer:
     def step_grads(self, sampler, xi, *args, **kwargs):
         objectives = []
         for g in range(self._num_groups):
-            with sampler.rescore(xi) as rescorer:
-                g_kwargs = {**kwargs, **self._kwargs[g]}
-                _, _, log_weight = rescorer(*args, **g_kwargs)
+            with sampler.weight_target(self._target_weights[g]) as target:
+                with target.rescore(xi) as rescorer:
+                    g_kwargs = {**kwargs, **self._kwargs[g]}
+                    _, _, log_weight = rescorer(*args, **g_kwargs)
 
             objective = self._objectives[g]['function'](log_weight, xi=xi)
             if g == self._num_groups - 1:
