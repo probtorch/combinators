@@ -206,15 +206,22 @@ class ComputationGraph:
 
     def conditioning_factor(self, qs, batch_shape, target_weights=None):
         if not target_weights:
-            target_weights = lambda node, names, rvs: 1.0
+            target_weights = lambda node, names, rvs: torch.ones(len(names)).to(
+                rvs[0].value
+            )
         log_omega = torch.zeros(batch_shape, device=self.device)
         dims = tuple(range(len(batch_shape)))
         for name in self:
             conditioned = [k for k in self[name].conditioned()]
-            log_omega = log_omega + self[name].log_joint(
-                sample_dims=dims, nodes=conditioned, reparameterized=False
-            ) * target_weights(name, conditioned,
-                               [self[name][k] for k in conditioned])
+            if conditioned:
+                conditioned_joints = [self[name].log_joint(
+                    sample_dims=dims, nodes=[k], reparameterized=False
+                ) for k in conditioned]
+                conditioned_joints = torch.stack(conditioned_joints, dim=-1)
+                weights = target_weights(name, conditioned,
+                                         [self[name][k] for k in conditioned])
+                weighted_joints = conditioned_joints @ weights
+                log_omega = log_omega + weighted_joints
             if qs and name in qs:
                 reused = [k for k in self[name] if k in qs[name] and\
                           utils.reused_variable(self[name], qs[name], k)]
