@@ -237,6 +237,11 @@ class Partial(Model):
         with self.curried.cond(qs[self.name + '/' + self.curried.name:]) as cq:
             yield self
 
+    @contextmanager
+    def weight_target(self, weights=None):
+        with self.curried.weight_target(weights) as _:
+            yield self
+
 def partial(func, *arguments, **keywords):
     return Partial(func, *arguments, **keywords)
 
