@@ -182,15 +182,16 @@ class EvBoOptimizer:
                     _, _, log_weight = rescorer(*args, **g_kwargs)
 
             objective = self._objectives[g]['function'](log_weight, xi=xi)
+            objectives.append(objective)
+        for g in range(self._num_groups):
             if g == self._num_groups - 1:
-                objective.backward()
+                objectives[g].backward()
             else:
-                objective.backward(retain_graph=True)
+                objectives[g].backward(retain_graph=True)
             self._optimizers[g].step()
             if self._schedules[g]:
                 self._schedules[g].step(objective)
-            objectives.append(objective.detach().cpu())
-        return objectives
+        return [objective.detach().cpu() for objective in objectives]
 
 def default_elbo_logger(objectives, t):
     logging.info('ELBO=%.8e at epoch %d', -objectives[0], t + 1)
