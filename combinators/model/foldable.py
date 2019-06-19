@@ -30,29 +30,38 @@ class Step(Model):
     def name(self):
         return 'Step(%s)' % str(self._iteration)
 
+    @contextmanager
+    def _condition(self):
+        if self._qs and self._qs.contains_model(self.name):
+            operator = self.operator
+            with self.operator.cond(self._qs[self.name:]) as self.operator:
+                if isinstance(self._initializer, Sampler):
+                    initializer = self._initializer
+                    with self._initializer.cond(self._qs[self.name:]) as\
+                         self._initializer:
+                        yield self
+                    self._initializer = initializer
+                else:
+                    yield self
+            self.operator = operator
+        else:
+            yield self
+
     def forward(self, *args, **kwargs):
         graph = graphs.ComputationGraph()
-        if isinstance(self._initializer, Sampler):
-            if self._qs and self._qs.contains_model(self.name):
-                with self._initializer.cond(self._qs[self.name:]) as initq:
-                    seed, init_trace, seed_log_weight = initq(**kwargs)
-            else:
+        with self._condition() as _:
+            if isinstance(self._initializer, Sampler):
                 seed, init_trace, seed_log_weight = self._initializer(**kwargs)
-            graph.insert(self.name, init_trace)
-        else:
-            seed = self._initializer
-            seed_log_weight = torch.zeros(self.batch_shape)
-        if self._qs and self._qs.contains_model(self.name):
-            with self.operator.cond(self._qs[self.name:]) as opq:
-                result, op_trace, log_weight = opq(seed, *args, **kwargs)
-                next_step = Step(opq, initializer=result, qs=self._qs,
-                                 iteration=self._iteration + 1,
-                                 walker=self._walker, **self._kwargs)
-        else:
+                graph.insert(self.name, init_trace)
+            else:
+                seed = self._initializer
+                seed_log_weight = torch.zeros(self.batch_shape)
             result, op_trace, log_weight = self.operator(seed, *args, **kwargs)
             next_step = Step(self.operator, initializer=result,
                              iteration=self._iteration + 1, qs=self._qs,
-                             walker=self._walker, **self._kwargs)
+                             walker=self._walker,
+                             target_weights=self._target_weights,
+                             **self._kwargs)
         if self._walker:
             next_step = self._walker(next_step)
 
