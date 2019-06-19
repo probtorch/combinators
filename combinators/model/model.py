@@ -64,6 +64,7 @@ class Primitive(Model):
         self.register_args(params, trainable)
         self.p = None
         self.q = q if q else probtorch.Trace()
+        self._target_weights = None
 
     @property
     def hyperparams_trainable(self):
@@ -140,6 +141,15 @@ class Primitive(Model):
             yield self
         finally:
             self.q = q
+
+    @contextmanager
+    def weight_target(self, weights=None):
+        target_weights = self._target_weights
+        try:
+            self._target_weights = weights
+            yield self
+        finally:
+            self._target_weights = target_weights
 
     def forward(self, *args, **kwargs):
         self.p = probtorch.Trace()
