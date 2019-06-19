@@ -197,6 +197,12 @@ class Compose(Model):
             with self.g.cond(qs[self.name:]) as gq:
                 yield self
 
+    @contextmanager
+    def weight_target(self, weights=None):
+        with self.f.weight_target(weights) as _:
+            with self.g.weight_target(weights) as _:
+                yield self
+
     def walk(self, f):
         walk_f = self.f.walk(f)
         walk_g = self.g.walk(f)
