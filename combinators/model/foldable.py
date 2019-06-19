@@ -10,13 +10,14 @@ from ..sampler import Sampler
 
 class Step(Model):
     def __init__(self, operator, initializer=None, iteration=0, qs=None,
-                 walker=None, **kwargs):
+                 walker=None, target_weights=None, **kwargs):
         assert isinstance(operator, Sampler)
         super(Step, self).__init__(batch_shape=operator.batch_shape)
         self._kwargs = kwargs
         self._iteration = iteration
         self._qs = qs
         self._walker = walker
+        self._target_weights = target_weights
 
         self.add_module('operator', operator)
         if isinstance(initializer, Sampler):
@@ -29,29 +30,58 @@ class Step(Model):
     def name(self):
         return 'Step(%s)' % str(self._iteration)
 
+    @contextmanager
+    def _condition(self):
+        if self._qs and self._qs.contains_model(self.name):
+            operator = self.operator
+            with self.operator.cond(self._qs[self.name:]) as self.operator:
+                if isinstance(self._initializer, Sampler):
+                    initializer = self._initializer
+                    with self._initializer.cond(self._qs[self.name:]) as\
+                         self._initializer:
+                        yield self
+                    self._initializer = initializer
+                else:
+                    yield self
+            self.operator = operator
+        else:
+            yield self
+
+    @contextmanager
+    def _weight_target(self):
+        operator = self.operator
+        with self.operator.weight_target(self._target_weights) as self.operator:
+            if isinstance(self._initializer, Sampler):
+                initializer = self._initializer
+                with self._initializer.weight_target(self._target_weights) as\
+                     self._initializer:
+                    yield self
+                self._initializer = initializer
+            else:
+                yield self
+        self.operator = operator
+
+    @contextmanager
+    def _ready(self):
+        with self._condition() as _:
+            with self._weight_target() as _:
+                yield self
+
     def forward(self, *args, **kwargs):
         graph = graphs.ComputationGraph()
-        if isinstance(self._initializer, Sampler):
-            if self._qs and self._qs.contains_model(self.name):
-                with self._initializer.cond(self._qs[self.name:]) as initq:
-                    seed, init_trace, seed_log_weight = initq(**kwargs)
-            else:
+        with self._ready() as _:
+            if isinstance(self._initializer, Sampler):
                 seed, init_trace, seed_log_weight = self._initializer(**kwargs)
-            graph.insert(self.name, init_trace)
-        else:
-            seed = self._initializer
-            seed_log_weight = torch.zeros(self.batch_shape)
-        if self._qs and self._qs.contains_model(self.name):
-            with self.operator.cond(self._qs[self.name:]) as opq:
-                result, op_trace, log_weight = opq(seed, *args, **kwargs)
-                next_step = Step(opq, initializer=result, qs=self._qs,
-                                 iteration=self._iteration + 1,
-                                 walker=self._walker, **self._kwargs)
-        else:
+                graph.insert(self.name, init_trace)
+            else:
+                seed = self._initializer
+                seed_log_weight = torch.zeros(self.batch_shape)
             result, op_trace, log_weight = self.operator(seed, *args, **kwargs)
             next_step = Step(self.operator, initializer=result,
                              iteration=self._iteration + 1, qs=self._qs,
-                             walker=self._walker, **self._kwargs)
+                             walker=self._walker,
+                             target_weights=self._target_weights,
+                             **self._kwargs)
         if self._walker:
             next_step = self._walker(next_step)
 
