@@ -47,9 +47,29 @@ class Step(Model):
         else:
             yield self
 
+    @contextmanager
+    def _weight_target(self):
+        operator = self.operator
+        with self.operator.weight_target(self._target_weights) as self.operator:
+            if isinstance(self._initializer, Sampler):
+                initializer = self._initializer
+                with self._initializer.weight_target(self._target_weights) as\
+                     self._initializer:
+                    yield self
+                self._initializer = initializer
+            else:
+                yield self
+        self.operator = operator
+
+    @contextmanager
+    def _ready(self):
+        with self._condition() as _:
+            with self._weight_target() as _:
+                yield self
+
     def forward(self, *args, **kwargs):
         graph = graphs.ComputationGraph()
-        with self._condition() as _:
+        with self._ready() as _:
             if isinstance(self._initializer, Sampler):
                 seed, init_trace, seed_log_weight = self._initializer(**kwargs)
                 graph.insert(self.name, init_trace)
