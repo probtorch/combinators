@@ -225,9 +225,15 @@ class ComputationGraph:
             if qs and name in qs:
                 reused = [k for k in self[name] if k in qs[name] and\
                           utils.reused_variable(self[name], qs[name], k)]
-                log_omega = log_omega + self[name].log_joint(
-                    sample_dims=dims, nodes=reused, reparameterized=False
-                )
+                if reused:
+                    reused_joints = [self[name].log_joint(
+                        sample_dims=dims, nodes=[k], reparameterized=False
+                    ) for k in reused]
+                    reused_joints = torch.stack(reused_joints, dim=-1)
+                    weights = target_weights(name, reused,
+                                             [self[name][k] for k in reused])
+                    weighted_joints = reused_joints @ weights
+                    log_omega = log_omega + weighted_joints
 
         return log_omega
 
