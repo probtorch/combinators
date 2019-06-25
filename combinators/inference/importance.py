@@ -122,10 +122,7 @@ def eubo(log_weight, iwae_objective=False, xi=None, inference_params=True):
 
 class EvBoOptimizer:
     def __init__(self, param_groups, optimizer_constructor):
-        self._kwargs = [g.get('kwargs', {}) for g in param_groups]
         self._num_groups = len(param_groups)
-        self._target_weights = [g.get('target_weights', None)
-                                for g in param_groups]
         self._objectives = [g['objective'] for g in param_groups]
         self._optimizers = [optimizer_constructor([g['optimizer_args']])
                             for g in param_groups]
