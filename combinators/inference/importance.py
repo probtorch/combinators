@@ -141,14 +141,9 @@ class EvBoOptimizer:
         for optimizer in self._optimizers:
             optimizer.zero_grad()
 
-    def step_grads(self, sampler, xi, *args, **kwargs):
+    def step_grads(self, log_weight, xi):
         objectives = []
         for g in range(self._num_groups):
-            with sampler.weight_target(self._target_weights[g]) as target:
-                with target.rescore(xi) as rescorer:
-                    g_kwargs = {**kwargs, **self._kwargs[g]}
-                    _, _, log_weight = rescorer(*args, **g_kwargs)
-
             objective = self._objectives[g]['function'](log_weight, xi=xi)
             objectives.append(objective)
         for g in range(self._num_groups):
