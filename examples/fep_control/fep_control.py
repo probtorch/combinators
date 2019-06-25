@@ -153,8 +153,7 @@ class RecognitionAgent(model.Primitive):
             nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
         )
         self.encode_state = nn.Sequential(
-            nn.Linear(self._observation_dim + 3 + self._action_dim,
-                      self._state_dim * 4),
+            nn.Linear(self._observation_dim + 3, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -168,19 +167,19 @@ class RecognitionAgent(model.Primitive):
         return self._name
 
     def _forward(self, prev_control=None, prediction=None, observation=None):
-        if prev_control is None:
-            prev_control = torch.zeros(*self.batch_shape, self._action_dim).to(
-                observation
-            )
         if observation is not None:
-            info = torch.cat((observation, prev_control), dim=-1)
-            state = self.encode_state(info).reshape(-1, self._state_dim, 2)
+            state = self.encode_state(observation).reshape(-1, self._state_dim,
+                                                           2)
             prediction = {
                 'loc': state[:, :, 0],
                 'scale': state[:, :, 1],
             }
         state = self.sample(Normal, prediction['loc'],
                             softplus(prediction['scale']) + 1e-9, name='state')
+        if prev_control is None:
+            prev_control = torch.zeros(*self.batch_shape, self._action_dim).to(
+                state
+            )
 
         control = self.decode_policy(state)
         if self._discrete_actions:
