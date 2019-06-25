@@ -122,10 +122,7 @@ def eubo(log_weight, iwae_objective=False, xi=None, inference_params=True):
 
 class EvBoOptimizer:
     def __init__(self, param_groups, optimizer_constructor):
-        self._kwargs = [g.get('kwargs', {}) for g in param_groups]
         self._num_groups = len(param_groups)
-        self._target_weights = [g.get('target_weights', None)
-                                for g in param_groups]
         self._objectives = [g['objective'] for g in param_groups]
         self._optimizers = [optimizer_constructor([g['optimizer_args']])
                             for g in param_groups]
@@ -141,14 +138,9 @@ class EvBoOptimizer:
         for optimizer in self._optimizers:
             optimizer.zero_grad()
 
-    def step_grads(self, sampler, xi, *args, **kwargs):
+    def step_grads(self, log_weight, xi):
         objectives = []
         for g in range(self._num_groups):
-            with sampler.weight_target(self._target_weights[g]) as target:
-                with target.rescore(xi) as rescorer:
-                    g_kwargs = {**kwargs, **self._kwargs[g]}
-                    _, _, log_weight = rescorer(*args, **g_kwargs)
-
             objective = self._objectives[g]['function'](log_weight, xi=xi)
             objectives.append(objective)
         for g in range(self._num_groups):
@@ -177,8 +169,8 @@ def multiobjective_variational(sampler, param_groups, num_iterations, data,
     iteration_bounds = list(range(num_iterations))
     for i in range(num_iterations):
         evbo_optim.zero_grads()
-        _, xi, _ = sampler(data=data)
-        iteration_bounds[i] = evbo_optim.step_grads(sampler, xi, data=data)
+        _, xi, log_weight = sampler(data=data)
+        iteration_bounds[i] = evbo_optim.step_grads(log_weight, xi)
         if logger is not None:
             logger(iteration_bounds[i], i)
 
@@ -194,9 +186,9 @@ def multiobjective_variational(sampler, param_groups, num_iterations, data,
     ], dim=0)
     return xi, trained_params, iteration_bounds
 
-def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6,
-                           bound='elbo', log_all_bounds=False, patience=50,
-                           log_estimator=False):
+def variational_importance(sampler, num_iterations, data, use_cuda=True,
+                           lr=1e-6, bound='elbo', log_all_bounds=False,
+                           patience=50, log_estimator=False):
     sampler.train()
     if torch.cuda.is_available() and use_cuda:
         sampler.cuda()
@@ -216,9 +208,8 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6
                                                  xi=xi),
         }
     evbo_optim = EvBoOptimizer([{
-        'kwargs': {}, 'objective': objective,
+        'objective': objective, 'patience': patience,
         'optimizer_args': {'params': list(sampler.parameters()), 'lr': lr},
-        'patience': patience,
     }], torch.optim.Adam)
 
     bounds = list(range(num_iterations))
@@ -237,7 +228,7 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6
             logging.info('%s=%.8e at epoch %d', bound.upper(), bounds[t][bound],
                          t + 1)
 
-        evbo_optim.step_grads(sampler, xi, data=data)
+        evbo_optim.step_grads(log_weight, xi)
 
     if torch.cuda.is_available() and use_cuda:
         sampler.cpu()
