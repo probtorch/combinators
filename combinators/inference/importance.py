@@ -186,9 +186,9 @@ def multiobjective_variational(sampler, param_groups, num_iterations, data,
     ], dim=0)
     return xi, trained_params, iteration_bounds
 
-def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6,
-                           bound='elbo', log_all_bounds=False, patience=50,
-                           log_estimator=False):
+def variational_importance(sampler, num_iterations, data, use_cuda=True,
+                           lr=1e-6, bound='elbo', log_all_bounds=False,
+                           patience=50, log_estimator=False):
     sampler.train()
     if torch.cuda.is_available() and use_cuda:
         sampler.cuda()
@@ -208,9 +208,8 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6
                                                  xi=xi),
         }
     evbo_optim = EvBoOptimizer([{
-        'kwargs': {}, 'objective': objective,
+        'objective': objective, 'patience': patience,
         'optimizer_args': {'params': list(sampler.parameters()), 'lr': lr},
-        'patience': patience,
     }], torch.optim.Adam)
 
     bounds = list(range(num_iterations))
