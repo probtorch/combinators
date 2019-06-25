@@ -69,14 +69,31 @@ def active_inference_episode(agent, env, episode_length=10, dream=True,
                              render=False, finish=False):
     last_iteration = episode_length
     t = 0
-    theta = None
+    control = None
+    prediction = None
+    observation = None
     graph = graphs.ComputationGraph()
 
-    episode_log_weight = torch.zeros(*agent.batch_shape)
+    param = list(agent.parameters())[0]
+    episode_log_weight = torch.zeros(*agent.batch_shape).to(param)
     while t < episode_length and not (env.done and finish):
         if render:
             env.render()
-        theta, step_graph, step_log_weight = agent(theta, t, env=env)
+        if control is not None:
+            action = control[0].cpu().detach().numpy()
+        else:
+            action = None
+        observation, reward, done, _ = env.retrieve_step(t, action)
+        if observation is not None:
+            observation = torch.Tensor(observation).to(episode_log_weight)
+            reward = torch.Tensor([reward]).to(episode_log_weight)
+            obs_done = torch.eye(2)[1 if done else 0].to(episode_log_weight)
+            observation = torch.cat((observation, reward, obs_done), dim=-1)
+            observation = observation.expand(*agent.batch_shape,
+                                             *observation.shape)
+        (control, prediction), step_graph, step_log_weight = agent(control,
+                                                                   prediction,
+                                                                   observation)
         t += 1
         if not dream:
             env.focus(t)
@@ -88,7 +105,7 @@ def active_inference_episode(agent, env, episode_length=10, dream=True,
         episode_log_weight = episode_log_weight.to(device=graph.device)
         episode_log_weight = episode_log_weight + step_log_weight
 
-    return theta, episode_log_weight, last_iteration, graph
+    return (control, prediction), episode_log_weight, last_iteration, graph
 
 def active_inference(agent, env_name, lr=1e-6, episode_length=10, use_cuda=True,
                      episodes=1, dream=True, patience=None):
@@ -132,7 +149,7 @@ def active_inference(agent, env_name, lr=1e-6, episode_length=10, use_cuda=True,
                 agent, env, episode_length=episode_length, dream=False,
             )
 
-            elbo = importance.elbo(log_weight, iwae_objective=True, xi=graph)
+            elbo = importance.elbo(log_weight, iwae_objective=True, xi=graph) / len(graph)
             (-elbo).backward()
             optimizer.step()
             if patience:
