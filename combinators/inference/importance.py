@@ -169,8 +169,8 @@ def multiobjective_variational(sampler, param_groups, num_iterations, data,
     iteration_bounds = list(range(num_iterations))
     for i in range(num_iterations):
         evbo_optim.zero_grads()
-        _, xi, _ = sampler(data=data)
-        iteration_bounds[i] = evbo_optim.step_grads(sampler, xi, data=data)
+        _, xi, log_weight = sampler(data=data)
+        iteration_bounds[i] = evbo_optim.step_grads(log_weight, xi)
         if logger is not None:
             logger(iteration_bounds[i], i)
 
@@ -229,7 +229,7 @@ def variational_importance(sampler, num_iterations, data, use_cuda=True, lr=1e-6
             logging.info('%s=%.8e at epoch %d', bound.upper(), bounds[t][bound],
                          t + 1)
 
-        evbo_optim.step_grads(sampler, xi, data=data)
+        evbo_optim.step_grads(log_weight, xi)
 
     if torch.cuda.is_available() and use_cuda:
         sampler.cpu()
