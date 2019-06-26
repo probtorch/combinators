@@ -94,8 +94,8 @@ class GenerativeAgent(model.Primitive):
         self.predict_observation = nn.Linear(self._state_dim * 16,
                                              (self._observation_dim + 1) * 2)
         self.predict_done = nn.Sequential(
-            nn.Linear(self._state_dim * 16, 2),
-            nn.Softmax(dim=-1),
+            nn.Linear(self._state_dim * 16, 1),
+            nn.LogSigmoid(),
         )
 
     def _forward(self, prev_control=None, prediction=None, observation=None):
@@ -111,15 +111,16 @@ class GenerativeAgent(model.Primitive):
             -1, self._observation_dim + 1, 2
         )
         if observation is not None:
-            done = observation[:, -2:]
-            observation = observation[:, :-2]
+            done = observation[:, -1:]
+            observation = observation[:, :-1]
         else:
             done = None
         observation = self.observe('observation', observation, Normal,
                                    observable[:, :, 0],
                                    softplus(observable[:, :, 1]))
-        self.observe('done', done, OneHotCategorical,
-                     self.predict_done(predictor))
+        self.observe('done', done, Bernoulli,
+                     logits=self.predict_done(predictor))
+        observation = torch.cat((observation, done), dim=-1)
         self.goal(self, observation)
 
         if self._discrete_actions:
