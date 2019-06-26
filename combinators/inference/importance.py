@@ -153,11 +153,13 @@ class EvBoOptimizer:
                 self._schedules[g].step(objective)
         return [objective.detach().cpu() for objective in objectives]
 
-def default_elbo_logger(objectives, t):
+def default_elbo_logger(objectives, t, xi=None):
     logging.info('ELBO=%.8e at epoch %d', -objectives[0], t + 1)
+    return [-objectives[0]]
 
-def default_eubo_logger(objectives, t):
+def default_eubo_logger(objectives, t, xi=None):
     logging.info('EUBO=%.8e at epoch %d', objectives[1], t + 1)
+    return [objectives[1]]
 
 def multiobjective_variational(sampler, param_groups, num_iterations, data,
                                use_cuda=True, logger=default_elbo_logger):
@@ -172,7 +174,7 @@ def multiobjective_variational(sampler, param_groups, num_iterations, data,
         _, xi, log_weight = sampler(data=data)
         iteration_bounds[i] = evbo_optim.step_grads(log_weight, xi)
         if logger is not None:
-            logger(iteration_bounds[i], i)
+            iteration_bounds[i] = logger(iteration_bounds[i], i, xi)
 
     if torch.cuda.is_available() and use_cuda:
         sampler.cpu()
