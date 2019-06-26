@@ -154,7 +154,7 @@ class RecognitionAgent(model.Primitive):
             nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
         )
         self.encode_state = nn.Sequential(
-            nn.Linear(self._observation_dim + 3, self._state_dim * 4),
+            nn.Linear(self._observation_dim + 2, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
