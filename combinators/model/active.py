@@ -125,8 +125,9 @@ class ActiveEpisode(Model):
         observation = torch.Tensor(observation).to(log_weight)
         observation = observation.expand(*self.batch_shape, *observation.shape)
         done = False
+        final = False
 
-        while not done:
+        while not done or final:
             if render:
                 self._env.render()
             with self._ready(t) as _:
@@ -151,6 +152,7 @@ class ActiveEpisode(Model):
                     *self.batch_shape, 2
                 ).to(observation)
                 observation = torch.cat((observation, reward, obs_done), dim=-1)
+            final = done if not final else False
 
             graph.insert(self.name + '/' + str(t), graph_t)
             log_weight = log_weight.to(device=graph.device) + log_weight_t
