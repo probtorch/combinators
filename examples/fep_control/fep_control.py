@@ -83,19 +83,14 @@ class GenerativeAgent(model.Primitive):
             nn.PReLU(),
             nn.Linear(self._state_dim * 16, self._state_dim * 2),
         )
-        self.predictor = nn.Sequential(
+        self.predict_observation = nn.Sequential(
             nn.Linear(self._state_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
             nn.Linear(self._state_dim * 8, self._state_dim * 16),
             nn.PReLU(),
-        )
-        self.predict_observation = nn.Linear(self._state_dim * 16,
-                                             (self._observation_dim + 1) * 2)
-        self.predict_done = nn.Sequential(
-            nn.Linear(self._state_dim * 16, 1),
-            nn.LogSigmoid(),
+            nn.Linear(self._state_dim * 16, (self._observation_dim + 1) * 2)
         )
 
     def _forward(self, prev_control=None, prediction=None, observation=None):
@@ -106,21 +101,12 @@ class GenerativeAgent(model.Primitive):
         if prev_control is None:
             prev_control = torch.zeros(self._action_dim).to(state)
 
-        predictor = self.predictor(state)
-        observable = self.predict_observation(predictor).reshape(
+        observable = self.predict_observation(state).reshape(
             -1, self._observation_dim + 1, 2
         )
-        if observation is not None:
-            done = observation[:, -1:]
-            observation = observation[:, :-1]
-        else:
-            done = None
         observation = self.observe('observation', observation, Normal,
                                    observable[:, :, 0],
                                    softplus(observable[:, :, 1]))
-        self.observe('done', done, Bernoulli,
-                     logits=self.predict_done(predictor))
-        observation = torch.cat((observation, done), dim=-1)
         self.goal(self, observation)
 
         if self._discrete_actions:
