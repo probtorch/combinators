@@ -121,9 +121,9 @@ class ActiveEpisode(Model):
         t = 0
         prediction = None
         control = None
-        observation = list(self._env.reset()) + [0., 0.]
-        observation = torch.Tensor(observation).to(log_weight)
-        observation = observation.expand(*self.batch_shape, *observation.shape)
+        observation = torch.Tensor(list(self._env.reset()) + [0.])
+        observation = observation.to(log_weight).expand(*self.batch_shape,
+                                                        *observation.shape)
         done = False
         final = False
 
@@ -148,9 +148,7 @@ class ActiveEpisode(Model):
                 ).to(log_weight)
                 reward = torch.tensor([reward]).expand(*self.batch_shape, 1)
                 reward = reward.to(observation)
-                obs_done = torch.ones(1) if done else torch.zeros(1)
-                obs_done = obs_done.expand(*self.batch_shape, 1).to(observation)
-                observation = torch.cat((observation, reward, obs_done), dim=-1)
+                observation = torch.cat((observation, reward), dim=-1)
             final = done if not final else False
 
             graph.insert(self.name + '/' + str(t), graph_t)
