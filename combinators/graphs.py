@@ -207,7 +207,7 @@ class ComputationGraph:
     def conditioning_factor(self, qs, batch_shape, target_weights=None):
         if not target_weights:
             target_weights = lambda node, names, rvs: torch.ones(len(names)).to(
-                rvs[0].value
+                device=self.device
             )
         log_omega = torch.zeros(batch_shape, device=self.device)
         dims = tuple(range(len(batch_shape)))
