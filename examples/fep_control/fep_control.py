@@ -51,9 +51,7 @@ class BoundedRewardEnergy(nn.Module):
 
 class GenerativeAgent(model.Primitive):
     def __init__(self, *args, **kwargs):
-        self._functional_dim = kwargs.pop('functional_dim', 2)
-        self._perceptual_dim = kwargs.pop('perceptual_dim', 1)
-        self._state_dim = self._functional_dim + self._perceptual_dim
+        self._state_dim = kwargs.pop('state_dim', 2)
         self._action_dim = kwargs.pop('action_dim', 1)
         self._observation_dim = kwargs.pop('observation_dim', 2)
         self._discrete_actions = kwargs.pop('discrete_actions', True)
@@ -77,8 +75,7 @@ class GenerativeAgent(model.Primitive):
         super(GenerativeAgent, self).__init__(*args, **kwargs)
         self.goal = goal
         self.state_transition = nn.Sequential(
-            nn.Linear(self._functional_dim + self._action_dim,
-                      self._state_dim * 4),
+            nn.Linear(self._state_dim + self._action_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -87,7 +84,7 @@ class GenerativeAgent(model.Primitive):
             nn.Linear(self._state_dim * 16, self._state_dim * 2),
         )
         self.predict_observation = nn.Sequential(
-            nn.Linear(self._perceptual_dim, self._state_dim * 4),
+            nn.Linear(self._state_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -106,7 +103,7 @@ class GenerativeAgent(model.Primitive):
                 *self.batch_shape, self._action_dim,
             )
 
-        observable = self.predict_observation(state[:, self._functional_dim:]).reshape(
+        observable = self.predict_observation(state).reshape(
             -1, self._observation_dim + 1, 2
         )
         observation = self.observe('observation', observation, Normal,
@@ -119,9 +116,7 @@ class GenerativeAgent(model.Primitive):
         else:
             control = self.param_sample(Normal, 'control')
 
-        dynamics = self.state_transition(
-            torch.cat((state[:, :self._functional_dim], control), dim=-1)
-        )
+        dynamics = self.state_transition(torch.cat((state, control), dim=-1))
         dynamics = dynamics.reshape(-1, self._state_dim, 2)
         prediction = {
             'loc': dynamics[:, :, 0],
