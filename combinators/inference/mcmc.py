@@ -78,14 +78,15 @@ class MetropolisHastings(Inference):
                 kwargs.pop('ts')
             try:
                 zsp, xip, log_w = importance.conditioned_evaluate(self.target,
-                                                                  xiq, *args,
+                                                                  xiq,
+                                                                  log_weight_q,
+                                                                  *args,
                                                                   **kwargs)
                 if not multiple_zs:
                     zsp = (zsp,)
                 log_transition = self.kernel.log_transition_prob(xi, xip)
                 log_reverse_transition = self.kernel.log_transition_prob(xip,
                                                                          xi)
-                log_w = log_weight_q + log_w
                 log_alpha = torch.min(torch.zeros(self.batch_shape,
                                                   device=log_w.device),
                                       (log_w + log_reverse_transition) -\
