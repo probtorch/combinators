@@ -13,11 +13,11 @@ from . import inference
 from ..model import foldable
 from .. import utils
 
-def conditioned_evaluate(target, xiq, *args, **kwargs):
+def conditioned_evaluate(target, xiq, log_wq, *args, **kwargs):
     with target.cond(xiq) as targetq:
         zs, xi, log_w = targetq(*args, **kwargs)
     log_omega_q = xiq.conditioning_factor(xi, target.batch_shape)
-    return zs, xi, log_w - log_omega_q
+    return zs, xi, log_w + log_wq - log_omega_q
 
 class Propose(inference.Inference):
     def __init__(self, target, proposal):
