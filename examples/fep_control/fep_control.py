@@ -102,7 +102,9 @@ class GenerativeAgent(model.Primitive):
         else:
             state = self.sample(Normal, **prediction, name='state')
         if prev_control is None:
-            prev_control = torch.zeros(self._action_dim).to(state)
+            prev_control = torch.zeros(self._action_dim).to(state).expand(
+                *self.batch_shape, self._action_dim,
+            )
 
         observable = self.predict_observation(state[:, self._functional_dim:]).reshape(
             -1, self._observation_dim + 1, 2
