@@ -28,8 +28,7 @@ class Propose(inference.Inference):
 
     def forward(self, *args, **kwargs):
         _, xiq, log_wq = self.proposal(*args, **kwargs)
-        zs, xi, log_w = conditioned_evaluate(self.target, xiq, *args, **kwargs)
-        return zs, xi, log_wq + log_w
+        return conditioned_evaluate(self.target, xiq, log_wq, *args, **kwargs)
 
     def walk(self, f):
         return f(Propose(self.target.walk(f), self.proposal))
