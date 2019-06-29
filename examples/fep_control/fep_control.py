@@ -132,16 +132,14 @@ class GenerativeAgent(model.Primitive):
 
 class RecognitionAgent(model.Primitive):
     def __init__(self, *args, **kwargs):
-        self._functional_dim = kwargs.pop('functional_dim', 2)
-        self._perceptual_dim = kwargs.pop('perceptual_dim', 1)
-        self._state_dim = self._functional_dim + self._perceptual_dim
+        self._state_dim = kwargs.pop('state_dim', 2)
         self._action_dim = kwargs.pop('action_dim', 1)
         self._observation_dim = kwargs.pop('observation_dim', 2)
         self._discrete_actions = kwargs.pop('discrete_actions', True)
         self._name = kwargs.pop('name')
         super(RecognitionAgent, self).__init__(*args, **kwargs)
         self.decode_policy = nn.Sequential(
-            nn.Linear(self._functional_dim, self._state_dim * 4),
+            nn.Linear(self._state_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._action_dim * 16),
             nn.PReLU(),
@@ -177,7 +175,7 @@ class RecognitionAgent(model.Primitive):
                 state
             )
 
-        control = self.decode_policy(state[:, :self._functional_dim])
+        control = self.decode_policy(state)
         if self._discrete_actions:
             control = self.sample(OneHotCategorical, probs=control,
                                   name='control')
