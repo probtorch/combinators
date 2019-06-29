@@ -29,11 +29,11 @@ class Move(Inference):
             kwargs['t'] = t
             log_weight = log_weight - xi.conditioning_factor(None,
                                                              self.batch_shape)
-            xiq, _ = self.kernel(zs, xi, *args, **kwargs)
+            xiq, log_weight_q = self.kernel(zs, xi, *args, **kwargs)
             if not self._count_target:
                 kwargs.pop('t')
             zs, xi, log_weight = importance.conditioned_evaluate(
-                self.target, xiq, *args, **kwargs
+                self.target, xiq, log_weight_q, *args, **kwargs
             )
             if not multiple_zs:
                 zs = (zs,)
@@ -78,14 +78,15 @@ class MetropolisHastings(Inference):
                 kwargs.pop('ts')
             try:
                 zsp, xip, log_w = importance.conditioned_evaluate(self.target,
-                                                                  xiq, *args,
+                                                                  xiq,
+                                                                  log_weight_q,
+                                                                  *args,
                                                                   **kwargs)
                 if not multiple_zs:
                     zsp = (zsp,)
                 log_transition = self.kernel.log_transition_prob(xi, xip)
                 log_reverse_transition = self.kernel.log_transition_prob(xip,
                                                                          xi)
-                log_w = log_weight_q + log_w
                 log_alpha = torch.min(torch.zeros(self.batch_shape,
                                                   device=log_w.device),
                                       (log_w + log_reverse_transition) -\
