@@ -119,6 +119,7 @@ class ActiveEpisode(Model):
         )
 
         t = 0
+        dynamics = None
         prediction = None
         control = None
         observation = torch.Tensor(list(self._env.reset()) + [0.])
@@ -131,8 +132,8 @@ class ActiveEpisode(Model):
             if render:
                 self._env.render()
             with self._ready(t) as _:
-                (control, prediction), graph_t, log_weight_t = self.agent(
-                    control, prediction, observation
+                (dynamics, control, prediction), graph_t, log_weight_t = self.agent(
+                    dynamics, control, prediction, observation
                 )
             action = control[0].cpu().detach().numpy()
 
