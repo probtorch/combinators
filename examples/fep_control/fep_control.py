@@ -148,14 +148,22 @@ class GenerativeAgent(model.Primitive):
 
 class RecognitionAgent(model.Primitive):
     def __init__(self, *args, **kwargs):
+        self._dyn_dim = kwargs.pop('dyn_dim', 2)
         self._state_dim = kwargs.pop('state_dim', 2)
         self._action_dim = kwargs.pop('action_dim', 1)
         self._observation_dim = kwargs.pop('observation_dim', 2)
         self._discrete_actions = kwargs.pop('discrete_actions', True)
         self._name = kwargs.pop('name')
+        if 'params' not in kwargs:
+            kwargs['params'] = {
+                'dynamics': {
+                    'loc': torch.zeros(self._dyn_dim),
+                    'scale': torch.ones(self._dyn_dim),
+                },
+            }
         super(RecognitionAgent, self).__init__(*args, **kwargs)
         self.decode_policy = nn.Sequential(
-            nn.Linear(self._state_dim, self._state_dim * 4),
+            nn.Linear(self._dyn_dim + self._state_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._action_dim * 16),
             nn.PReLU(),
@@ -176,7 +184,8 @@ class RecognitionAgent(model.Primitive):
     def name(self):
         return self._name
 
-    def _forward(self, prev_control=None, prediction=None, observation=None):
+    def _forward(self, dynamics=None, prev_control=None, prediction=None,
+                 observation=None):
         if observation is not None:
             state = self.encode_state(observation).reshape(-1, self._state_dim,
                                                            2)
@@ -186,12 +195,14 @@ class RecognitionAgent(model.Primitive):
             }
         state = self.sample(Normal, prediction['loc'],
                             softplus(prediction['scale']) + 1e-9, name='state')
+        if dynamics is None:
+            dynamics = self.param_sample(Normal, 'dynamics')
         if prev_control is None:
             prev_control = torch.zeros(*self.batch_shape, self._action_dim).to(
                 state
             )
 
-        control = self.decode_policy(state)
+        control = self.decode_policy(torch.cat((dynamics, state), dim=-1))
         if self._discrete_actions:
             control = self.sample(OneHotCategorical, probs=control,
                                   name='control')
