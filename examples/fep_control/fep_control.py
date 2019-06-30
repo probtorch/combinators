@@ -51,6 +51,7 @@ class BoundedRewardEnergy(nn.Module):
 
 class GenerativeAgent(model.Primitive):
     def __init__(self, *args, **kwargs):
+        self._dyn_dim = kwargs.pop('dyn_dim', 2)
         self._state_dim = kwargs.pop('state_dim', 2)
         self._action_dim = kwargs.pop('action_dim', 1)
         self._observation_dim = kwargs.pop('observation_dim', 2)
@@ -58,6 +59,10 @@ class GenerativeAgent(model.Primitive):
         goal = kwargs.pop('goal')
         if 'params' not in kwargs:
             kwargs['params'] = {
+                'dynamics': {
+                    'loc': torch.zeros(self._dyn_dim),
+                    'scale': torch.ones(self._dyn_dim),
+                },
                 'state': {
                     'loc': torch.zeros(self._state_dim),
                     'scale': torch.ones(self._state_dim),
@@ -74,8 +79,18 @@ class GenerativeAgent(model.Primitive):
                 }
         super(GenerativeAgent, self).__init__(*args, **kwargs)
         self.goal = goal
-        self.state_transition = nn.Sequential(
-            nn.Linear(self._state_dim + self._action_dim, self._state_dim * 4),
+        self.dynamical_transition = nn.Sequential(
+            nn.Linear(self._dyn_dim + self._state_dim + self._action_dim,
+                      self._dyn_dim * 4),
+            nn.PReLU(),
+            nn.Linear(self._dyn_dim * 4, self._dyn_dim * 8),
+            nn.PReLU(),
+            nn.Linear(self._dyn_dim * 8, self._dyn_dim * 16),
+            nn.PReLU(),
+            nn.Linear(self._dyn_dim * 16, self._dyn_dim),
+        )
+        self.project_state = nn.Sequential(
+            nn.Linear(self._dyn_dim + self._action_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -84,7 +99,7 @@ class GenerativeAgent(model.Primitive):
             nn.Linear(self._state_dim * 16, self._state_dim * 2),
         )
         self.predict_observation = nn.Sequential(
-            nn.Linear(self._state_dim, self._state_dim * 4),
+            nn.Linear(self._dyn_dim + self._state_dim, self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -93,7 +108,10 @@ class GenerativeAgent(model.Primitive):
             nn.Linear(self._state_dim * 16, (self._observation_dim + 1) * 2)
         )
 
-    def _forward(self, prev_control=None, prediction=None, observation=None):
+    def _forward(self, dynamics=None, prev_control=None, prediction=None,
+                 observation=None):
+        if dynamics is None:
+            dynamics = self.param_sample(Normal, 'dynamics')
         if prediction is None:
             state = self.param_sample(Normal, 'state')
         else:
@@ -103,9 +121,9 @@ class GenerativeAgent(model.Primitive):
                 *self.batch_shape, self._action_dim,
             )
 
-        observable = self.predict_observation(state).reshape(
-            -1, self._observation_dim + 1, 2
-        )
+        observable = self.predict_observation(torch.cat((dynamics, state),
+                                                        dim=-1))
+        observable = observable.reshape(-1, self._observation_dim + 1, 2)
         observation = self.observe('observation', observation, Normal,
                                    observable[:, :, 0],
                                    softplus(observable[:, :, 1]))
@@ -116,14 +134,17 @@ class GenerativeAgent(model.Primitive):
         else:
             control = self.param_sample(Normal, 'control')
 
-        dynamics = self.state_transition(torch.cat((state, control), dim=-1))
-        dynamics = dynamics.reshape(-1, self._state_dim, 2)
+        dynamics = self.dynamical_transition(
+            torch.cat((dynamics, state, control), dim=-1)
+        )
+        next_state = self.project_state(torch.cat((dynamics, control), dim=-1))
+        next_state = next_state.reshape(-1, self._state_dim, 2)
         prediction = {
-            'loc': dynamics[:, :, 0],
-            'scale': softplus(dynamics[:, :, 1]),
+            'loc': next_state[:, :, 0],
+            'scale': softplus(next_state[:, :, 1]),
         }
 
-        return control, prediction
+        return dynamics, control, prediction
 
 class RecognitionAgent(model.Primitive):
     def __init__(self, *args, **kwargs):
