@@ -25,18 +25,26 @@ class Propose(inference.Inference):
         assert isinstance(proposal, Sampler)
         assert proposal.batch_shape == target.batch_shape
         self.add_module('proposal', proposal)
+        self._conditioned = False
 
     def forward(self, *args, **kwargs):
-        _, xiq, log_wq = self.proposal(*args, **kwargs)
-        return conditioned_evaluate(self.target, xiq, log_wq, *args, **kwargs)
+        if not self._conditioned:
+            _, xiq, log_wq = self.proposal(*args, **kwargs)
+            return conditioned_evaluate(self.target, xiq, log_wq, *args,
+                                        **kwargs)
+        return self.target(*args, **kwargs)
 
     def walk(self, f):
         return f(Propose(self.target.walk(f), self.proposal))
 
     @contextmanager
     def cond(self, qs):
-        with self.proposal.cond(qs) as proposal:
-            yield self
+        try:
+            conditioned = self._conditioned
+            self._conditioned = True
+            yield super(Propose, self).cond(qs)
+        finally:
+            self._conditioned = conditioned
 
 def propose(target, proposal):
     return Propose(target, proposal)
