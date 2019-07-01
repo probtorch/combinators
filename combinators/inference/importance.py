@@ -6,7 +6,6 @@ import logging
 from probtorch.stochastic import RandomVariable
 import torch
 import torch.distributions as dists
-from torch.nn.functional import log_softmax, softmax
 
 from ..sampler import Sampler
 from . import inference
