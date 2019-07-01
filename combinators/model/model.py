@@ -112,11 +112,7 @@ class Primitive(Model):
             if isinstance(kwarg, torch.Tensor) and value is not None:
                 value = value.to(device=kwarg.device)
                 break
-        value = self.sample(Dist, *args, name=name, value=value, **kwargs)
-        if Dist.has_rsample:
-            prediction = Dist(*args, **kwargs).rsample()
-            value = (value - prediction) + prediction
-        return value
+        return self.sample(Dist, *args, name=name, value=value, **kwargs)
 
     def param_observe(self, Dist, name, value):
         params = self.args_vardict()[name]
