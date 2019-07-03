@@ -171,24 +171,24 @@ class RecognitionAgent(model.Primitive):
         policy_factor = 1 if self._discrete_actions else 2
         self.encode_policy = nn.Sequential(
             nn.Linear(self._dyn_dim + self._observation_dim + 1,
-                      self._action_dim * 4),
+                      self._action_dim * 2),
             nn.PReLU(),
-            nn.Linear(self._action_dim * 4, self._action_dim * 8),
+            nn.Linear(self._action_dim * 2, self._action_dim * 3),
             nn.PReLU(),
-            nn.Linear(self._action_dim * 8, self._action_dim * 16),
+            nn.Linear(self._action_dim * 3, self._action_dim * 4),
             nn.PReLU(),
-            nn.Linear(self._action_dim * 16,, self._action_dim * policy_factor),
+            nn.Linear(self._action_dim * 4, self._action_dim * policy_factor),
             nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
         )
         self.encode_state = nn.Sequential(
             nn.Linear(self._dyn_dim + self._observation_dim + 1,
-                      self._state_dim * 4),
+                      self._state_dim * 2),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 4, self._state_dim * 8),
+            nn.Linear(self._state_dim * 2, self._state_dim * 3),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 8, self._state_dim * 16),
+            nn.Linear(self._state_dim * 3, self._state_dim * 4),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 16, self._state_dim * 2),
+            nn.Linear(self._state_dim * 4, self._state_dim * 2),
         )
 
     @property
