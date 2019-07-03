@@ -226,14 +226,14 @@ class RecognitionAgent(model.Primitive):
                                   softplus(control[:, :, 1]) + 1e-9,
                                   name='control')
 
-class MountainCarEnergy(NormalEnergy):
+class MountainCarEnergy(LogisticInterval):
     def __init__(self, batch_shape):
         loc = torch.tensor([0.45]).expand(*batch_shape, 1)
         scale = torch.tensor([0.05]).expand(*batch_shape, 1)
         super(MountainCarEnergy, self).__init__(loc, scale)
 
-    def forward(self, agent, observation):
-        return super(MountainCarEnergy, self).forward(agent, observation[:, 0])
+    def forward(self, observation):
+        return super(MountainCarEnergy, self).forward(observation[:, 0:1])
 
 class MountainCarAgent(GenerativeAgent):
     def __init__(self, *args, **kwargs):
@@ -243,14 +243,14 @@ class MountainCarAgent(GenerativeAgent):
         kwargs['goal'] = MountainCarEnergy(kwargs['batch_shape'])
         super(MountainCarAgent, self).__init__(*args, **kwargs)
 
-class CartpoleEnergy(NormalEnergy):
+class CartpoleEnergy(LogisticInterval):
     def __init__(self, batch_shape):
         loc = torch.zeros(*batch_shape, 1)
         scale = torch.tensor([np.pi / (15 * 2)]).expand(*batch_shape, 1)
         super(CartpoleEnergy, self).__init__(loc, scale)
 
-    def forward(self, agent, observation):
-        return super(CartpoleEnergy, self).forward(agent, observation)
+    def forward(self, observation):
+        return super(CartpoleEnergy, self).forward(observation)
 
 class CartpoleAgent(GenerativeAgent):
     def __init__(self, *args, **kwargs):
@@ -259,15 +259,14 @@ class CartpoleAgent(GenerativeAgent):
         kwargs['goal'] = CartpoleEnergy(kwargs['batch_shape'])
         super(CartpoleAgent, self).__init__(*args, **kwargs)
 
-class BipedalWalkerEnergy(NormalEnergy):
+class BipedalWalkerEnergy(LogisticInterval):
     def __init__(self, batch_shape):
         loc = torch.tensor([0., 0., 1., 0.]).expand(*batch_shape, 4)
         scale = torch.tensor([0.25, 1., 0.0025, 0.0025]).expand(*batch_shape, 4)
         super(BipedalWalkerEnergy, self).__init__(loc, scale)
 
-    def forward(self, agent, observation):
-        return super(BipedalWalkerEnergy, self).forward(agent,
-                                                        observation[:, 0:4])
+    def forward(self, observation):
+        return super(BipedalWalkerEnergy, self).forward(observation[:, 0:4])
 
 class BipedalWalkerAgent(GenerativeAgent):
     def __init__(self, *args, **kwargs):
