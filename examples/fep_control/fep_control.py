@@ -233,7 +233,6 @@ class CartpoleEnergy(NormalEnergy):
         loc = torch.zeros(*batch_shape, 1)
         scale = torch.tensor([np.pi / (15 * 2)]).expand(*batch_shape, 1)
         super(CartpoleEnergy, self).__init__(loc, scale)
-        self.all_steps = True
 
     def forward(self, agent, observation):
         return super(CartpoleEnergy, self).forward(agent, observation)
@@ -250,7 +249,6 @@ class BipedalWalkerEnergy(NormalEnergy):
         loc = torch.tensor([0., 0., 1., 0.]).expand(*batch_shape, 4)
         scale = torch.tensor([0.25, 1., 0.0025, 0.0025]).expand(*batch_shape, 4)
         super(BipedalWalkerEnergy, self).__init__(loc, scale)
-        self.all_steps = True
 
     def forward(self, agent, observation):
         return super(BipedalWalkerEnergy, self).forward(agent,
