@@ -1,15 +1,29 @@
 #!/usr/bin/env python3
 
-import gym
 import numpy as np
 import torch
-from torch.distributions import Bernoulli, Beta, Normal
-from torch.distributions import OneHotCategorical, RelaxedOneHotCategorical
-from torch.distributions.transforms import LowerCholeskyTransform
+from torch.distributions import Bernoulli, Beta, Normal, OneHotCategorical
+from torch.distributions import TransformedDistribution, Uniform
+from torch.distributions.transforms import AffineTransform, SigmoidTransform
 import torch.nn as nn
 from torch.nn.functional import hardtanh, softplus
 
 import combinators.model as model
+
+class LogisticInterval(nn.Module):
+    def __init__(self, loc, scale):
+        super(LogisticInterval, self).__init__()
+        self.register_buffer('loc', loc)
+        self.register_buffer('scale', scale)
+
+    def forward(self, observation):
+        base_distribution = Uniform(0, 1)
+        transforms = [SigmoidTransform().inv,
+                      AffineTransform(loc=self.loc, scale=self.scale)]
+        logistic = TransformedDistribution(base_distribution, transforms)
+        p = logistic.cdf(observation)
+        p = torch.where(p > 0.5, 1. - p, p)
+        return 2 * p
 
 class NormalEnergy(nn.Module):
     def __init__(self, loc, scale):
