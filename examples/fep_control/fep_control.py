@@ -77,31 +77,31 @@ class GenerativeAgent(model.Primitive):
         self.goal = goal
         self.dynamical_transition = nn.Sequential(
             nn.Linear(self._dyn_dim + self._state_dim + self._action_dim,
-                      self._dyn_dim * 4),
+                      self._dyn_dim * 2),
             nn.PReLU(),
-            nn.Linear(self._dyn_dim * 4, self._dyn_dim * 8),
+            nn.Linear(self._dyn_dim * 2, self._dyn_dim * 3),
             nn.PReLU(),
-            nn.Linear(self._dyn_dim * 8, self._dyn_dim * 16),
+            nn.Linear(self._dyn_dim * 3, self._dyn_dim * 4),
             nn.PReLU(),
-            nn.Linear(self._dyn_dim * 16, self._dyn_dim),
+            nn.Linear(self._dyn_dim * 4, self._dyn_dim),
         )
         self.project_state = nn.Sequential(
-            nn.Linear(self._dyn_dim + self._action_dim, self._state_dim * 4),
+            nn.Linear(self._dyn_dim + self._action_dim, self._state_dim * 2),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 4, self._state_dim * 8),
+            nn.Linear(self._state_dim * 2, self._state_dim * 3),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 8, self._state_dim * 16),
+            nn.Linear(self._state_dim * 3, self._state_dim * 4),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 16, self._state_dim * 2),
+            nn.Linear(self._state_dim * 4, self._state_dim * 2),
         )
         self.predict_observation = nn.Sequential(
-            nn.Linear(self._dyn_dim + self._state_dim, self._state_dim * 4),
+            nn.Linear(self._dyn_dim + self._state_dim, self._state_dim * 2),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 4, self._state_dim * 8),
+            nn.Linear(self._state_dim * 2, self._state_dim * 3),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 8, self._state_dim * 16),
+            nn.Linear(self._state_dim * 3, self._state_dim * 4),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 16, (self._observation_dim + 1) * 2)
+            nn.Linear(self._state_dim * 4, (self._observation_dim + 1) * 2)
         )
 
     def _forward(self, dynamics=None, prev_control=None, prediction=None,
