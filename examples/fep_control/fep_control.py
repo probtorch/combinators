@@ -208,20 +208,10 @@ class RecognitionAgent(model.Primitive):
                                   name='control')
         else:
             control = control.reshape(-1, self._action_dim, 2)
-            if not self.q and observation is not None:
-                action = torch.normal(
-                    hardtanh(prev_control[0] + control[0, :, 0]),
-                    softplus(control[0, :, 1]) + 1e-9
-                )
-                action = action.expand(*self.batch_shape, self._action_dim)
-            elif self.q:
-                action = self.q['control'].value
-            else:
-                action = None
             control = self.sample(Normal,
                                   hardtanh(prev_control + control[:, :, 0]),
                                   softplus(control[:, :, 1]) + 1e-9,
-                                  value=action, name='control')
+                                  name='control')
 
 class MountainCarEnergy(NormalEnergy):
     def __init__(self, batch_shape):
