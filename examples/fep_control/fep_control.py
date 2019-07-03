@@ -170,7 +170,8 @@ class RecognitionAgent(model.Primitive):
         self.goal = goal
         policy_factor = 1 if self._discrete_actions else 2
         self.encode_policy = nn.Sequential(
-            nn.Linear(self._observation_dim + 1, self._action_dim * 4),
+            nn.Linear(self._dyn_dim + self._observation_dim + 1,
+                      self._action_dim * 4),
             nn.PReLU(),
             nn.Linear(self._action_dim * 4, self._action_dim * 8),
             nn.PReLU(),
@@ -180,7 +181,8 @@ class RecognitionAgent(model.Primitive):
             nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
         )
         self.encode_state = nn.Sequential(
-            nn.Linear(self._observation_dim + 1, self._state_dim * 4),
+            nn.Linear(self._dyn_dim + self._observation_dim + 1,
+                      self._state_dim * 4),
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim * 8),
             nn.PReLU(),
@@ -206,7 +208,8 @@ class RecognitionAgent(model.Primitive):
             self.sample(LogitRelaxedBernoulli, torch.ones_like(success),
                         probs=success, name='success')
 
-            control = self.encode_policy(observation)
+            observed_information = torch.cat((dynamics, observation), dim=-1)
+            control = self.encode_policy(observed_information)
             if self._discrete_actions:
                 control = self.sample(OneHotCategorical, probs=control,
                                       name='control')
@@ -216,8 +219,9 @@ class RecognitionAgent(model.Primitive):
                                       softplus(control[:, :, 1]) + 1e-9,
                                       name='control')
 
-            state = self.encode_state(observation).reshape(-1, self._state_dim,
-                                                           2)
+            state = self.encode_state(observed_information).reshape(
+                -1, self._state_dim, 2
+            )
             prediction = {
                 'loc': state[:, :, 0],
                 'scale': state[:, :, 1],
