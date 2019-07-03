@@ -16,7 +16,6 @@ class NormalEnergy(nn.Module):
         super(NormalEnergy, self).__init__()
         self.register_buffer('loc', loc)
         self.register_buffer('scale', scale)
-        self.all_steps = False
 
     def forward(self, agent, observation):
         return agent.observe('goal', observation, Normal, self.loc, self.scale)
