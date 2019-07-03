@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from torch.distributions import Bernoulli, Beta, Normal, OneHotCategorical
 from torch.distributions import TransformedDistribution, Uniform
+from torch.distributions.relaxed_bernoulli import LogitRelaxedBernoulli
 from torch.distributions.transforms import AffineTransform, SigmoidTransform
 import torch.nn as nn
 from torch.nn.functional import hardtanh, softplus
@@ -127,11 +128,13 @@ class GenerativeAgent(model.Primitive):
         observable = self.predict_observation(torch.cat((dynamics, state),
                                                         dim=-1))
         observable = observable.reshape(-1, self._observation_dim + 1, 2)
-        observation = self.observe('observation', observation, Normal,
-                                   observable[:, :, 0],
-                                   softplus(observable[:, :, 1]))
-        success = self.goal(observation)
-        self.observe('goal', torch.ones_like(success), Bernoulli, probs=success)
+        self.observe('observation', observation, Normal, observable[:, :, 0],
+                     softplus(observable[:, :, 1]))
+        success = self.goal(observable[:, :, 0])
+        success = self.sample(LogitRelaxedBernoulli, torch.ones_like(success),
+                              probs=success, name='success')
+        self.observe('goal', torch.ones_like(success), Bernoulli,
+                     logits=success)
 
         if self._discrete_actions:
             control = self.param_sample(OneHotCategorical, name='control')
