@@ -3,7 +3,8 @@
 import numpy as np
 import torch
 from torch.distributions import Bernoulli, Beta, Normal, OneHotCategorical
-from torch.distributions import TransformedDistribution, Uniform
+from torch.distributions import RelaxedOneHotCategorical, TransformedDistribution
+from torch.distributions import Uniform
 from torch.distributions.relaxed_bernoulli import LogitRelaxedBernoulli
 from torch.distributions.transforms import AffineTransform, SigmoidTransform
 import torch.nn as nn
@@ -72,15 +73,6 @@ class GenerativeAgent(model.Primitive):
                     'scale': torch.ones(self._state_dim),
                 },
             }
-            if self._discrete_actions:
-                kwargs['params']['control'] = {
-                    'probs': torch.ones(self._action_dim)
-                }
-            else:
-                kwargs['params']['control'] = {
-                    'loc': torch.zeros(self._action_dim),
-                    'scale': torch.ones(self._action_dim),
-                }
         super(GenerativeAgent, self).__init__(*args, **kwargs)
         self.goal = goal
         self.dynamical_transition = nn.Sequential(
@@ -137,9 +129,14 @@ class GenerativeAgent(model.Primitive):
                      logits=success)
 
         if self._discrete_actions:
-            control = self.param_sample(OneHotCategorical, name='control')
+            options = self.sample(RelaxedOneHotCategorical,
+                                  torch.ones_like(prev_control),
+                                  probs=prev_control)
+            control = self.sample(OneHotCategorical, probs=options,
+                                  name='control')
         else:
-            control = self.param_sample(Normal, 'control')
+            control = self.sample(Normal, prev_control,
+                                  torch.ones_like(prev_control), name='control')
 
         dynamics = self.dynamical_transition(
             torch.cat((dynamics, state, control), dim=-1)
