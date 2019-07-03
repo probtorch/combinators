@@ -195,34 +195,35 @@ class RecognitionAgent(model.Primitive):
 
     def _forward(self, dynamics=None, prev_control=None, prediction=None,
                  observation=None):
+        if dynamics is None:
+            dynamics = self.param_sample(Normal, 'dynamics')
+        if prev_control is None:
+            prev_control = torch.zeros(*self.batch_shape, self._action_dim).to(
+                dynamics
+            )
         if observation is not None:
+            success = self.goal(observation)
+            self.sample(LogitRelaxedBernoulli, torch.ones_like(success),
+                        probs=success, name='success')
+
+            control = self.encode_policy(observation)
+            if self._discrete_actions:
+                control = self.sample(OneHotCategorical, probs=control,
+                                      name='control')
+            else:
+                control = control.reshape(-1, self._action_dim, 2)
+                control = self.sample(Normal, prev_control + control[:, :, 0],
+                                      softplus(control[:, :, 1]) + 1e-9,
+                                      name='control')
+
             state = self.encode_state(observation).reshape(-1, self._state_dim,
                                                            2)
             prediction = {
                 'loc': state[:, :, 0],
                 'scale': state[:, :, 1],
             }
-            success = self.goal(observation)
-            self.sample(LogitRelaxedBernoulli, torch.ones_like(success),
-                        probs=success, name='success')
         state = self.sample(Normal, prediction['loc'],
                             softplus(prediction['scale']) + 1e-9, name='state')
-        if dynamics is None:
-            dynamics = self.param_sample(Normal, 'dynamics')
-        if prev_control is None:
-            prev_control = torch.zeros(*self.batch_shape, self._action_dim).to(
-                state
-            )
-
-        control = self.encode_policy(observation)
-        if self._discrete_actions:
-            control = self.sample(OneHotCategorical, probs=control,
-                                  name='control')
-        else:
-            control = control.reshape(-1, self._action_dim, 2)
-            control = self.sample(Normal, prev_control + control[:, :, 0],
-                                  softplus(control[:, :, 1]) + 1e-9,
-                                  name='control')
 
 class MountainCarEnergy(LogisticInterval):
     def __init__(self, batch_shape):
