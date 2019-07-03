@@ -8,7 +8,7 @@ from torch.distributions import Uniform
 from torch.distributions.relaxed_bernoulli import LogitRelaxedBernoulli
 from torch.distributions.transforms import AffineTransform, SigmoidTransform
 import torch.nn as nn
-from torch.nn.functional import hardtanh, softplus
+from torch.nn.functional import softplus
 
 import combinators.model as model
 
