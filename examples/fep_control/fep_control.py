@@ -161,6 +161,7 @@ class RecognitionAgent(model.Primitive):
         self._observation_dim = kwargs.pop('observation_dim', 2)
         self._discrete_actions = kwargs.pop('discrete_actions', True)
         self._name = kwargs.pop('name')
+        goal = kwargs.pop('goal')
         if 'params' not in kwargs:
             kwargs['params'] = {
                 'dynamics': {
@@ -169,6 +170,7 @@ class RecognitionAgent(model.Primitive):
                 },
             }
         super(RecognitionAgent, self).__init__(*args, **kwargs)
+        self.goal = goal
         self.decode_policy = nn.Sequential(
             nn.Linear(self._dyn_dim + self._state_dim, self._state_dim * 4),
             nn.PReLU(),
@@ -200,6 +202,9 @@ class RecognitionAgent(model.Primitive):
                 'loc': state[:, :, 0],
                 'scale': state[:, :, 1],
             }
+            success = self.goal(observation)
+            self.sample(LogitRelaxedBernoulli, torch.ones_like(success),
+                        probs=success, name='success')
         state = self.sample(Normal, prediction['loc'],
                             softplus(prediction['scale']) + 1e-9, name='state')
         if dynamics is None:
