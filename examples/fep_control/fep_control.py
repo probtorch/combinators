@@ -139,7 +139,8 @@ class GenerativeAgent(model.Primitive):
         observation = self.observe('observation', observation, Normal,
                                    observable[:, :, 0],
                                    softplus(observable[:, :, 1]))
-        self.goal(self, observable[:, :, 0])
+        success = self.goal(observation)
+        self.observe('goal', torch.ones_like(success), Bernoulli, probs=success)
 
         if self._discrete_actions:
             control = self.param_sample(OneHotCategorical, name='control')
