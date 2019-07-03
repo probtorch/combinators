@@ -30,7 +30,6 @@ class BoundedRewardEnergy(nn.Module):
         self.register_parameter('alpha', nn.Parameter(torch.ones(1)))
         self.register_parameter('beta', nn.Parameter(torch.ones(1)))
         self.register_parameter('scale', nn.Parameter(torch.ones(1)))
-        self.all_steps = True
 
     def forward(self, agent, observation):
         lower_bound = agent.sample(Normal, self.lower_loc,
