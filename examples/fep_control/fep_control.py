@@ -25,15 +25,6 @@ class LogisticInterval(nn.Module):
         p = torch.where(p > 0.5, 1. - p, p)
         return 2 * p
 
-class NormalEnergy(nn.Module):
-    def __init__(self, loc, scale):
-        super(NormalEnergy, self).__init__()
-        self.register_buffer('loc', loc)
-        self.register_buffer('scale', scale)
-
-    def forward(self, agent, observation):
-        return agent.observe('goal', observation, Normal, self.loc, self.scale)
-
 class BoundedRewardEnergy(nn.Module):
     def __init__(self):
         super(BoundedRewardEnergy, self).__init__()
