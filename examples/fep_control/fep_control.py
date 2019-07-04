@@ -217,7 +217,7 @@ class RecognitionAgent(model.Primitive):
             else:
                 control = control.reshape(-1, self._action_dim, 2)
                 control = self.sample(Normal, prev_control + control[:, :, 0],
-                                      softplus(control[:, :, 1]) + 1e-9,
+                                      softplus(control[:, :, 1]),
                                       name='control')
 
             state = self.encode_state(observed_information).reshape(
@@ -228,7 +228,7 @@ class RecognitionAgent(model.Primitive):
                 'scale': state[:, :, 1],
             }
         state = self.sample(Normal, prediction['loc'],
-                            softplus(prediction['scale']) + 1e-9, name='state')
+                            softplus(prediction['scale']), name='state')
 
 class MountainCarEnergy(LogisticInterval):
     def __init__(self, batch_shape):
