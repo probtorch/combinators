@@ -59,7 +59,7 @@ class GenerativeAgent(model.Primitive):
         self._dyn_dim = kwargs.pop('dyn_dim', 2)
         self._state_dim = kwargs.pop('state_dim', 2)
         self._action_dim = kwargs.pop('action_dim', 1)
-        self._observation_dim = kwargs.pop('observation_dim', 2)
+        self._observation_dim = kwargs.pop('observation_dim', 2) + 1
         self._discrete_actions = kwargs.pop('discrete_actions', True)
         goal = kwargs.pop('goal')
         if 'params' not in kwargs:
@@ -95,13 +95,14 @@ class GenerativeAgent(model.Primitive):
             nn.Linear(self._state_dim * 4, self._state_dim * 2),
         )
         self.predict_observation = nn.Sequential(
-            nn.Linear(self._dyn_dim + self._state_dim, self._state_dim * 2),
+            nn.Linear(self._dyn_dim + self._state_dim,
+                      self._observation_dim * 2),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 2, self._state_dim * 3),
+            nn.Linear(self._observation_dim * 2, self._observation_dim * 3),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 3, self._state_dim * 4),
+            nn.Linear(self._observation_dim * 3, self._observation_dim * 4),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 4, (self._observation_dim + 1) * 2)
+            nn.Linear(self._observation_dim * 4, self._observation_dim * 2)
         )
 
     def _forward(self, dynamics=None, prev_control=None, prediction=None,
@@ -119,7 +120,7 @@ class GenerativeAgent(model.Primitive):
 
         observable = self.predict_observation(torch.cat((dynamics, state),
                                                         dim=-1))
-        observable = observable.reshape(-1, self._observation_dim + 1, 2)
+        observable = observable.reshape(-1, self._observation_dim, 2)
         self.observe('observation', observation, Normal, observable[:, :, 0],
                      softplus(observable[:, :, 1]))
         success = self.goal(observable[:, :, 0])
