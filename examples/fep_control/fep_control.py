@@ -156,7 +156,7 @@ class RecognitionAgent(model.Primitive):
         self._dyn_dim = kwargs.pop('dyn_dim', 2)
         self._state_dim = kwargs.pop('state_dim', 2)
         self._action_dim = kwargs.pop('action_dim', 1)
-        self._observation_dim = kwargs.pop('observation_dim', 2)
+        self._observation_dim = kwargs.pop('observation_dim', 2) + 1
         self._discrete_actions = kwargs.pop('discrete_actions', True)
         self._name = kwargs.pop('name')
         goal = kwargs.pop('goal')
@@ -171,7 +171,7 @@ class RecognitionAgent(model.Primitive):
         self.goal = goal
         policy_factor = 1 if self._discrete_actions else 2
         self.encode_policy = nn.Sequential(
-            nn.Linear(self._dyn_dim + self._observation_dim + 1,
+            nn.Linear(self._dyn_dim + self._observation_dim,
                       self._action_dim * 2),
             nn.PReLU(),
             nn.Linear(self._action_dim * 2, self._action_dim * 3),
@@ -182,7 +182,7 @@ class RecognitionAgent(model.Primitive):
             nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
         )
         self.encode_state = nn.Sequential(
-            nn.Linear(self._dyn_dim + self._observation_dim + 1,
+            nn.Linear(self._dyn_dim + self._observation_dim,
                       self._state_dim * 2),
             nn.PReLU(),
             nn.Linear(self._state_dim * 2, self._state_dim * 3),
