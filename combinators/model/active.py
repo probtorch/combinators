@@ -4,7 +4,6 @@ from contextlib import contextmanager
 import gym
 import logging
 import torch
-from torch.nn.functional import hardtanh
 
 from .. import graphs
 from ..inference import importance
@@ -135,7 +134,6 @@ class ActiveEpisode(Model):
             with self._ready(t) as _:
                 (dynamics, control, prediction), graph_t, log_weight_t =\
                     self.agent(dynamics, control, prediction, observation)
-            control = hardtanh(control)
             if control.dtype == torch.int:
                 action = control[0].argmax(dim=-1).item()
             else:
