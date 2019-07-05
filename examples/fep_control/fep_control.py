@@ -8,7 +8,7 @@ from torch.distributions import Uniform
 from torch.distributions.relaxed_bernoulli import LogitRelaxedBernoulli
 from torch.distributions.transforms import AffineTransform, SigmoidTransform
 import torch.nn as nn
-from torch.nn.functional import softplus
+from torch.nn.functional import hardtanh, softplus
 
 import combinators.model as model
 
@@ -138,6 +138,7 @@ class GenerativeAgent(model.Primitive):
         else:
             control = self.sample(Normal, prev_control,
                                   torch.ones_like(prev_control), name='control')
+            control = hardtanh(control[0].expand(*control.shape))
 
         dynamics = self.dynamical_transition(
             torch.cat((dynamics, state, control), dim=-1)
