@@ -159,7 +159,8 @@ class RecognitionAgent(model.Primitive):
             nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
         )
         self.encode_error = nn.Sequential(
-            nn.Linear(self._observation_dim, self._state_dim * 2),
+            nn.Linear(self._observation_dim + self._action_dim,
+                      self._state_dim * 2),
             nn.PReLU(),
             nn.Linear(self._state_dim * 2, self._state_dim * 3),
             nn.PReLU(),
@@ -184,8 +185,10 @@ class RecognitionAgent(model.Primitive):
             self.sample(LogitRelaxedBernoulli, torch.ones_like(success),
                         probs=success, name='success')
 
-            error = self.encode_error(observation).reshape(-1, self._state_dim,
-                                                           2)
+            observed_info = torch.cat((observation, control), dim=-1)
+            error = self.encode_error(observed_info).reshape(-1,
+                                                             self._state_dim,
+                                                             2)
             dynamics = dynamics + self.sample(Normal, error[:, :, 0],
                                               softplus(error[:, :, 1]),
                                               name='error')
