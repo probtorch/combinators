@@ -116,7 +116,8 @@ class GenerativeAgent(model.Primitive):
             control = torch.zeros(self._action_dim).to(dynamics).expand(
                 *self.batch_shape, self._action_dim,
             )
-        control = control + self.param_sample(Normal, 'control_error')
+        else:
+            control = control + self.param_sample(Normal, 'control_error')
 
         observable = self.predict_observation(dynamics)
         observable = observable.reshape(-1, self._observation_dim, 2)
