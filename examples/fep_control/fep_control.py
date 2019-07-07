@@ -153,7 +153,6 @@ class GenerativeAgent(model.Primitive):
 
 class RecognitionAgent(model.Primitive):
     def __init__(self, *args, **kwargs):
-        self._dyn_dim = kwargs.pop('dyn_dim', 2)
         self._state_dim = kwargs.pop('state_dim', 2)
         self._action_dim = kwargs.pop('action_dim', 1)
         self._observation_dim = kwargs.pop('observation_dim', 2) + 1
@@ -163,15 +162,15 @@ class RecognitionAgent(model.Primitive):
         if 'params' not in kwargs:
             kwargs['params'] = {
                 'dynamics': {
-                    'loc': torch.zeros(self._dyn_dim),
-                    'scale': torch.ones(self._dyn_dim),
+                    'loc': torch.zeros(self._state_dim),
+                    'scale': torch.ones(self._state_dim),
                 },
             }
         super(RecognitionAgent, self).__init__(*args, **kwargs)
         self.goal = goal
         policy_factor = 1 if self._discrete_actions else 2
         self.encode_policy = nn.Sequential(
-            nn.Linear(self._dyn_dim + self._observation_dim,
+            nn.Linear(self._state_dim + self._observation_dim,
                       self._action_dim * 2),
             nn.PReLU(),
             nn.Linear(self._action_dim * 2, self._action_dim * 3),
@@ -182,7 +181,7 @@ class RecognitionAgent(model.Primitive):
             nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
         )
         self.encode_state = nn.Sequential(
-            nn.Linear(self._dyn_dim + self._observation_dim,
+            nn.Linear(self._state_dim + self._observation_dim,
                       self._state_dim * 2),
             nn.PReLU(),
             nn.Linear(self._state_dim * 2, self._state_dim * 3),
