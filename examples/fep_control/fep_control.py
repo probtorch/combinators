@@ -69,7 +69,7 @@ class GenerativeAgent(model.Primitive):
                 },
                 'error': {
                     'loc': torch.zeros(self._state_dim),
-                    'scale': torch.ones(self._state_dim) * 0.1,
+                    'precision': torch.ones(self._state_dim) * 10,
                 },
             }
         super(GenerativeAgent, self).__init__(*args, **kwargs)
