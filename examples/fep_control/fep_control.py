@@ -67,14 +67,28 @@ class GenerativeAgent(model.Primitive):
                     'loc': torch.zeros(self._state_dim),
                     'scale': torch.ones(self._state_dim),
                 },
-                'error': {
+                'prediction_error': {
                     'loc': torch.zeros(self._state_dim),
                     'precision': torch.ones(self._state_dim) * 10,
+                },
+                'control_error': {
+                    'loc': torch.zeros(self._action_dim),
+                    'precision': torch.ones(self._action_dim) * 10,
                 },
             }
         super(GenerativeAgent, self).__init__(*args, **kwargs)
         self.goal = goal
-        self.dynamical_transition = nn.Sequential(
+        self.policy = nn.Sequential(
+            nn.Linear(self._state_dim + self._action_dim, self._action_dim * 2),
+            nn.PReLU(),
+            nn.Linear(self._action_dim * 2, self._action_dim * 3),
+            nn.PReLU(),
+            nn.Linear(self._action_dim * 3, self._action_dim * 4),
+            nn.PReLU(),
+            nn.Linear(self._action_dim * 4, self._action_dim),
+            nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
+        )
+        self.transition = nn.Sequential(
             nn.Linear(self._state_dim + self._action_dim, self._state_dim * 2),
             nn.PReLU(),
             nn.Linear(self._state_dim * 2, self._state_dim * 3),
@@ -97,11 +111,12 @@ class GenerativeAgent(model.Primitive):
         if dynamics is None:
             dynamics = self.param_sample(Normal, 'dynamics')
         else:
-            dynamics = dynamics + self.param_sample(Normal, 'error')
+            dynamics = dynamics + self.param_sample(Normal, 'prediction_error')
         if control is None:
             control = torch.zeros(self._action_dim).to(dynamics).expand(
                 *self.batch_shape, self._action_dim,
             )
+        control = control + self.param_sample(Normal, 'control_error')
 
         observable = self.predict_observation(dynamics)
         observable = observable.reshape(-1, self._observation_dim, 2)
@@ -113,6 +128,7 @@ class GenerativeAgent(model.Primitive):
         self.observe('goal', torch.ones_like(success), Bernoulli,
                      logits=success)
 
+        control = self.policy(torch.cat((dynamics, control), dim=-1))
         if self._discrete_actions:
             options = self.sample(RelaxedOneHotCategorical,
                                   torch.ones_like(control),
@@ -120,13 +136,9 @@ class GenerativeAgent(model.Primitive):
             control = self.sample(OneHotCategorical, probs=options,
                                   name='control')
         else:
-            control = self.sample(Normal, control,
-                                  torch.ones_like(control), name='control')
             control = hardtanh(control[0].expand(*control.shape))
 
-        dynamics = self.dynamical_transition(
-            torch.cat((dynamics, control), dim=-1)
-        )
+        dynamics = self.transition(torch.cat((dynamics, control), dim=-1))
 
         return {'dynamics': dynamics, 'control': control}
 
