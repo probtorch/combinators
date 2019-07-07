@@ -112,12 +112,6 @@ class GenerativeAgent(model.Primitive):
             dynamics = self.param_sample(Normal, 'dynamics')
         else:
             dynamics = dynamics + self.param_sample(Normal, 'prediction_error')
-        if control is None:
-            control = torch.zeros(self._action_dim).to(dynamics).expand(
-                *self.batch_shape, self._action_dim,
-            )
-        else:
-            control = control + self.param_sample(Normal, 'control_error')
 
         observable = self.predict_observation(dynamics)
         observable = observable.reshape(-1, self._observation_dim, 2)
@@ -129,7 +123,13 @@ class GenerativeAgent(model.Primitive):
         self.observe('goal', torch.ones_like(success), Bernoulli,
                      logits=success)
 
-        control = self.policy(dynamics)
+        if control is not None:
+            next_control = self.policy(dynamics) +\
+                           self.param_sample(Normal, 'control_error')
+            control = control + next_control
+        else:
+            control = self.policy(dynamics) +\
+                      self.param_sample(Normal, 'control_error')
         if self._discrete_actions:
             options = self.sample(RelaxedOneHotCategorical,
                                   torch.ones_like(control),
