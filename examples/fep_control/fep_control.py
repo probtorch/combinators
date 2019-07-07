@@ -160,8 +160,8 @@ class RecognitionAgent(model.Primitive):
         super(RecognitionAgent, self).__init__(*args, **kwargs)
         self.goal = goal
         policy_factor = 1 if self._discrete_actions else 2
-        self.encode_policy = nn.Sequential(
-            nn.Linear(self._state_dim, self._action_dim * 2),
+        self.control_error = nn.Sequential(
+            nn.Linear(self._observation_dim, self._action_dim * 2),
             nn.PReLU(),
             nn.Linear(self._action_dim * 2, self._action_dim * 3),
             nn.PReLU(),
@@ -170,9 +170,8 @@ class RecognitionAgent(model.Primitive):
             nn.Linear(self._action_dim * 4, self._action_dim * policy_factor),
             nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
         )
-        self.encode_error = nn.Sequential(
-            nn.Linear(self._observation_dim + self._action_dim,
-                      self._state_dim * 2),
+        self.prediction_error = nn.Sequential(
+            nn.Linear(self._observation_dim, self._state_dim * 2),
             nn.PReLU(),
             nn.Linear(self._state_dim * 2, self._state_dim * 3),
             nn.PReLU(),
@@ -197,23 +196,18 @@ class RecognitionAgent(model.Primitive):
             self.sample(LogitRelaxedBernoulli, torch.ones_like(success),
                         probs=success, name='success')
 
-            observed_info = torch.cat((observation, control), dim=-1)
-            error = self.encode_error(observed_info).reshape(-1,
-                                                             self._state_dim,
-                                                             2)
+            error = self.prediction_error(observation).reshape(
+                -1, self._state_dim, 2
+            )
             dynamics = dynamics + self.sample(Normal, error[:, :, 0],
                                               softplus(error[:, :, 1]) ** (-1.),
-                                              name='error')
+                                              name='prediction_error')
 
-            next_control = self.encode_policy(dynamics)
-            if self._discrete_actions:
-                control = self.sample(OneHotCategorical, probs=next_control,
-                                      name='control')
-            else:
-                next_control = next_control.reshape(-1, self._action_dim, 2)
-                control = self.sample(Normal, control + next_control[:, :, 0],
-                                      softplus(next_control[:, :, 1]) ** (-1.),
-                                      name='control')
+            error = self.control_error(observation)
+            error = error.reshape(-1, self._action_dim, 2)
+            control = control + self.sample(Normal, error[:, :, 0],
+                                            softplus(error[:, :, 1]) ** (-1.),
+                                            name='control_error')
 
 class MountainCarEnergy(LogisticInterval):
     def __init__(self, batch_shape):
