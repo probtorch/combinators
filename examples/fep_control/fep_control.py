@@ -67,16 +67,15 @@ class GenerativeAgent(model.Primitive):
                     'loc': torch.zeros(self._state_dim),
                     'scale': torch.ones(self._state_dim),
                 },
-                'state': {
+                'error': {
                     'loc': torch.zeros(self._state_dim),
-                    'scale': torch.ones(self._state_dim),
+                    'scale': torch.ones(self._state_dim) * 0.1,
                 },
             }
         super(GenerativeAgent, self).__init__(*args, **kwargs)
         self.goal = goal
         self.dynamical_transition = nn.Sequential(
-            nn.Linear(self._state_dim + self._state_dim + self._action_dim,
-                      self._state_dim * 2),
+            nn.Linear(self._state_dim + self._action_dim, self._state_dim * 2),
             nn.PReLU(),
             nn.Linear(self._state_dim * 2, self._state_dim * 3),
             nn.PReLU(),
@@ -84,18 +83,8 @@ class GenerativeAgent(model.Primitive):
             nn.PReLU(),
             nn.Linear(self._state_dim * 4, self._state_dim),
         )
-        self.project_state = nn.Sequential(
-            nn.Linear(self._state_dim + self._action_dim, self._state_dim * 2),
-            nn.PReLU(),
-            nn.Linear(self._state_dim * 2, self._state_dim * 3),
-            nn.PReLU(),
-            nn.Linear(self._state_dim * 3, self._state_dim * 4),
-            nn.PReLU(),
-            nn.Linear(self._state_dim * 4, self._state_dim * 2),
-        )
         self.predict_observation = nn.Sequential(
-            nn.Linear(self._state_dim + self._state_dim,
-                      self._observation_dim * 2),
+            nn.Linear(self._state_dim, self._observation_dim * 2),
             nn.PReLU(),
             nn.Linear(self._observation_dim * 2, self._observation_dim * 3),
             nn.PReLU(),
@@ -104,21 +93,17 @@ class GenerativeAgent(model.Primitive):
             nn.Linear(self._observation_dim * 4, self._observation_dim * 2)
         )
 
-    def _forward(self, dynamics=None, prev_control=None, prediction=None,
-                 observation=None):
+    def _forward(self, dynamics=None, control=None, observation=None):
         if dynamics is None:
             dynamics = self.param_sample(Normal, 'dynamics')
-        if prediction is None:
-            state = self.param_sample(Normal, 'state')
         else:
-            state = self.sample(Normal, **prediction, name='state')
-        if prev_control is None:
-            prev_control = torch.zeros(self._action_dim).to(state).expand(
+            dynamics = dynamics + self.param_sample(Normal, 'error')
+        if control is None:
+            control = torch.zeros(self._action_dim).to(dynamics).expand(
                 *self.batch_shape, self._action_dim,
             )
 
-        observable = self.predict_observation(torch.cat((dynamics, state),
-                                                        dim=-1))
+        observable = self.predict_observation(dynamics)
         observable = observable.reshape(-1, self._observation_dim, 2)
         self.observe('observation', observation, Normal, observable[:, :, 0],
                      softplus(observable[:, :, 1]))
@@ -130,26 +115,20 @@ class GenerativeAgent(model.Primitive):
 
         if self._discrete_actions:
             options = self.sample(RelaxedOneHotCategorical,
-                                  torch.ones_like(prev_control),
-                                  probs=prev_control)
+                                  torch.ones_like(control),
+                                  probs=control)
             control = self.sample(OneHotCategorical, probs=options,
                                   name='control')
         else:
-            control = self.sample(Normal, prev_control,
-                                  torch.ones_like(prev_control), name='control')
+            control = self.sample(Normal, control,
+                                  torch.ones_like(control), name='control')
             control = hardtanh(control[0].expand(*control.shape))
 
         dynamics = self.dynamical_transition(
-            torch.cat((dynamics, state, control), dim=-1)
+            torch.cat((dynamics, control), dim=-1)
         )
-        next_state = self.project_state(torch.cat((dynamics, control), dim=-1))
-        next_state = next_state.reshape(-1, self._state_dim, 2)
-        prediction = {
-            'loc': next_state[:, :, 0],
-            'scale': softplus(next_state[:, :, 1]),
-        }
 
-        return dynamics, control, prediction
+        return {'dynamics': dynamics, 'control': control}
 
 class RecognitionAgent(model.Primitive):
     def __init__(self, *args, **kwargs):
