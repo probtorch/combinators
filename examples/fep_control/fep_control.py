@@ -116,7 +116,7 @@ class GenerativeAgent(model.Primitive):
         observable = self.predict_observation(dynamics)
         observable = observable.reshape(-1, self._observation_dim, 2)
         self.observe('observation', observation, Normal, observable[:, :, 0],
-                     softplus(observable[:, :, 1]))
+                     softplus(observable[:, :, 1]) ** (-1.))
         success = self.goal(observable[:, :, 0])
         success = self.sample(LogitRelaxedBernoulli, torch.ones_like(success),
                               probs=success, name='success')
