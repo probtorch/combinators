@@ -79,7 +79,7 @@ class GenerativeAgent(model.Primitive):
         super(GenerativeAgent, self).__init__(*args, **kwargs)
         self.goal = goal
         self.policy = nn.Sequential(
-            nn.Linear(self._state_dim + self._action_dim, self._action_dim * 2),
+            nn.Linear(self._state_dim, self._action_dim * 2),
             nn.PReLU(),
             nn.Linear(self._action_dim * 2, self._action_dim * 3),
             nn.PReLU(),
@@ -129,7 +129,7 @@ class GenerativeAgent(model.Primitive):
         self.observe('goal', torch.ones_like(success), Bernoulli,
                      logits=success)
 
-        control = self.policy(torch.cat((dynamics, control), dim=-1))
+        control = self.policy(dynamics)
         if self._discrete_actions:
             options = self.sample(RelaxedOneHotCategorical,
                                   torch.ones_like(control),
