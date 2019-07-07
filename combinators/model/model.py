@@ -100,7 +100,9 @@ class Primitive(Model):
         for arg, val in params.items():
             matches = [k for k in utils.PARAM_TRANSFORMS if k in arg]
             if matches:
-                params[arg] = utils.PARAM_TRANSFORMS[matches[0]](val)
+                val = params.pop(arg)
+                arg, transformed_val = utils.PARAM_TRANSFORMS[matches[0]](val)
+                params[arg] = transformed_val
         return self.sample(Dist, name=name, **params)
 
     def observe(self, name, value, Dist, *args, **kwargs):
@@ -119,7 +121,9 @@ class Primitive(Model):
         for arg, val in params.items():
             matches = [k for k in utils.PARAM_TRANSFORMS if k in arg]
             if matches:
-                params[arg] = utils.PARAM_TRANSFORMS[matches[0]](val)
+                val = params.pop(arg)
+                arg, transformed_val = utils.PARAM_TRANSFORMS[matches[0]](val)
+                params[arg] = transformed_val
         return self.observe(name, value, Dist, **params)
 
     def factor(self, log_prob, name=None):
