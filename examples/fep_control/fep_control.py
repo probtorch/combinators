@@ -56,7 +56,6 @@ class BoundedRewardEnergy(nn.Module):
 
 class GenerativeAgent(model.Primitive):
     def __init__(self, *args, **kwargs):
-        self._dyn_dim = kwargs.pop('dyn_dim', 2)
         self._state_dim = kwargs.pop('state_dim', 2)
         self._action_dim = kwargs.pop('action_dim', 1)
         self._observation_dim = kwargs.pop('observation_dim', 2) + 1
@@ -65,8 +64,8 @@ class GenerativeAgent(model.Primitive):
         if 'params' not in kwargs:
             kwargs['params'] = {
                 'dynamics': {
-                    'loc': torch.zeros(self._dyn_dim),
-                    'scale': torch.ones(self._dyn_dim),
+                    'loc': torch.zeros(self._state_dim),
+                    'scale': torch.ones(self._state_dim),
                 },
                 'state': {
                     'loc': torch.zeros(self._state_dim),
@@ -76,17 +75,17 @@ class GenerativeAgent(model.Primitive):
         super(GenerativeAgent, self).__init__(*args, **kwargs)
         self.goal = goal
         self.dynamical_transition = nn.Sequential(
-            nn.Linear(self._dyn_dim + self._state_dim + self._action_dim,
-                      self._dyn_dim * 2),
+            nn.Linear(self._state_dim + self._state_dim + self._action_dim,
+                      self._state_dim * 2),
             nn.PReLU(),
-            nn.Linear(self._dyn_dim * 2, self._dyn_dim * 3),
+            nn.Linear(self._state_dim * 2, self._state_dim * 3),
             nn.PReLU(),
-            nn.Linear(self._dyn_dim * 3, self._dyn_dim * 4),
+            nn.Linear(self._state_dim * 3, self._state_dim * 4),
             nn.PReLU(),
-            nn.Linear(self._dyn_dim * 4, self._dyn_dim),
+            nn.Linear(self._state_dim * 4, self._state_dim),
         )
         self.project_state = nn.Sequential(
-            nn.Linear(self._dyn_dim + self._action_dim, self._state_dim * 2),
+            nn.Linear(self._state_dim + self._action_dim, self._state_dim * 2),
             nn.PReLU(),
             nn.Linear(self._state_dim * 2, self._state_dim * 3),
             nn.PReLU(),
@@ -95,7 +94,7 @@ class GenerativeAgent(model.Primitive):
             nn.Linear(self._state_dim * 4, self._state_dim * 2),
         )
         self.predict_observation = nn.Sequential(
-            nn.Linear(self._dyn_dim + self._state_dim,
+            nn.Linear(self._state_dim + self._state_dim,
                       self._observation_dim * 2),
             nn.PReLU(),
             nn.Linear(self._observation_dim * 2, self._observation_dim * 3),
