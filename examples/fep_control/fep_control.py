@@ -142,7 +142,7 @@ class RecognitionAgent(model.Primitive):
             kwargs['params'] = {
                 'dynamics': {
                     'loc': torch.zeros(self._state_dim),
-                    'scale': torch.ones(self._state_dim),
+                    'precision': torch.ones(self._state_dim),
                 },
             }
         super(RecognitionAgent, self).__init__(*args, **kwargs)
@@ -190,7 +190,7 @@ class RecognitionAgent(model.Primitive):
                                                              self._state_dim,
                                                              2)
             dynamics = dynamics + self.sample(Normal, error[:, :, 0],
-                                              softplus(error[:, :, 1]),
+                                              softplus(error[:, :, 1]) ** (-1.),
                                               name='error')
 
             next_control = self.encode_policy(dynamics)
@@ -200,7 +200,7 @@ class RecognitionAgent(model.Primitive):
             else:
                 next_control = next_control.reshape(-1, self._action_dim, 2)
                 control = self.sample(Normal, control + next_control[:, :, 0],
-                                      softplus(next_control[:, :, 1]),
+                                      softplus(next_control[:, :, 1]) ** (-1.),
                                       name='control')
 
 class MountainCarEnergy(LogisticInterval):
