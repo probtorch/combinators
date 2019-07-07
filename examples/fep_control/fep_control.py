@@ -149,8 +149,7 @@ class RecognitionAgent(model.Primitive):
         self.goal = goal
         policy_factor = 1 if self._discrete_actions else 2
         self.encode_policy = nn.Sequential(
-            nn.Linear(self._state_dim + self._observation_dim,
-                      self._action_dim * 2),
+            nn.Linear(self._state_dim, self._action_dim * 2),
             nn.PReLU(),
             nn.Linear(self._action_dim * 2, self._action_dim * 3),
             nn.PReLU(),
@@ -191,8 +190,7 @@ class RecognitionAgent(model.Primitive):
                                               softplus(error[:, :, 1]),
                                               name='error')
 
-            observed_information = torch.cat((dynamics, observation), dim=-1)
-            next_control = self.encode_policy(observed_information)
+            next_control = self.encode_policy(dynamics)
             if self._discrete_actions:
                 control = self.sample(OneHotCategorical, probs=next_control,
                                       name='control')
