@@ -160,7 +160,6 @@ class RecognitionAgent(model.Primitive):
             }
         super(RecognitionAgent, self).__init__(*args, **kwargs)
         self.goal = goal
-        policy_factor = 1 if self._discrete_actions else 2
         self.control_error = nn.Sequential(
             nn.Linear(self._action_dim + self._observation_dim,
                       self._action_dim * 2),
@@ -169,8 +168,7 @@ class RecognitionAgent(model.Primitive):
             nn.PReLU(),
             nn.Linear(self._action_dim * 3, self._action_dim * 4),
             nn.PReLU(),
-            nn.Linear(self._action_dim * 4, self._action_dim * policy_factor),
-            nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
+            nn.Linear(self._action_dim * 4, self._action_dim * 2),
         )
         self.prediction_error = nn.Sequential(
             nn.Linear(self._state_dim + self._observation_dim,
