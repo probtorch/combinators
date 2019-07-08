@@ -264,6 +264,7 @@ def walk_trie(trie, keys=[]):
     return trie
 
 PARAM_TRANSFORMS = {
-    'scale': nn.functional.softplus,
-    'concentration': nn.functional.softplus,
+    'concentration': lambda v: ('concentration', nn.functional.softplus(v)),
+    'precision': lambda v: ('scale', nn.functional.softplus(v)**(-1.)),
+    'scale': lambda v: ('scale', nn.functional.softplus(v)),
 }

@@ -1,25 +1,31 @@
 #!/usr/bin/env python3
 
-import gym
 import numpy as np
 import torch
-from torch.distributions import Bernoulli, Beta, Normal
-from torch.distributions import OneHotCategorical, RelaxedOneHotCategorical
-from torch.distributions.transforms import LowerCholeskyTransform
+from torch.distributions import Bernoulli, Beta, Normal, OneHotCategorical
+from torch.distributions import RelaxedOneHotCategorical, TransformedDistribution
+from torch.distributions import Uniform
+from torch.distributions.relaxed_bernoulli import LogitRelaxedBernoulli
+from torch.distributions.transforms import AffineTransform, SigmoidTransform
 import torch.nn as nn
 from torch.nn.functional import hardtanh, softplus
 
 import combinators.model as model
 
-class NormalEnergy(nn.Module):
+class LogisticInterval(nn.Module):
     def __init__(self, loc, scale):
-        super(NormalEnergy, self).__init__()
+        super(LogisticInterval, self).__init__()
         self.register_buffer('loc', loc)
         self.register_buffer('scale', scale)
-        self.all_steps = False
 
-    def forward(self, agent, observation):
-        return agent.observe('goal', observation, Normal, self.loc, self.scale)
+    def forward(self, observation):
+        base_distribution = Uniform(0, 1)
+        transforms = [SigmoidTransform().inv,
+                      AffineTransform(loc=self.loc, scale=self.scale)]
+        logistic = TransformedDistribution(base_distribution, transforms)
+        p = logistic.cdf(observation)
+        p = torch.where(p > 0.5, 1. - p, p)
+        return 2 * p
 
 class BoundedRewardEnergy(nn.Module):
     def __init__(self):
@@ -31,7 +37,6 @@ class BoundedRewardEnergy(nn.Module):
         self.register_parameter('alpha', nn.Parameter(torch.ones(1)))
         self.register_parameter('beta', nn.Parameter(torch.ones(1)))
         self.register_parameter('scale', nn.Parameter(torch.ones(1)))
-        self.all_steps = True
 
     def forward(self, agent, observation):
         lower_bound = agent.sample(Normal, self.lower_loc,
@@ -51,186 +56,169 @@ class BoundedRewardEnergy(nn.Module):
 
 class GenerativeAgent(model.Primitive):
     def __init__(self, *args, **kwargs):
-        self._dyn_dim = kwargs.pop('dyn_dim', 2)
         self._state_dim = kwargs.pop('state_dim', 2)
         self._action_dim = kwargs.pop('action_dim', 1)
-        self._observation_dim = kwargs.pop('observation_dim', 2)
+        self._observation_dim = kwargs.pop('observation_dim', 2) + 1
         self._discrete_actions = kwargs.pop('discrete_actions', True)
         goal = kwargs.pop('goal')
         if 'params' not in kwargs:
             kwargs['params'] = {
                 'dynamics': {
-                    'loc': torch.zeros(self._dyn_dim),
-                    'scale': torch.ones(self._dyn_dim),
-                },
-                'state': {
                     'loc': torch.zeros(self._state_dim),
                     'scale': torch.ones(self._state_dim),
                 },
-            }
-            if self._discrete_actions:
-                kwargs['params']['control'] = {
-                    'probs': torch.ones(self._action_dim)
-                }
-            else:
-                kwargs['params']['control'] = {
+                'prediction_error': {
+                    'loc': torch.zeros(self._state_dim),
+                    'precision': torch.ones(self._state_dim) * 10,
+                },
+                'control_error': {
                     'loc': torch.zeros(self._action_dim),
-                    'scale': torch.ones(self._action_dim),
-                }
+                    'precision': torch.ones(self._action_dim) * 10,
+                },
+            }
         super(GenerativeAgent, self).__init__(*args, **kwargs)
         self.goal = goal
-        self.dynamical_transition = nn.Sequential(
-            nn.Linear(self._dyn_dim + self._state_dim + self._action_dim,
-                      self._dyn_dim * 4),
+        self.policy = nn.Sequential(
+            nn.Linear(self._action_dim, self._action_dim * 2),
             nn.PReLU(),
-            nn.Linear(self._dyn_dim * 4, self._dyn_dim * 8),
+            nn.Linear(self._action_dim * 2, self._action_dim * 3),
             nn.PReLU(),
-            nn.Linear(self._dyn_dim * 8, self._dyn_dim * 16),
+            nn.Linear(self._action_dim * 3, self._action_dim * 4),
             nn.PReLU(),
-            nn.Linear(self._dyn_dim * 16, self._dyn_dim),
+            nn.Linear(self._action_dim * 4, self._action_dim),
+            nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
         )
-        self.project_state = nn.Sequential(
-            nn.Linear(self._dyn_dim + self._action_dim, self._state_dim * 4),
+        self.transition = nn.Sequential(
+            nn.Linear(self._state_dim + self._action_dim, self._state_dim * 2),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 4, self._state_dim * 8),
+            nn.Linear(self._state_dim * 2, self._state_dim * 3),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 8, self._state_dim * 16),
+            nn.Linear(self._state_dim * 3, self._state_dim * 4),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 16, self._state_dim * 2),
+            nn.Linear(self._state_dim * 4, self._state_dim),
         )
         self.predict_observation = nn.Sequential(
-            nn.Linear(self._dyn_dim + self._state_dim, self._state_dim * 4),
+            nn.Linear(self._state_dim, self._observation_dim * 2),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 4, self._state_dim * 8),
+            nn.Linear(self._observation_dim * 2, self._observation_dim * 3),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 8, self._state_dim * 16),
+            nn.Linear(self._observation_dim * 3, self._observation_dim * 4),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 16, (self._observation_dim + 1) * 2)
+            nn.Linear(self._observation_dim * 4, self._observation_dim * 2)
         )
 
-    def _forward(self, dynamics=None, prev_control=None, prediction=None,
-                 observation=None):
+    def _forward(self, dynamics=None, control=None, observation=None):
         if dynamics is None:
             dynamics = self.param_sample(Normal, 'dynamics')
-        if prediction is None:
-            state = self.param_sample(Normal, 'state')
         else:
-            state = self.sample(Normal, **prediction, name='state')
-        if prev_control is None:
-            prev_control = torch.zeros(self._action_dim).to(state).expand(
-                *self.batch_shape, self._action_dim,
+            dynamics = dynamics + self.param_sample(Normal, 'prediction_error')
+        if control is not None:
+            control = control + self.param_sample(Normal, 'control_error')
+        else:
+            control = torch.zeros(*self.batch_shape, self._action_dim).to(
+                dynamics
             )
 
-        observable = self.predict_observation(torch.cat((dynamics, state),
-                                                        dim=-1))
-        observable = observable.reshape(-1, self._observation_dim + 1, 2)
-        observation = self.observe('observation', observation, Normal,
-                                   observable[:, :, 0],
-                                   softplus(observable[:, :, 1]))
-        self.goal(self, observation)
+        observable = self.predict_observation(dynamics)
+        observable = observable.reshape(-1, self._observation_dim, 2)
+        self.observe('observation', observation, Normal, observable[:, :, 0],
+                     softplus(observable[:, :, 1]) ** (-1.))
+        success = self.goal(observable[:, :, 0])
+        success = self.sample(LogitRelaxedBernoulli, torch.ones_like(success),
+                              probs=success, name='success')
+        self.observe('goal', torch.ones_like(success), Bernoulli,
+                     logits=success)
 
+        control = control + self.policy(control)
         if self._discrete_actions:
-            control = self.param_sample(OneHotCategorical, name='control')
+            options = self.sample(RelaxedOneHotCategorical,
+                                  torch.ones_like(control),
+                                  probs=control)
+            control = self.sample(OneHotCategorical, probs=options,
+                                  name='control')
         else:
-            control = self.param_sample(Normal, 'control')
+            control = hardtanh(control[0].expand(*control.shape))
 
-        dynamics = self.dynamical_transition(
-            torch.cat((dynamics, state, control), dim=-1)
-        )
-        next_state = self.project_state(torch.cat((dynamics, control), dim=-1))
-        next_state = next_state.reshape(-1, self._state_dim, 2)
-        prediction = {
-            'loc': next_state[:, :, 0],
-            'scale': softplus(next_state[:, :, 1]),
-        }
+        dynamics = self.transition(torch.cat((dynamics, control), dim=-1))
 
-        return dynamics, control, prediction
+        return {'dynamics': dynamics, 'control': control}
 
 class RecognitionAgent(model.Primitive):
     def __init__(self, *args, **kwargs):
-        self._dyn_dim = kwargs.pop('dyn_dim', 2)
         self._state_dim = kwargs.pop('state_dim', 2)
         self._action_dim = kwargs.pop('action_dim', 1)
-        self._observation_dim = kwargs.pop('observation_dim', 2)
+        self._observation_dim = kwargs.pop('observation_dim', 2) + 1
         self._discrete_actions = kwargs.pop('discrete_actions', True)
         self._name = kwargs.pop('name')
+        goal = kwargs.pop('goal')
         if 'params' not in kwargs:
             kwargs['params'] = {
                 'dynamics': {
-                    'loc': torch.zeros(self._dyn_dim),
-                    'scale': torch.ones(self._dyn_dim),
+                    'loc': torch.zeros(self._state_dim),
+                    'precision': torch.ones(self._state_dim),
                 },
             }
         super(RecognitionAgent, self).__init__(*args, **kwargs)
-        self.decode_policy = nn.Sequential(
-            nn.Linear(self._dyn_dim + self._state_dim, self._state_dim * 4),
+        self.goal = goal
+        self.control_error = nn.Sequential(
+            nn.Linear(self._action_dim + self._observation_dim,
+                      self._action_dim * 2),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 4, self._action_dim * 16),
+            nn.Linear(self._action_dim * 2, self._action_dim * 3),
             nn.PReLU(),
-            nn.Linear(self._action_dim * 16, self._action_dim * 2),
-            nn.Softmax(dim=-1) if self._discrete_actions else nn.Identity(),
+            nn.Linear(self._action_dim * 3, self._action_dim * 4),
+            nn.PReLU(),
+            nn.Linear(self._action_dim * 4, self._action_dim * 2),
         )
-        self.encode_state = nn.Sequential(
-            nn.Linear(self._observation_dim + 1, self._state_dim * 4),
+        self.prediction_error = nn.Sequential(
+            nn.Linear(self._state_dim + self._observation_dim,
+                      self._state_dim * 2),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 4, self._state_dim * 8),
+            nn.Linear(self._state_dim * 2, self._state_dim * 3),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 8, self._state_dim * 16),
+            nn.Linear(self._state_dim * 3, self._state_dim * 4),
             nn.PReLU(),
-            nn.Linear(self._state_dim * 16, self._state_dim * 2),
+            nn.Linear(self._state_dim * 4, self._state_dim * 2),
         )
 
     @property
     def name(self):
         return self._name
 
-    def _forward(self, dynamics=None, prev_control=None, prediction=None,
-                 observation=None):
-        if observation is not None:
-            state = self.encode_state(observation).reshape(-1, self._state_dim,
-                                                           2)
-            prediction = {
-                'loc': state[:, :, 0],
-                'scale': state[:, :, 1],
-            }
-        state = self.sample(Normal, prediction['loc'],
-                            softplus(prediction['scale']) + 1e-9, name='state')
+    def _forward(self, dynamics=None, control=None, observation=None):
         if dynamics is None:
             dynamics = self.param_sample(Normal, 'dynamics')
-        if prev_control is None:
-            prev_control = torch.zeros(*self.batch_shape, self._action_dim).to(
-                state
+        if control is None:
+            control = torch.zeros(*self.batch_shape, self._action_dim).to(
+                dynamics
             )
+        if observation is not None:
+            success = self.goal(observation)
+            self.sample(LogitRelaxedBernoulli, torch.ones_like(success),
+                        probs=success, name='success')
 
-        control = self.decode_policy(torch.cat((dynamics, state), dim=-1))
-        if self._discrete_actions:
-            control = self.sample(OneHotCategorical, probs=control,
-                                  name='control')
-        else:
-            control = control.reshape(-1, self._action_dim, 2)
-            if not self.q and observation is not None:
-                action = torch.normal(
-                    hardtanh(prev_control[0] + control[0, :, 0]),
-                    softplus(control[0, :, 1]) + 1e-9
-                )
-                action = action.expand(*self.batch_shape, self._action_dim)
-            elif self.q:
-                action = self.q['control'].value
-            else:
-                action = None
-            control = self.sample(Normal,
-                                  hardtanh(prev_control + control[:, :, 0]),
-                                  softplus(control[:, :, 1]) + 1e-9,
-                                  value=action, name='control')
+            sequence_info = torch.cat((dynamics, observation), dim=-1)
+            error = self.prediction_error(sequence_info).reshape(
+                -1, self._state_dim, 2
+            )
+            self.sample(Normal, error[:, :, 0],
+                        softplus(error[:, :, 1]) ** (-1.),
+                        name='prediction_error')
 
-class MountainCarEnergy(NormalEnergy):
+            sequence_info = torch.cat((control, observation), dim=-1)
+            error = self.control_error(sequence_info)
+            error = error.reshape(-1, self._action_dim, 2)
+            self.sample(Normal, error[:, :, 0],
+                        softplus(error[:, :, 1]) ** (-1.), name='control_error')
+
+class MountainCarEnergy(LogisticInterval):
     def __init__(self, batch_shape):
         loc = torch.tensor([0.45]).expand(*batch_shape, 1)
         scale = torch.tensor([0.05]).expand(*batch_shape, 1)
         super(MountainCarEnergy, self).__init__(loc, scale)
 
-    def forward(self, agent, observation):
-        return super(MountainCarEnergy, self).forward(agent, observation[:, 0])
+    def forward(self, observation):
+        return super(MountainCarEnergy, self).forward(observation[:, 0:1])
 
 class MountainCarAgent(GenerativeAgent):
     def __init__(self, *args, **kwargs):
@@ -240,15 +228,14 @@ class MountainCarAgent(GenerativeAgent):
         kwargs['goal'] = MountainCarEnergy(kwargs['batch_shape'])
         super(MountainCarAgent, self).__init__(*args, **kwargs)
 
-class CartpoleEnergy(NormalEnergy):
+class CartpoleEnergy(LogisticInterval):
     def __init__(self, batch_shape):
         loc = torch.zeros(*batch_shape, 1)
         scale = torch.tensor([np.pi / (15 * 2)]).expand(*batch_shape, 1)
         super(CartpoleEnergy, self).__init__(loc, scale)
-        self.all_steps = True
 
-    def forward(self, agent, observation):
-        return super(CartpoleEnergy, self).forward(agent, observation)
+    def forward(self, observation):
+        return super(CartpoleEnergy, self).forward(observation)
 
 class CartpoleAgent(GenerativeAgent):
     def __init__(self, *args, **kwargs):
@@ -257,16 +244,14 @@ class CartpoleAgent(GenerativeAgent):
         kwargs['goal'] = CartpoleEnergy(kwargs['batch_shape'])
         super(CartpoleAgent, self).__init__(*args, **kwargs)
 
-class BipedalWalkerEnergy(NormalEnergy):
+class BipedalWalkerEnergy(LogisticInterval):
     def __init__(self, batch_shape):
         loc = torch.tensor([0., 0., 1., 0.]).expand(*batch_shape, 4)
         scale = torch.tensor([0.25, 1., 0.0025, 0.0025]).expand(*batch_shape, 4)
         super(BipedalWalkerEnergy, self).__init__(loc, scale)
-        self.all_steps = True
 
-    def forward(self, agent, observation):
-        return super(BipedalWalkerEnergy, self).forward(agent,
-                                                        observation[:, 0:4])
+    def forward(self, observation):
+        return super(BipedalWalkerEnergy, self).forward(observation[:, 0:4])
 
 class BipedalWalkerAgent(GenerativeAgent):
     def __init__(self, *args, **kwargs):

@@ -119,9 +119,7 @@ class ActiveEpisode(Model):
         )
 
         t = 0
-        dynamics = None
-        prediction = None
-        control = None
+        theta = {}
         observation = torch.Tensor(list(self._env.reset()) + [0.])
         observation = observation.to(log_weight).expand(*self.batch_shape,
                                                         *observation.shape)
@@ -132,10 +130,13 @@ class ActiveEpisode(Model):
             if render:
                 self._env.render()
             with self._ready(t) as _:
-                (dynamics, control, prediction), graph_t, log_weight_t = self.agent(
-                    dynamics, control, prediction, observation
-                )
-            action = control[0].cpu().detach().numpy()
+                theta, graph_t, log_weight_t =\
+                    self.agent(**theta, observation=observation)
+            control = theta['control']
+            if control.dtype == torch.int:
+                action = control[0].argmax(dim=-1).item()
+            else:
+                action = control[0].cpu().detach().numpy()
 
             if self._qs and self._qs.contains_model(self.name + '/' + str(t)):
                 agent_name = self.name + '/' + str(t) + '/' + self.agent.name
@@ -159,7 +160,7 @@ class ActiveEpisode(Model):
         self._env.close()
         if not render and not self._qs:
             logging.info('Episode length: %d', t)
-        return (control, prediction, t), graph, log_weight
+        return {**theta, 't': t}, graph, log_weight
 
 def active_logger(objectives, t, xi=None):
     elbo = -objectives[0] / len(xi)
