@@ -108,13 +108,12 @@ class GenerativeAgent(model.Primitive):
         )
 
     def _forward(self, dynamics=None, control=None, observation=None):
+        # Sequential graphical model is:
+        # (S0, O0) -A0-> (S1, O1) -A1-> (S2, O2) -A2-> ...
         if dynamics is None:
             dynamics = self.param_sample(Normal, 'dynamics')
-        else:
-            dynamics = dynamics + self.param_sample(Normal, 'prediction_error')
-        if control is not None:
-            control = control + self.param_sample(Normal, 'control_error')
-        else:
+        dynamics = dynamics + self.param_sample(Normal, 'prediction_error')
+        if control is None:
             control = torch.zeros(*self.batch_shape, self._action_dim).to(
                 dynamics
             )
@@ -129,7 +128,9 @@ class GenerativeAgent(model.Primitive):
         self.observe('goal', torch.ones_like(success), Bernoulli,
                      logits=success)
 
-        control = control + self.policy(dynamics)
+        control = control + self.policy(dynamics) + self.param_sample(
+            Normal, 'control_error'
+        )
         if self._discrete_actions:
             options = self.sample(RelaxedOneHotCategorical,
                                   torch.ones_like(control),
