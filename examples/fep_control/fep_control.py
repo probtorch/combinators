@@ -196,10 +196,6 @@ class RecognitionAgent(model.Primitive):
                 dynamics
             )
         if observation is not None:
-            success = self.goal(observation)
-            self.sample(LogitRelaxedBernoulli, torch.ones_like(success),
-                        probs=success, name='success')
-
             sequence_info = torch.cat((dynamics, observation), dim=-1)
             error = self.prediction_error(sequence_info).reshape(
                 -1, self._state_dim, 2
@@ -213,6 +209,13 @@ class RecognitionAgent(model.Primitive):
             feedback = feedback.reshape(-1, self._action_dim, 2)
             self.sample(Normal, feedback[:, :, 0],
                         softplus(feedback[:, :, 1]) ** (-1.), name='feedback')
+
+            success = self.goal(observation)
+            inverse_temperature = softplus(error[:, :, 1]).sum(dim=-1,
+                                                               keepdim=True)
+            self.sample(LogitRelaxedBernoulli,
+                        torch.ones_like(success) / inverse_temperature,
+                        probs=success, name='success')
 
 class MountainCarEnergy(LogisticInterval):
     def __init__(self, batch_shape):
