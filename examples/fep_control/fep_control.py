@@ -119,7 +119,10 @@ class GenerativeAgent(model.Primitive):
         self.observe('observation', observation, Normal, observable[:, :, 0],
                      softplus(observable[:, :, 1]) ** (-1.))
         success = self.goal(observable[:, :, 0])
-        success = self.sample(LogitRelaxedBernoulli, torch.ones_like(success),
+        inverse_temperature = softplus(observable[:, :, 1]).sum(dim=-1,
+                                                                keepdim=True)
+        success = self.sample(LogitRelaxedBernoulli,
+                              torch.ones_like(success) / inverse_temperature,
                               probs=success, name='success')
         self.observe('goal', torch.ones_like(success), Bernoulli,
                      logits=success)
