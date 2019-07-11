@@ -73,7 +73,7 @@ class GenerativeAgent(model.Primitive):
                 },
                 'feedback': {
                     'loc': torch.zeros(self._action_dim),
-                    'precision': torch.ones(self._action_dim) * 10,
+                    'precision': torch.ones(self._action_dim) * 2,
                 },
             }
         super(GenerativeAgent, self).__init__(*args, **kwargs)
