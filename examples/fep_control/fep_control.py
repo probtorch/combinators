@@ -71,7 +71,7 @@ class GenerativeAgent(model.Primitive):
                     'loc': torch.zeros(self._state_dim),
                     'precision': torch.ones(self._state_dim) * 10,
                 },
-                'control_error': {
+                'feedback': {
                     'loc': torch.zeros(self._action_dim),
                     'precision': torch.ones(self._action_dim) * 10,
                 },
@@ -124,9 +124,8 @@ class GenerativeAgent(model.Primitive):
         self.observe('goal', torch.ones_like(success), Bernoulli,
                      logits=success)
 
-        next_control = self.policy(dynamics) + self.param_sample(
-            Normal, 'control_error'
-        )
+        next_control = self.policy(dynamics) + self.param_sample(Normal,
+                                                                 'feedback')
         if control is None:
             control = next_control
         else:
