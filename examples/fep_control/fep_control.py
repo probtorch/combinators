@@ -160,7 +160,7 @@ class RecognitionAgent(model.Primitive):
             }
         super(RecognitionAgent, self).__init__(*args, **kwargs)
         self.goal = goal
-        self.control_error = nn.Sequential(
+        self.feedback = nn.Sequential(
             nn.Linear(self._action_dim + self._observation_dim,
                       self._action_dim * 2),
             nn.PReLU(),
@@ -206,10 +206,10 @@ class RecognitionAgent(model.Primitive):
                         name='prediction_error')
 
             sequence_info = torch.cat((control, observation), dim=-1)
-            error = self.control_error(sequence_info)
-            error = error.reshape(-1, self._action_dim, 2)
-            self.sample(Normal, error[:, :, 0],
-                        softplus(error[:, :, 1]) ** (-1.), name='control_error')
+            feedback = self.feedback(sequence_info)
+            feedback = feedback.reshape(-1, self._action_dim, 2)
+            self.sample(Normal, feedback[:, :, 0],
+                        softplus(feedback[:, :, 1]) ** (-1.), name='feedback')
 
 class MountainCarEnergy(LogisticInterval):
     def __init__(self, batch_shape):
