@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import logging
 
 from probtorch.stochastic import RandomVariable
+import pygtrie
 import torch
 import torch.distributions as dists
 
@@ -102,6 +103,26 @@ def smc(target):
 def step_smc(target):
     selector = lambda m: isinstance(m, foldable.Step)
     return target.apply(resample, selector)
+
+def inference_parameters(sampler):
+    module_tree = dict(sampler.named_modules())
+    parameter_tree = pygtrie.StringTrie(separator='.',
+                                        **dict(sampler.named_parameters()))
+    result = pygtrie.StringTrie(separator='.')
+    for name, module in module_tree.items():
+        if isinstance(module, inference.Inference):
+            for key, param in parameter_tree.iteritems(prefix=name):
+                if not key.startswith(name + '.target'):
+                    result[key] = param
+    return result
+
+def model_parameters(sampler):
+    inference_params = inference_parameters(sampler)
+    parameter_tree = pygtrie.StringTrie(separator='.',
+                                        **dict(sampler.named_parameters()))
+    for key in inference_params:
+        del parameter_tree[key]
+    return parameter_tree
 
 def dreg(log_weight, alpha=torch.zeros(())):
     probs = utils.normalize_weights(log_weight).detach().exp()
