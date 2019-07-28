@@ -167,23 +167,6 @@ def active_logger(objectives, t, xi=None):
     logging.info('ELBO=%.8e per step at epoch %d', elbo, t + 1)
     return [elbo]
 
-def active_variational(episode, num_iterations, use_cuda=True, lr=1e-3,
-                       log_estimator=False, patience=10):
-    active_elbo = {
-        'name': 'elbo',
-        'function': lambda log_weight, xi=None: -importance.elbo(
-            log_weight, iwae_objective=log_estimator, xi=xi
-        ),
-    }
-    param_groups = [{
-        'objective': active_elbo,
-        'optimizer_args': {
-            'params': episode.parameters(),
-            'lr': lr,
-        },
-        'patience': patience,
-    }]
-
-    return importance.multiobjective_variational(episode, param_groups,
-                                                 num_iterations, {}, use_cuda,
-                                                 logger=active_logger)
+def active_variational(episode, num_iterations, **kwargs):
+    return importance.auto_variational(episode, num_iterations, data={},
+                                       logger=active_logger, **kwargs)

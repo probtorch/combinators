@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import logging
 
 from probtorch.stochastic import RandomVariable
+import pygtrie
 import torch
 import torch.distributions as dists
 
@@ -103,6 +104,26 @@ def step_smc(target):
     selector = lambda m: isinstance(m, foldable.Step)
     return target.apply(resample, selector)
 
+def inference_parameters(sampler):
+    module_tree = dict(sampler.named_modules())
+    parameter_tree = pygtrie.StringTrie(separator='.',
+                                        **dict(sampler.named_parameters()))
+    result = pygtrie.StringTrie(separator='.')
+    for name, module in module_tree.items():
+        if isinstance(module, inference.Inference):
+            for key, param in parameter_tree.iteritems(prefix=name):
+                if not key.startswith(name + '.target'):
+                    result[key] = param
+    return result
+
+def model_parameters(sampler):
+    inference_params = inference_parameters(sampler)
+    parameter_tree = pygtrie.StringTrie(separator='.',
+                                        **dict(sampler.named_parameters()))
+    for key in inference_params:
+        del parameter_tree[key]
+    return parameter_tree
+
 def dreg(log_weight, alpha=torch.zeros(())):
     probs = utils.normalize_weights(log_weight).detach().exp()
     particles = (alpha * probs + (1 - 2 * alpha) * probs**2) * log_weight
@@ -166,6 +187,68 @@ def default_elbo_logger(objectives, t, xi=None):
 def default_eubo_logger(objectives, t, xi=None):
     logging.info('EUBO=%.8e at epoch %d', objectives[1], t + 1)
     return [objectives[1]]
+
+def auto_variational(sampler, num_iterations, *args, use_cuda=True, patience=50,
+                     log_estimator=True, lr=1e-4, logger=default_elbo_logger,
+                     **kwargs):
+    sampler.train()
+    if torch.cuda.is_available() and use_cuda:
+        sampler.cuda()
+
+    _, xi, _ = sampler(*args, **kwargs)
+    if xi.reparameterized():
+        param_groups = [{
+            'objective': {
+                'name': 'elbo',
+                'function': lambda lw, xi=None: -elbo(
+                    lw, iwae_objective=log_estimator, xi=xi
+                ),
+            },
+            'patience': patience,
+            'optimizer_args': {'params': list(sampler.parameters()), 'lr': lr},
+        }]
+    else:
+        inference_params = inference_parameters(sampler)
+        model_params = model_parameters(sampler)
+        param_groups = [{
+            'objective': {
+                'name': 'eubo',
+                'function': lambda lw, xi=None: eubo(
+                    lw, iwae_objective=log_estimator, xi=xi
+                ),
+            },
+            'patience': patience,
+            'optimizer_args': {'params': inference_params.values(), 'lr': lr},
+        }, {
+            'objective': {
+                'name': 'eubo',
+                'function': lambda lw, xi=None: -eubo(
+                    lw, iwae_objective=log_estimator, xi=xi
+                ),
+            },
+            'patience': patience,
+            'optimizer_args': {'params': model_params.values(), 'lr': lr},
+        }]
+
+    evbo_optim = EvBoOptimizer(param_groups, torch.optim.Adam)
+    iteration_bounds = list(range(num_iterations))
+    for i in range(num_iterations):
+        evbo_optim.zero_grads()
+        _, xi, log_weight = sampler(*args, **kwargs)
+        iteration_bounds[i] = evbo_optim.step_grads(log_weight, xi)
+        if logger is not None:
+            iteration_bounds[i] = logger(iteration_bounds[i], i, xi)
+
+    if torch.cuda.is_available() and use_cuda:
+        sampler.cpu()
+        torch.cuda.empty_cache()
+    sampler.eval()
+
+    iteration_bounds = torch.stack([
+        torch.stack(bounds, dim=-1) for bounds in iteration_bounds
+    ], dim=0)
+
+    return xi, iteration_bounds
 
 def multiobjective_variational(sampler, param_groups, num_iterations, data,
                                use_cuda=True, logger=default_elbo_logger):
