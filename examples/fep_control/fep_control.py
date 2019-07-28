@@ -2,10 +2,10 @@
 
 import numpy as np
 import torch
-from torch.distributions import Bernoulli, Beta, Normal, OneHotCategorical
+from torch.distributions import Beta, Normal, OneHotCategorical
 from torch.distributions import RelaxedOneHotCategorical, TransformedDistribution
 from torch.distributions import Uniform
-from torch.distributions.relaxed_bernoulli import LogitRelaxedBernoulli
+from torch.distributions.relaxed_bernoulli import RelaxedBernoulli
 from torch.distributions.transforms import AffineTransform, SigmoidTransform
 import torch.nn as nn
 from torch.nn.functional import hardtanh, softplus
@@ -121,11 +121,12 @@ class GenerativeAgent(model.Primitive):
         success = self.goal(observable[:, :, 0])
         inverse_temperature = softplus(observable[:, :, 1]).sum(dim=-1,
                                                                 keepdim=True)
-        success = self.sample(LogitRelaxedBernoulli,
+        success = self.sample(RelaxedBernoulli,
                               torch.ones_like(success) / inverse_temperature,
                               probs=success, name='success')
-        self.observe('goal', torch.ones_like(success), Bernoulli,
-                     logits=success)
+        self.observe('goal', torch.ones_like(success), RelaxedBernoulli,
+                     temperature=torch.ones_like(success) / inverse_temperature,
+                     probs=success)
 
         next_control = self.policy(dynamics) + self.param_sample(Normal,
                                                                  'feedback')
@@ -213,7 +214,7 @@ class RecognitionAgent(model.Primitive):
             success = self.goal(observation)
             inverse_temperature = softplus(error[:, :, 1]).sum(dim=-1,
                                                                keepdim=True)
-            self.sample(LogitRelaxedBernoulli,
+            self.sample(RelaxedBernoulli,
                         torch.ones_like(success) / inverse_temperature,
                         probs=success, name='success')
 
