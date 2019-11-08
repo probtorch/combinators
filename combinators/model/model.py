@@ -93,7 +93,7 @@ class Primitive(Model):
         else:
             provenance = Provenance.SAMPLED
         return self.p.variable(Dist, *args, **kwargs, name=name, value=value,
-                               provenance=provenance)
+                               provenance=provenance, use_pmf=False)
 
     def param_sample(self, Dist, name):
         params = self.args_vardict()[name]
