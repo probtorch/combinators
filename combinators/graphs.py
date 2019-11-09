@@ -208,7 +208,7 @@ class ComputationGraph:
         log_omega = torch.zeros(batch_shape, device=self.device)
         dims = tuple(range(len(batch_shape)))
         for name in self:
-            conditioned = [k for k in self[name].conditioned()]
+            conditioned = list(self[name].conditioned())
             if conditioned:
                 conditioned_joints = self[name].log_joint(sample_dims=dims,
                                                           nodes=conditioned,
