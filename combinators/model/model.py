@@ -256,10 +256,5 @@ class MapIid(Model):
         with self.func.cond(qs['/' + self.func.name:]) as funcq:
             yield self
 
-    @contextmanager
-    def weight_target(self, weights=None):
-        with self.func.weight_target(weights) as _:
-            yield self
-
 def map_iid(func):
     return MapIid(func)
