@@ -30,11 +30,6 @@ class Inference(Sampler):
         with self.target.cond(qs) as target:
             yield self
 
-    @contextmanager
-    def weight_target(self, weights=None):
-        with self.target.weight_target(weights) as target:
-            yield self
-
 class Population(Inference):
     def __init__(self, target, batch_shape, before=True):
         super(Population, self).__init__(target)
