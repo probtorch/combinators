@@ -47,10 +47,6 @@ class Deterministic(Model):
     def cond(self, qs):
         yield self
 
-    @contextmanager
-    def weight_target(self, weights=None):
-        yield self
-
     def walk(self, f):
         return f(self)
 
