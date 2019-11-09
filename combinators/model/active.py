@@ -26,11 +26,6 @@ class ActiveSimulation(Model):
         with self.agent.cond(qs[self.name:]) as self.agent:
             yield self
 
-    @contextmanager
-    def weight_target(self, weights=None):
-        with self.agent.weight_target(weights) as self.agent:
-            yield self
-
     @property
     def name(self):
         return 'ActiveSimulation'
