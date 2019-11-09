@@ -160,8 +160,7 @@ class Primitive(Model):
         result = self._forward(*args, **kwargs)
         ps = graphs.ComputationGraph(traces={self.name: self.p})
         qs = graphs.ComputationGraph(traces={self.name: self.q})
-        log_weight = ps.conditioning_factor(qs, self.batch_shape,
-                                            self._target_weights)
+        log_weight = ps.conditioning_factor(qs, self.batch_shape)
         self.p = None
         assert log_weight.shape == self.batch_shape
         return result, ps, log_weight
