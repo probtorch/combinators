@@ -66,7 +66,6 @@ class ActiveEpisode(Model):
         self._env = gym.make(env_name)
         self._max_episode_length = max_episode_length
         self._qs = None
-        self._target_weights = target_weights
 
     @contextmanager
     def cond(self, qs):
@@ -78,26 +77,15 @@ class ActiveEpisode(Model):
             self._qs = original_qs
 
     @contextmanager
-    def weight_target(self, weights=None):
-        original_target_weights = self._target_weights
-        try:
-            self._target_weights = weights
-            yield self
-        finally:
-            self._target_weights = original_target_weights
-
-    @contextmanager
     def _ready(self, t):
-        with self.agent.weight_target(self._target_weights) as agent:
-            original_agent = self.agent
-            self.agent = agent
-            if self._qs and self._qs.contains_model(self.name + '/' + str(t)):
-                with agent.cond(self._qs[self.name + '/' + str(t):]) as aq:
-                    self.agent = aq
-                    yield self
-            else:
+        original_agent = self.agent
+        if self._qs and self._qs.contains_model(self.name + '/' + str(t)):
+            with agent.cond(self._qs[self.name + '/' + str(t):]) as aq:
+                self.agent = aq
                 yield self
-            self.agent = original_agent
+        else:
+            yield self
+        self.agent = original_agent
 
     @property
     def name(self):
