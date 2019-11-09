@@ -32,10 +32,6 @@ class Sampler(nn.Module):
         raise NotImplementedError()
 
     @contextmanager
-    def weight_target(self, weights=None):
-        raise NotImplementedError()
-
-    @contextmanager
     def rescore(self, qs):
         for (_, v) in qs.variables():
             v._provenance = Provenance.RESCORE

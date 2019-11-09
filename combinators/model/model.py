@@ -47,10 +47,6 @@ class Deterministic(Model):
     def cond(self, qs):
         yield self
 
-    @contextmanager
-    def weight_target(self, weights=None):
-        yield self
-
     def walk(self, f):
         return f(self)
 
@@ -64,7 +60,6 @@ class Primitive(Model):
         self.register_args(params, trainable)
         self.p = None
         self.q = q if q else probtorch.Trace()
-        self._target_weights = None
 
     @property
     def hyperparams_trainable(self):
@@ -146,22 +141,12 @@ class Primitive(Model):
         finally:
             self.q = q
 
-    @contextmanager
-    def weight_target(self, weights=None):
-        target_weights = self._target_weights
-        try:
-            self._target_weights = weights
-            yield self
-        finally:
-            self._target_weights = target_weights
-
     def forward(self, *args, **kwargs):
         self.p = probtorch.Trace()
         result = self._forward(*args, **kwargs)
         ps = graphs.ComputationGraph(traces={self.name: self.p})
         qs = graphs.ComputationGraph(traces={self.name: self.q})
-        log_weight = ps.conditioning_factor(qs, self.batch_shape,
-                                            self._target_weights)
+        log_weight = ps.conditioning_factor(qs, self.batch_shape)
         self.p = None
         assert log_weight.shape == self.batch_shape
         return result, ps, log_weight
@@ -202,12 +187,6 @@ class Compose(Model):
             with self.g.cond(qs[self.name:]) as gq:
                 yield self
 
-    @contextmanager
-    def weight_target(self, weights=None):
-        with self.f.weight_target(weights) as _:
-            with self.g.weight_target(weights) as _:
-                yield self
-
     def walk(self, f):
         walk_f = self.f.walk(f)
         walk_g = self.g.walk(f)
@@ -240,11 +219,6 @@ class Partial(Model):
     @contextmanager
     def cond(self, qs):
         with self.curried.cond(qs[self.name + '/' + self.curried.name:]) as cq:
-            yield self
-
-    @contextmanager
-    def weight_target(self, weights=None):
-        with self.curried.weight_target(weights) as _:
             yield self
 
 def partial(func, *arguments, **keywords):
@@ -280,11 +254,6 @@ class MapIid(Model):
     @contextmanager
     def cond(self, qs):
         with self.func.cond(qs['/' + self.func.name:]) as funcq:
-            yield self
-
-    @contextmanager
-    def weight_target(self, weights=None):
-        with self.func.weight_target(weights) as _:
             yield self
 
 def map_iid(func):

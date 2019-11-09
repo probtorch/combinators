@@ -204,36 +204,24 @@ class ComputationGraph:
 
         return blanket
 
-    def conditioning_factor(self, qs, batch_shape, target_weights=None):
-        if not target_weights:
-            target_weights = lambda node, names, rvs: torch.ones(len(names)).to(
-                device=self.device
-            )
+    def conditioning_factor(self, qs, batch_shape):
         log_omega = torch.zeros(batch_shape, device=self.device)
         dims = tuple(range(len(batch_shape)))
         for name in self:
-            conditioned = [k for k in self[name].conditioned()]
+            conditioned = list(self[name].conditioned())
             if conditioned:
-                conditioned_joints = [self[name].log_joint(
-                    sample_dims=dims, nodes=[k], reparameterized=False
-                ) for k in conditioned]
-                conditioned_joints = torch.stack(conditioned_joints, dim=-1)
-                weights = target_weights(name, conditioned,
-                                         [self[name][k] for k in conditioned])
-                weighted_joints = conditioned_joints @ weights
-                log_omega = log_omega + weighted_joints
+                conditioned_joints = self[name].log_joint(sample_dims=dims,
+                                                          nodes=conditioned,
+                                                          reparameterized=False)
+                log_omega = log_omega + conditioned_joints
             if qs and name in qs:
                 reused = [k for k in self[name] if k in qs[name] and\
                           utils.reused_variable(self[name], qs[name], k)]
                 if reused:
-                    reused_joints = [self[name].log_joint(
-                        sample_dims=dims, nodes=[k], reparameterized=False
-                    ) for k in reused]
-                    reused_joints = torch.stack(reused_joints, dim=-1)
-                    weights = target_weights(name, reused,
-                                             [self[name][k] for k in reused])
-                    weighted_joints = reused_joints @ weights
-                    log_omega = log_omega + weighted_joints
+                    reused_joints = self[name].log_joint(sample_dims=dims,
+                                                         nodes=reused,
+                                                         reparameterized=False)
+                    log_omega = log_omega + reused_joints
 
         return log_omega
 
