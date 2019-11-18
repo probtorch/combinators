@@ -13,10 +13,6 @@ class AnnealingTarget(model.Primitive):
         super(AnnealingTarget, self).__init__(*args, **kwargs)
         self._annealing_steps = annealing_steps
 
-    @property
-    def arguments(self):
-        return (self._annealing_steps,)
-
     def _forward(self, t=0, data={}):
         beta = torch.linspace(0, 1, self._annealing_steps)[t]
         xs = self.sample(Normal, loc=torch.zeros(*self.batch_shape) * 3,
