@@ -26,10 +26,6 @@ class Model(Sampler):
     def get_model(self):
         return self
 
-    @property
-    def arguments(self):
-        return ()
-
 class Deterministic(Model):
     def __init__(self, *args, batch_shape=(1,)):
         super(Deterministic, self).__init__(batch_shape=batch_shape)
