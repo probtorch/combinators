@@ -26,7 +26,7 @@ class AnnealingTarget(model.Primitive):
         return xs
 
 def annealed_importance(target, transition, moves=1):
-    return mcmc.Move(importance.importance(target), transition, moves=moves, count_target=True)
+    return mcmc.Move(target, transition, moves=moves, count_target=True)
 
 def annealed_importance_MH(target, transition, moves=1):
     return mcmc.MetropolisHastings(target, transition, moves=moves, count_target=True)
