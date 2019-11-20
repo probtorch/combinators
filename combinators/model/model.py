@@ -40,7 +40,7 @@ class Deterministic(Model):
         return self._args, empty_graph, torch.zeros(self.batch_shape)
 
     @contextmanager
-    def cond(self, qs):
+    def score(self, ps):
         yield self
 
     def walk(self, f):
@@ -55,7 +55,7 @@ class Primitive(Model):
         self._hyperparams_trainable = trainable
         self.register_args(params, trainable)
         self.p = None
-        self.q = q if q else probtorch.Trace()
+        self.tr = q if q else probtorch.Trace()
 
     @property
     def hyperparams_trainable(self):
@@ -66,21 +66,16 @@ class Primitive(Model):
         return self.__class__.__name__
 
     def sample(self, Dist, *args, name=None, value=None, **kwargs):
-        if name in self.q:
-            assert value is None or (value == self.q[name].value).all()
-            value = self.q[name].value
         if value is not None:
-            if name in self.q and not self.q[name].observed:
-                if self.q[name].provenance == Provenance.RESCORE:
-                    provenance = Provenance.SAMPLED
-                else:
-                    provenance = Provenance.REUSED
-            else:
-                provenance = Provenance.OBSERVED
-                shared_shapes = utils.broadcastable_sizes(value.shape,
-                                                          self.batch_shape)
-                if shared_shapes != self.batch_shape:
-                    value = value.expand(*self.batch_shape, *value.shape)
+            provenance = Provenance.OBSERVED
+            shared_shapes = utils.broadcastable_sizes(value.shape,
+                                                      self.batch_shape)
+            if shared_shapes != self.batch_shape:
+                value = value.expand(*self.batch_shape, *value.shape)
+        elif name in self.tr:
+            assert value is None or (value == self.tr[name].value).all()
+            value = self.tr[name].value
+            provenance = Provenance.REUSED
         else:
             provenance = Provenance.SAMPLED
         return self.p.variable(Dist, *args, **kwargs, name=name, value=value,
@@ -118,31 +113,30 @@ class Primitive(Model):
         return self.observe(name, value, Dist, **params)
 
     def factor(self, log_prob, name=None):
-        assert name not in self.q or isinstance(self.q[name], probtorch.Factor)
+        assert name not in self.p or isinstance(self.p[name], probtorch.Factor)
         return self.p.factor(log_prob, name=name)
 
     def loss(self, objective, value, target, name=None):
-        assert name not in self.q or isinstance(self.q[name], probtorch.Loss)
+        assert name not in self.p or isinstance(self.p[name], probtorch.Loss)
         return self.p.loss(objective, value, target, name=name)
 
     def walk(self, f):
         return f(self)
 
     @contextmanager
-    def cond(self, qs):
-        q = self.q
+    def score(self, ps):
+        p = self.tr
         try:
-            self.q = qs[self.name]
+            self.tr = ps[self.name]
             yield self
         finally:
-            self.q = q
+            self.tr = p
 
     def forward(self, *args, **kwargs):
         self.p = probtorch.Trace()
         result = self._forward(*args, **kwargs)
         ps = graphs.ComputationGraph(traces={self.name: self.p})
-        qs = graphs.ComputationGraph(traces={self.name: self.q})
-        log_weight = ps.conditioning_factor(qs, self.batch_shape)
+        log_weight = graphs.conditioning_factor(self.p, self.batch_shape)
         self.p = None
         assert log_weight.shape == self.batch_shape
         return result, ps, log_weight
@@ -178,9 +172,9 @@ class Compose(Model):
         return zf, xi, w_g + w_f
 
     @contextmanager
-    def cond(self, qs):
-        with self.f.cond(qs[self.name:]) as fq:
-            with self.g.cond(qs[self.name:]) as gq:
+    def score(self, ps):
+        with self.f.score(ps[self.name:]) as fp:
+            with self.g.score(ps[self.name:]) as gp:
                 yield self
 
     def walk(self, f):
@@ -213,8 +207,8 @@ class Partial(Model):
                          **self._curry_kwargs))
 
     @contextmanager
-    def cond(self, qs):
-        with self.curried.cond(qs[self.name + '/' + self.curried.name:]) as cq:
+    def score(self, ps):
+        with self.curried.score(ps[self.name + '/' + self.curried.name:]) as cp:
             yield self
 
 def partial(func, *arguments, **keywords):
@@ -248,8 +242,8 @@ class MapIid(Model):
         return f(MapIid(self.func.walk(f)))
 
     @contextmanager
-    def cond(self, qs):
-        with self.func.cond(qs['/' + self.func.name:]) as funcq:
+    def score(self, ps):
+        with self.func.score(ps['/' + self.func.name:]) as funcp:
             yield self
 
 def map_iid(func):
