@@ -225,6 +225,22 @@ class ComputationGraph:
 
         return log_omega
 
+def conditioning_factor(p, tr, batch_shape):
+    device = 'cpu'
+    for v in p.values():
+        device = v.log_prob.device
+    log_omega = torch.zeros(batch_shape, device=device)
+    dims = tuple(range(len(batch_shape)))
+
+    conditioned = list(p.conditioned())
+    log_omega = log_omega + p.log_joint(sample_dims=dims, nodes=conditioned,
+                                        reparameterized=False)
+
+    reused = [k for k in p if k in tr]
+    log_omega = log_omega + tr.log_joint(sample_dims=dims, nodes=reused,
+                                         reparameterized=False)
+    return log_omega
+
 def graph_where(condition, gx, gy, batch_shape):
     result = ComputationGraph()
     for tname, name, node in gx.prefixed_nodes():
