@@ -28,7 +28,7 @@ class Sampler(nn.Module):
         raise NotImplementedError()
 
     @contextmanager
-    def cond(self, qs):
+    def score(self, ps):
         raise NotImplementedError()
 
     @contextmanager
