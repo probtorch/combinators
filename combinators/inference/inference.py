@@ -26,8 +26,8 @@ class Inference(Sampler):
         raise NotImplementedError()
 
     @contextmanager
-    def cond(self, qs):
-        with self.target.cond(qs) as target:
+    def score(self, ps):
+        with self.target.score(ps) as target:
             yield self
 
 class Population(Inference):
