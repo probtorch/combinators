@@ -83,7 +83,7 @@ class LinScaledGaussianKernel(GaussianKernel):
         self._n_steps = n_steps
         self._init_scale = scale
 
-    def cond(self, qs):
+    def score(self, ps):
         return LinScaledGaussianKernel(self._model, self._var, self._scale,
                                        self._n_steps)
 
