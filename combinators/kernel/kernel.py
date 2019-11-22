@@ -21,7 +21,7 @@ class TransitionKernel(Sampler):
     def walk(self, f):
         raise NotImplementedError()
 
-    def cond(self, qs):
+    def score(self, ps):
         raise NotImplementedError()
 
     @property
