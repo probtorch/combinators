@@ -69,8 +69,8 @@ class MetropolisHastings(Inference):
                          device=log_weight.device)
         while (ts < self._moves).any():
             # Rescore the current trace under any change of target based on t.
-            with self.target.rescore(xi) as rescorer:
-                _, xi, log_weight = rescorer(*args, **kwargs)
+            with self.target.score(xi) as rescorer:
+                _, xip, log_weight = rescorer(*args, **kwargs)
             kwargs['ts'] = ts
             xiq, log_weight_q = self.kernel(zs, xi, *args, **kwargs)
             if not self._count_target:
