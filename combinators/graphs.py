@@ -256,5 +256,5 @@ def graph_where(condition, gx, gy, batch_shape):
             value = utils.batch_where(condition, node.value,
                                       gy[tname][name].value, batch_shape)
             trace.variable(node.Dist, *dist_args, **dist_kwargs, name=name,
-                           value=value)
+                           value=value, provenance=node.provenance)
     return result
