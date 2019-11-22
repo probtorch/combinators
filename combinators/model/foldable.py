@@ -132,8 +132,8 @@ class Reduce(Model):
         return f(Reduce(self.folder.walk(f), self._generator))
 
     @contextmanager
-    def cond(self, qs):
-        with self.folder.cond(qs[self.name:]) as folder_qs:
+    def score(self, ps):
+        with self.folder.score(ps[self.name:]) as folder_ps:
             yield self
 
 def reduce(folder, generator):
