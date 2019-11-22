@@ -2,6 +2,7 @@
 
 from functools import reduce
 import probtorch
+from probtorch.stochastic import Provenance
 import pygtrie
 import torch
 
@@ -166,10 +167,6 @@ class ComputationGraph:
         assert isinstance(val, probtorch.Trace)
         result = ComputationGraph(trie=self._trie.copy())
         result._ordering = self._ordering
-        for i, k in enumerate(result._ordering):
-            if k == key:
-                result._ordering[i] = key
-                break
         result._trie[key] = val
         return result
 
@@ -204,28 +201,15 @@ class ComputationGraph:
 
         return blanket
 
-    def conditioning_factor(self, qs, batch_shape):
+    def conditioning_factor(self, batch_shape, next=None):
         log_omega = torch.zeros(batch_shape, device=self.device)
-        dims = tuple(range(len(batch_shape)))
         for name in self:
-            conditioned = list(self[name].conditioned())
-            if conditioned:
-                conditioned_joints = self[name].log_joint(sample_dims=dims,
-                                                          nodes=conditioned,
-                                                          reparameterized=False)
-                log_omega = log_omega + conditioned_joints
-            if qs and name in qs:
-                reused = [k for k in self[name] if k in qs[name] and\
-                          utils.reused_variable(self[name], qs[name], k)]
-                if reused:
-                    reused_joints = self[name].log_joint(sample_dims=dims,
-                                                         nodes=reused,
-                                                         reparameterized=False)
-                    log_omega = log_omega + reused_joints
-
+            p = next[name] if next and name in next else None
+            log_omega = log_omega + conditioning_factor(self[name], batch_shape,
+                                                        next=p)
         return log_omega
 
-def conditioning_factor(p, tr, batch_shape):
+def conditioning_factor(p, batch_shape, next=None):
     device = 'cpu'
     for v in p.values():
         device = v.log_prob.device
@@ -236,9 +220,13 @@ def conditioning_factor(p, tr, batch_shape):
     log_omega = log_omega + p.log_joint(sample_dims=dims, nodes=conditioned,
                                         reparameterized=False)
 
-    reused = [k for k in p if k in tr]
-    log_omega = log_omega + tr.log_joint(sample_dims=dims, nodes=reused,
-                                         reparameterized=False)
+    reused_past = [k for k in p if p[k].provenance == Provenance.REUSED]
+    log_omega = log_omega + p.log_joint(sample_dims=dims, nodes=reused_past,
+                                        reparameterized=False)
+
+    reused_next = [k for k in p if next and utils.reused_variable(p, next, k)]
+    log_omega = log_omega + p.log_joint(sample_dims=dims, nodes=reused_next,
+                                        reparameterized=False)
     return log_omega
 
 def graph_where(condition, gx, gy, batch_shape):
