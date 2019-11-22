@@ -68,7 +68,7 @@ class ActiveEpisode(Model):
         self._ps = None
 
     @contextmanager
-    def eval(self, ps):
+    def score(self, ps):
         original_ps = self._ps
         try:
             self._ps = ps
@@ -80,7 +80,7 @@ class ActiveEpisode(Model):
     def _ready(self, t):
         original_agent = self.agent
         if self._ps and self._ps.contains_model(self.name + '/' + str(t)):
-            with agent.eval(self._ps[self.name + '/' + str(t):]) as ap:
+            with agent.score(self._ps[self.name + '/' + str(t):]) as ap:
                 self.agent = ap
                 yield self
         else:
@@ -121,11 +121,11 @@ class ActiveEpisode(Model):
             else:
                 action = control[0].cpu().detach().numpy()
 
-            if self._qs and self._qs.contains_model(self.name + '/' + str(t)):
+            if self._ps and self._ps.contains_model(self.name + '/' + str(t)):
                 agent_name = self.name + '/' + str(t) + '/' + self.agent.name
                 next_name = self.name + '/' + str(t + 1)
-                done = not self._qs.contains_model(next_name)
-                observation = self._qs[agent_name]['observation'].value
+                done = not self._ps.contains_model(next_name)
+                observation = self._ps[agent_name]['observation'].value
             else:
                 observation, reward, done, _ = self._env.step(action)
                 observation = torch.Tensor(observation).expand(
@@ -141,7 +141,7 @@ class ActiveEpisode(Model):
             t += 1
 
         self._env.close()
-        if not render and not self._qs:
+        if not render and not self._ps:
             logging.info('Episode length: %d', t)
         return {**theta, 't': t}, graph, log_weight
 
