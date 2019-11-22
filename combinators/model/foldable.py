@@ -10,14 +10,13 @@ from ..sampler import Sampler
 
 class Step(Model):
     def __init__(self, operator, initializer=None, iteration=0, ps=None,
-                 walker=None, target_weights=None, **kwargs):
+                 walker=None, **kwargs):
         assert isinstance(operator, Sampler)
         super(Step, self).__init__(batch_shape=operator.batch_shape)
         self._kwargs = kwargs
         self._iteration = iteration
         self._ps = ps
         self._walker = walker
-        self._target_weights = target_weights
 
         self.add_module('operator', operator)
         if isinstance(initializer, Sampler):
@@ -65,7 +64,6 @@ class Step(Model):
             next_step = Step(self.operator, initializer=result,
                              iteration=self._iteration + 1, ps=self._ps,
                              walker=self._walker,
-                             target_weights=self._target_weights,
                              **self._kwargs)
         if self._walker:
             next_step = self._walker(next_step)
