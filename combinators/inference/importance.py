@@ -14,9 +14,9 @@ from ..model import foldable
 from .. import utils
 
 def conditioned_evaluate(target, xiq, log_wq, *args, **kwargs):
-    with target.cond(xiq) as targetq:
+    with target.score(xiq) as targetq:
         zs, xi, log_w = targetq(*args, **kwargs)
-    log_omega_q = xiq.conditioning_factor(xi, target.batch_shape)
+    log_omega_q = xiq.conditioning_factor(target.batch_shape, next=xi)
     return zs, xi, log_w + log_wq - log_omega_q
 
 class Propose(inference.Inference):
@@ -25,10 +25,10 @@ class Propose(inference.Inference):
         assert isinstance(proposal, Sampler)
         assert proposal.batch_shape == target.batch_shape
         self.add_module('proposal', proposal)
-        self._conditioned = False
+        self._evaluating = False
 
     def forward(self, *args, **kwargs):
-        if not self._conditioned:
+        if not self._evaluating:
             _, xiq, log_wq = self.proposal(*args, **kwargs)
             return conditioned_evaluate(self.target, xiq, log_wq, *args,
                                         **kwargs)
@@ -38,13 +38,13 @@ class Propose(inference.Inference):
         return f(Propose(self.target.walk(f), self.proposal))
 
     @contextmanager
-    def cond(self, qs):
+    def score(self, ps):
         try:
-            conditioned = self._conditioned
-            self._conditioned = True
-            yield super(Propose, self).cond(qs)
+            conditioned = self._evaluating
+            self._evaluating = True
+            yield super(Propose, self).score(ps)
         finally:
-            self._conditioned = conditioned
+            self._evaluating = conditioned
 
 def propose(target, proposal):
     return Propose(target, proposal)

@@ -28,15 +28,8 @@ class Sampler(nn.Module):
         raise NotImplementedError()
 
     @contextmanager
-    def cond(self, qs):
+    def score(self, ps):
         raise NotImplementedError()
-
-    @contextmanager
-    def rescore(self, qs):
-        for (_, v) in qs.variables():
-            v._provenance = Provenance.RESCORE
-        with self.cond(qs) as _:
-            yield self
 
     @property
     def _expander(self):

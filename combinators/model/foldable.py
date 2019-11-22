@@ -9,15 +9,14 @@ from .model import Model
 from ..sampler import Sampler
 
 class Step(Model):
-    def __init__(self, operator, initializer=None, iteration=0, qs=None,
-                 walker=None, target_weights=None, **kwargs):
+    def __init__(self, operator, initializer=None, iteration=0, ps=None,
+                 walker=None, **kwargs):
         assert isinstance(operator, Sampler)
         super(Step, self).__init__(batch_shape=operator.batch_shape)
         self._kwargs = kwargs
         self._iteration = iteration
-        self._qs = qs
+        self._ps = ps
         self._walker = walker
-        self._target_weights = target_weights
 
         self.add_module('operator', operator)
         if isinstance(initializer, Sampler):
@@ -31,13 +30,13 @@ class Step(Model):
         return 'Step(%s)' % str(self._iteration)
 
     @contextmanager
-    def _condition(self):
-        if self._qs and self._qs.contains_model(self.name):
+    def _evaluate(self):
+        if self._ps and self._ps.contains_model(self.name):
             operator = self.operator
-            with self.operator.cond(self._qs[self.name:]) as self.operator:
+            with self.operator.score(self._ps[self.name:]) as self.operator:
                 if isinstance(self._initializer, Sampler):
                     initializer = self._initializer
-                    with self._initializer.cond(self._qs[self.name:]) as\
+                    with self._initializer.score(self._ps[self.name:]) as\
                          self._initializer:
                         yield self
                     self._initializer = initializer
@@ -49,7 +48,7 @@ class Step(Model):
 
     @contextmanager
     def _ready(self):
-        with self._condition() as _:
+        with self._evaluate() as _:
             yield self
 
     def forward(self, *args, **kwargs):
@@ -63,9 +62,8 @@ class Step(Model):
                 seed_log_weight = torch.zeros(self.batch_shape)
             result, op_trace, log_weight = self.operator(seed, *args, **kwargs)
             next_step = Step(self.operator, initializer=result,
-                             iteration=self._iteration + 1, qs=self._qs,
+                             iteration=self._iteration + 1, ps=self._ps,
                              walker=self._walker,
-                             target_weights=self._target_weights,
                              **self._kwargs)
         if self._walker:
             next_step = self._walker(next_step)
@@ -89,13 +87,13 @@ class Step(Model):
                       **self._kwargs))
 
     @contextmanager
-    def cond(self, qs):
-        original_qs = self._qs
+    def score(self, ps):
+        original_ps = self._ps
         try:
-            self._qs = qs
+            self._ps = ps
             yield self
         finally:
-            self._qs = original_qs
+            self._ps = original_ps
 
 def step(operator, initializer=None, **kwargs):
     return Step(operator, initializer=initializer, **kwargs)
@@ -132,8 +130,8 @@ class Reduce(Model):
         return f(Reduce(self.folder.walk(f), self._generator))
 
     @contextmanager
-    def cond(self, qs):
-        with self.folder.cond(qs[self.name:]) as folder_qs:
+    def score(self, ps):
+        with self.folder.score(ps[self.name:]) as folder_ps:
             yield self
 
 def reduce(folder, generator):

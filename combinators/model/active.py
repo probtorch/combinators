@@ -22,8 +22,8 @@ class ActiveSimulation(Model):
         return self._horizon
 
     @contextmanager
-    def cond(self, qs):
-        with self.agent.cond(qs[self.name:]) as self.agent:
+    def score(self, ps):
+        with self.agent.score(ps[self.name:]) as self.agent:
             yield self
 
     @property
@@ -57,31 +57,30 @@ class ActiveSimulation(Model):
         return (controls[1], predictions[1]), graph, log_weight
 
 class ActiveEpisode(Model):
-    def __init__(self, agent, env_name, target_weights=None,
-                 max_episode_length=2000):
+    def __init__(self, agent, env_name, max_episode_length=2000):
         assert isinstance(agent, Sampler)
         super(ActiveEpisode, self).__init__(batch_shape=agent.batch_shape)
         self.add_module('agent', agent)
         self._env_name = env_name
         self._env = gym.make(env_name)
         self._max_episode_length = max_episode_length
-        self._qs = None
+        self._ps = None
 
     @contextmanager
-    def cond(self, qs):
-        original_qs = self._qs
+    def score(self, ps):
+        original_ps = self._ps
         try:
-            self._qs = qs
+            self._ps = ps
             yield self
         finally:
-            self._qs = original_qs
+            self._ps = original_ps
 
     @contextmanager
     def _ready(self, t):
         original_agent = self.agent
-        if self._qs and self._qs.contains_model(self.name + '/' + str(t)):
-            with agent.cond(self._qs[self.name + '/' + str(t):]) as aq:
-                self.agent = aq
+        if self._ps and self._ps.contains_model(self.name + '/' + str(t)):
+            with agent.score(self._ps[self.name + '/' + str(t):]) as ap:
+                self.agent = ap
                 yield self
         else:
             yield self
@@ -121,11 +120,11 @@ class ActiveEpisode(Model):
             else:
                 action = control[0].cpu().detach().numpy()
 
-            if self._qs and self._qs.contains_model(self.name + '/' + str(t)):
+            if self._ps and self._ps.contains_model(self.name + '/' + str(t)):
                 agent_name = self.name + '/' + str(t) + '/' + self.agent.name
                 next_name = self.name + '/' + str(t + 1)
-                done = not self._qs.contains_model(next_name)
-                observation = self._qs[agent_name]['observation'].value
+                done = not self._ps.contains_model(next_name)
+                observation = self._ps[agent_name]['observation'].value
             else:
                 observation, reward, done, _ = self._env.step(action)
                 observation = torch.Tensor(observation).expand(
@@ -141,7 +140,7 @@ class ActiveEpisode(Model):
             t += 1
 
         self._env.close()
-        if not render and not self._qs:
+        if not render and not self._ps:
             logging.info('Episode length: %d', t)
         return {**theta, 't': t}, graph, log_weight
 

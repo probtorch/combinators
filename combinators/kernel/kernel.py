@@ -21,7 +21,7 @@ class TransitionKernel(Sampler):
     def walk(self, f):
         raise NotImplementedError()
 
-    def cond(self, qs):
+    def score(self, ps):
         raise NotImplementedError()
 
     @property
@@ -55,7 +55,7 @@ class GaussianKernel(TransitionKernel):
         self._scale = scale
         self._var = var
 
-    def cond(self, qs):
+    def score(self, ps):
         return GaussianKernel(self._model, self._var, self._scale)
 
     def walk(self, f):
@@ -83,7 +83,7 @@ class LinScaledGaussianKernel(GaussianKernel):
         self._n_steps = n_steps
         self._init_scale = scale
 
-    def cond(self, qs):
+    def score(self, ps):
         return LinScaledGaussianKernel(self._model, self._var, self._scale,
                                        self._n_steps)
 
