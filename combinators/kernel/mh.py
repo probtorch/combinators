@@ -23,7 +23,7 @@ class LightweightKernel(TransitionKernel):
     def walk(self, f):
         return f(LightweightKernel(self.batch_shape))
 
-    def cond(self, qs):
+    def score(self, ps):
         return LightweightKernel(self.batch_shape)
 
     @property
