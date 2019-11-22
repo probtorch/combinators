@@ -57,8 +57,7 @@ class ActiveSimulation(Model):
         return (controls[1], predictions[1]), graph, log_weight
 
 class ActiveEpisode(Model):
-    def __init__(self, agent, env_name, target_weights=None,
-                 max_episode_length=2000):
+    def __init__(self, agent, env_name, max_episode_length=2000):
         assert isinstance(agent, Sampler)
         super(ActiveEpisode, self).__init__(batch_shape=agent.batch_shape)
         self.add_module('agent', agent)
