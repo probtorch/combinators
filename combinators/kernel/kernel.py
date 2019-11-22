@@ -55,7 +55,7 @@ class GaussianKernel(TransitionKernel):
         self._scale = scale
         self._var = var
 
-    def cond(self, qs):
+    def score(self, ps):
         return GaussianKernel(self._model, self._var, self._scale)
 
     def walk(self, f):
