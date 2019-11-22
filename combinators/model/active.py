@@ -22,8 +22,8 @@ class ActiveSimulation(Model):
         return self._horizon
 
     @contextmanager
-    def cond(self, qs):
-        with self.agent.cond(qs[self.name:]) as self.agent:
+    def score(self, ps):
+        with self.agent.score(ps[self.name:]) as self.agent:
             yield self
 
     @property
@@ -65,23 +65,23 @@ class ActiveEpisode(Model):
         self._env_name = env_name
         self._env = gym.make(env_name)
         self._max_episode_length = max_episode_length
-        self._qs = None
+        self._ps = None
 
     @contextmanager
-    def cond(self, qs):
-        original_qs = self._qs
+    def eval(self, ps):
+        original_ps = self._ps
         try:
-            self._qs = qs
+            self._ps = ps
             yield self
         finally:
-            self._qs = original_qs
+            self._ps = original_ps
 
     @contextmanager
     def _ready(self, t):
         original_agent = self.agent
-        if self._qs and self._qs.contains_model(self.name + '/' + str(t)):
-            with agent.cond(self._qs[self.name + '/' + str(t):]) as aq:
-                self.agent = aq
+        if self._ps and self._ps.contains_model(self.name + '/' + str(t)):
+            with agent.eval(self._ps[self.name + '/' + str(t):]) as ap:
+                self.agent = ap
                 yield self
         else:
             yield self
