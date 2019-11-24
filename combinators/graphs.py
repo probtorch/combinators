@@ -231,7 +231,8 @@ def conditioning_factor(p, batch_shape, next=None):
 
 def graph_where(condition, gx, gy, batch_shape):
     result = ComputationGraph()
-    for tname, name, node in gx.prefixed_nodes():
+    intersect_filter = lambda t, k, v: t in gy and k in gy[t]
+    for tname, name, node in gx.prefixed_nodes(predicate=intersect_filter):
         if tname not in result:
             result[tname] = probtorch.Trace()
         trace = result[tname]
@@ -257,4 +258,16 @@ def graph_where(condition, gx, gy, batch_shape):
                                       gy[tname][name].value, batch_shape)
             trace.variable(node.Dist, *dist_args, **dist_kwargs, name=name,
                            value=value, provenance=node.provenance)
+
+    gx_only = lambda t, k, v: t not in gy or k not in gy[t]
+    for tname, name, node in gy.prefixed_nodes(predicate=gx_only):
+        if tname not in result:
+            result[tname] = probtorch.Trace()
+        result[tname][name] = node
+
+    gy_only = lambda t, k, v: t not in gx or k not in gx[t]
+    for tname, name, node in gy.prefixed_nodes(predicate=gy_only):
+        if tname not in result:
+            result[tname] = probtorch.Trace()
+        result[tname][name] = node
     return result
