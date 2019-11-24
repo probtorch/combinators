@@ -8,9 +8,10 @@ import pygtrie
 import torch
 import torch.distributions as dists
 
-from ..sampler import Sampler
-from . import inference
 from ..model import foldable
+from .. import graphs
+from . import inference
+from ..sampler import Sampler
 from .. import utils
 
 def conditioned_evaluate(target, xiq, log_wq, *args, **kwargs):
@@ -25,14 +26,16 @@ class Propose(inference.Inference):
         assert isinstance(proposal, Sampler)
         assert proposal.batch_shape == target.batch_shape
         self.add_module('proposal', proposal)
-        self._evaluating = False
+        self._traces = None
 
     def forward(self, *args, **kwargs):
-        if not self._evaluating:
-            _, xiq, log_wq = self.proposal(*args, **kwargs)
-            return conditioned_evaluate(self.target, xiq, log_wq, *args,
-                                        **kwargs)
-        return self.target(*args, **kwargs)
+        _, xiq, log_wq = self.proposal(*args, **kwargs)
+        if self._traces:
+            preference = torch.ones(self.batch_shape, device=log_wq.device,
+                                    dtype=torch.long)
+            xiq = graphs.graph_where(preference, self._traces, xiq,
+                                     self.batch_shape)
+        return conditioned_evaluate(self.target, xiq, log_wq, *args, **kwargs)
 
     def walk(self, f):
         return f(Propose(self.target.walk(f), self.proposal))
@@ -40,11 +43,11 @@ class Propose(inference.Inference):
     @contextmanager
     def score(self, ps):
         try:
-            conditioned = self._evaluating
-            self._evaluating = True
-            yield super(Propose, self).score(ps)
+            traces = self._traces
+            self._traces = ps
+            yield self
         finally:
-            self._evaluating = conditioned
+            self._traces = traces
 
 def propose(target, proposal):
     return Propose(target, proposal)
