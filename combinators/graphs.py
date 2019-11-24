@@ -129,11 +129,11 @@ class ComputationGraph:
             self[prefix + '/' + k] = v
 
     def prefixed_nodes(self, prefix=pygtrie._SENTINEL,
-                       predicate=lambda k, v: True):
+                       predicate=lambda tname, k, v: True):
         for tname, trace in self._trie.iteritems(prefix=prefix):
             for k in trace:
                 v = trace[k]
-                if predicate(k, v):
+                if predicate(tname, k, v):
                     yield (tname, k, v)
 
     def nodes(self, prefix=pygtrie._SENTINEL, predicate=lambda k, v: True):
