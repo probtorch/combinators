@@ -7,7 +7,7 @@ let
       (_: super: {
         mach-nix = import sources.mach-nix {
           pkgs = super;
-          python = "python37";
+          python = "python38";
           # optionally update pypi data revision from https://github.com/DavHau/pypi-deps-db
           pypiDataRev = "f3122fc";
           pypiDataSha256 = "1rzj1v9868gk6p1q73bxybbxvx0k53cprw0hj2z16jlpqjcqy9gz";

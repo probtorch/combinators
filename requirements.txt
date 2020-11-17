@@ -1,6 +1,10 @@
 torch == 1.6.0
 probtorch
-hydra-core
 numpy
-pytest
 typeguard
+
+hydra-core
+
+pytest
+pytest-mock
+hypothesis
