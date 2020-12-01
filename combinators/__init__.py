@@ -17,29 +17,136 @@ z_1, \tau_1, w_1  <~~  f(x_0)            z_2, \tau_2, w_2  <~~  g(z_1)          
                   z_3, \tau_3, w_1 \frac{w_2 w_3}{w_g(\tau_2;\tau_3, z_1)} <~~ move(f,g)(x_0)
 
 """
+import torch
 from probtorch import Trace
 from torch import Tensor
 from abc import ABCMeta, abstractmethod
 from typeguard import typechecked
-from typing import Tuple, NewType, Any, List, Callable
+from typing import Tuple, NewType, Any, List, Callable, Protocol
 
+Output = NewType("Output", Any)
 Weight = NewType("Weight", Tensor)
+Program = NewType("Program", Callable[..., Output])
+Kernel = NewType("Kernel", Callable[..., Output])
 
 
-class Combinator(metaclass=ABCMeta):
+class KernelProtocol(Protocol):
+    """
+    Python type-hints don't support things like "the first argument is X followed by varargs" -- the closest thing
+    is a Protocol. Kernels take in a program and varargs (which we include for pragmatics) and return output of a tensor
+    """
 
-    @abstractmethod
-    @typechecked
-    def __call__(self, left: Any, right: Any) -> Tuple[Tensor, Trace, Weight]:
+    def __call__(self, prgm: Program, **kwargs) -> Output:
         ...
 
 
-class Model(Combinator):
-    pass
+def kernel_protocol(func: KernelProtocol):
+    """ decorator for typechecked kernel protocols """
+    ...
 
 
-class Inference(Combinator):
-    pass
+class Combinator(metaclass=ABCMeta):
+    """
+    A superclass for inference combinators (for maybe involving model combinators)
+    """
+    @abstractmethod
+    @typechecked
+    def __call__(self, *args: Any) -> Tuple[Output, Trace, Weight]:
+        ...
+
+
+class Inference(Combinator, metaclass=ABCMeta):
+    """
+    Superclass for
+    k := "kernel program"
+    f := "target program"
+    p := reverse(p, k) | f | k
+    q := propose(p, q) | resample(q) | forward(k, q) | p
+    """
+
+    def __call__(self, samples: Tensor) -> Tuple[Output, Trace, Weight]:
+        ...
+
+
+class TargetExpr(Inference):
+    """ p := reverse(p, k) | f | k """
+    ...
+
+
+class Reverse(TargetExpr):
+    """ p := reverse(p, k) | ... """
+
+    def __call__(self, target: TargetExpr, kernel: KernelProtocol) -> Tuple[Output, Trace, Weight]:
+        ...
+
+
+class Target(TargetExpr):
+    """ p := ... | f | ... """
+
+    def __init__(self, f: Program):
+        self.f = f
+
+    def __call__(self, *args, **varargs) -> Tuple[Output, Trace, Weight]:
+        z = self.f(*args, **varargs)
+        trace = None
+        weight = torch.ones(z.shape)
+        return z, trace, weight
+
+
+class Kernel(TargetExpr):
+    """ p := ... | k """
+
+    def __init__(self, k: Kernel):
+        self.k = k
+
+    def __call__(self, prgm: Program, *args, **varargs) -> Tuple[Output, Trace, Weight]:
+        z = self.k(prgm, *args, **varargs)
+        trace = None
+        weight = None
+        return z, trace, weight
+
+
+class ProposalExpr(Inference):
+    """ q := propose(p, q) | resample(q) | forward(k, q) | p """
+    ...
+
+
+class Propose(ProposalExpr):
+    """ q := propose(p, q) | ...  """
+
+    def __call__(self, target: TargetExpr, proposal: ProposalExpr) -> Tuple[Output, Trace, Weight]:
+        ...
+
+
+class Resample(ProposalExpr):
+    """ q := ... | resample(q) | ...  """
+
+    def __init__(self, proposal: ProposalExpr):
+        self.proposal = proposal
+
+    def __call__(self, samples: Tensor) -> Tuple[Output, Trace, Weight]:
+        ...
+
+
+class Forward(ProposalExpr):
+    """ q := ... | forward(k, q) | ...  """
+
+    def __init__(self, kernel: KernelProtocol, proposal: ProposalExpr):
+        self.kernel = kernel
+        self.proposal = proposal
+
+    def __call__(self, samples: Tensor) -> Tuple[Output, Trace, Weight]:
+        ...
+
+
+class Target_Q(ProposalExpr):
+    """ q := ... | p """
+
+    def __init__(self, target: TargetExpr):
+        self.target = target
+
+    def __call__(self, samples: Tensor) -> Tuple[Output, Trace, Weight]:
+        return self.target(samples)
 
 
 # ======================================
@@ -134,3 +241,7 @@ class Move(Inference):
 
 def move():
     pass
+
+
+if __name__ == '__main__':
+    print('success!')
