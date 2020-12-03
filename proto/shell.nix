@@ -20,7 +20,7 @@ hsPkgs.shellFor {
 
   # Builds a Hoogle documentation index of all dependencies,
   # and provides a "hoogle" command to search the index.
-  withHoogle = true;
+  withHoogle = false;
 
   # Some you may need to get some other way.
   # buildInputs = with pkgs.haskellPackages;
