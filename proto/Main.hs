@@ -1,23 +1,24 @@
--- | PPL contains three statements:
+-- | This PPL contains two statements:
 --
--- sample :: Address -> Dist -> PPL Double
--- - sample takes an address (which is a string), a distribution object and returns a float
+--     sample :: Address -> Dist -> PPL [Double]
 --
--- observe :: Address -> Dist -> Double -> PPL ()
--- - observe takes an address, dist, and observation and alters state
+-- Sample takes an address (which is a string), a distribution object and
+-- returns a float.
 --
--- end :: [Double] -> PPL [Double]
--- - end terminates the program and returns anything you'd like to return
-
+--     observe :: Address -> Dist -> [Double] -> PPL ()
+--
+-- Observe takes an address, dist, and observation and alters state.
+--
+-- We rely on haskell primitives (like "return" and numeric operations) for most
+-- other things.
+--
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 module Main where
 
 import Prelude hiding (putStrLn)
-import qualified Prelude
-import Control.Monad.Free
-import qualified System.Random.MWC.Probability as MWC
 import Control.Monad.State
+import qualified System.Random.MWC.Probability as MWC
 
 import Lib
 
@@ -27,10 +28,8 @@ type BlackBox = Double -> Double -> Double
 -- we can write a program, like on page 226, as follows:
 programOnPage226 :: [Double] -> BlackBox -> BlackBox -> Double -> PPL [Double]
 programOnPage226 y ηy ηv θ = do
-  z' <- sample "z" (Multinomial 1 [θ])
-  let z = head z'
-  v' <- sample "v" (Normal (ηy z θ) (ηv z θ))
-  let v = head v'
+  z <- head <$> sample "z" (Multinomial 1 [θ])         -- we only care about the first sample here
+  v <- head <$> sample "v" (Normal (ηy z θ) (ηv z θ))  -- ...and here
   observe "y" (Normal (ηy v θ) 1) y
   return [z, v]
 

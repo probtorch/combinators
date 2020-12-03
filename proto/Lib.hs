@@ -13,11 +13,8 @@ import Prelude hiding (lookup)
 import Control.Lens
 import Control.Monad.Free
 import Control.Monad.State
-import Data.Functor.Classes
-import Data.List (intercalate)
 import Text.Show.Deriving
 import Data.HashMap.Strict
-import Data.Maybe
 import Control.Monad.ST
 import System.Random.MWC.Probability hiding (sample)
 import qualified Data.HashMap.Strict as HM
