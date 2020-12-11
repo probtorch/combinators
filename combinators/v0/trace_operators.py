@@ -90,10 +90,14 @@ def extend(stochastic_gen, name, trace, value=None, cond_trace=None, cond_map=No
     4) With conditional trace, with value
     trace={'x': val_x,}; cond_map:'x'->'x_in'; k: val_x->val_y, x|->y, cond_trace={'x': val_x', 'y': val_y',}, val_y
         ==> ERROR: Unclear with val_y or val_y' should be used
+
+
     5) With conditional trace, with value
     trace={'x': val_x,}; cond_map:'x'->'x_in'; k: val_x->val_y, x|->y, cond_trace={'x': val_x', 'y': val_y',}, val_y
         ==> trace={'x': val_x, 'y': val_y',}
         Always prefer value over cond_trace!!! This is new behaviour see old behaviour below.
+
+
     5 - old behaviour) With conditional trace, with value
     trace={'x': val_x,}; cond_map:'x'->'x_in'; k: val_x->val_y, x|->y, cond_trace={'x': val_x', 'y': val_y',}, val_y
         ==> ERROR: Unclear with val_y or val_y' should be used

@@ -7,6 +7,7 @@ in
 host_pkgs.mkShell {
   buildInputs = [
     mypython
+    host_pkgs.mypy
   ];
   shellHook = host_pkgs.lib.optionalString (use_jupyter && start_jupyter) ''
     jupyter lab --notebook-dir=$PWD

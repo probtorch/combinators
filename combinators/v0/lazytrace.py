@@ -45,6 +45,9 @@ class LazyTrace(Expr):
     def __repr__(self):
         return self.__repr__()
 
+    def __or__(self, other):
+        return self
+
     def __and__(self, keys):
         """ find the subset of variables from a given collection of keys """
         return dict([(k, v) for k, v in self._trace.items() if k not in keys])

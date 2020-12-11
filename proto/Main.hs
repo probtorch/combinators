@@ -33,6 +33,31 @@ programOnPage226 y ηy ηv θ = do
   observe "y" (Normal (ηy v θ) 1) y
   return [z, v]
 
+type Prior = ()
+type Out = ()
+
+data InferenceF s a
+  = Target Prior
+  -- ^ A target can always be normalized and always has a prior distribution
+  | Kernel (Out -> Out)
+  -- ^ A kernel extends a target program. It can always evaluate the density (of
+  --   the program?)  in a fully-deterministic way (if there are missing values,
+  --   you sample from the program's prior).
+  --
+  --   they do _not_ compute likelihood weights or any other side effects --
+  --   they will only check if a variable is in the trace. If it is, it will
+  --   compute a log-prob and check to make sure there aren't any extra things
+  --   in the trace. If not, then it will return 0 probability for all values.
+  --
+  --   important to note that this is not conditioned evaluation. It will use
+  --   what it can and throw awaay the rest.
+  --
+  --   kernels sample from the prior, but when you eval there are slightly
+  --   different rules.
+  | GetMemberClubs String (Maybe [String] -> a)
+  | GetInput (String -> a)
+  | Display String a -- util function
+  deriving (Functor)
 
 main :: IO ()
 main = do

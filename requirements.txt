@@ -7,4 +7,5 @@ hydra-core
 
 pytest
 pytest-mock
+mypy
 hypothesis
