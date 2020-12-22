@@ -5,12 +5,15 @@ let
     overlays = [
       (_: _: { inherit sources; })
       (_: super: {
-        mach-nix = import sources.mach-nix {
+        mach-nix = import (builtins.fetchGit {
+          url = "https://github.com/DavHau/mach-nix/";
+          ref = "refs/tags/3.1.1";
+        }) {
           pkgs = super;
           python = "python38";
           # optionally update pypi data revision from https://github.com/DavHau/pypi-deps-db
-          pypiDataRev = "f3122fc";
-          pypiDataSha256 = "1rzj1v9868gk6p1q73bxybbxvx0k53cprw0hj2z16jlpqjcqy9gz";
+          pypiDataRev = "4a14f99";  # 12-22-2020
+          pypiDataSha256 = "1a3a8r2wrd2rh6yznkjjvcx7cxbx070kwxnpycpjbrvn2i96d4i3";
         };
       })
     ];
@@ -34,6 +37,9 @@ mach-nix.mkPython {
     # allow wheels only for torch
     jupyterlab-server = "wheel";
     torch = "wheel";
+    hydra-core = "wheel";
+    torchvision = "wheel";
+    Sphinx = "wheel";
     json5 = "wheel";
   };
 }

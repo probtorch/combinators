@@ -1,11 +1,36 @@
-torch == 1.6.0
+torch==1.7.1
 probtorch
-numpy
+numpy # don't forget mkl
 typeguard
+hydra-core==1.0.4
+hydra_colorlog
+tqdm
 
-hydra-core
-
+# testing
 pytest
 pytest-mock
 mypy
 hypothesis
+typeguard
+mypy
+
+# docs
+Sphinx
+
+# maybe optional
+pandas
+scipy
+
+# dataset dependencies
+torchvision
+scikit-image
+scikit-learn
+
+# debugging
+ipdb
+tensorboard
+
+# visualization / notebooks
+jupyter
+matplotlib
+seaborn
