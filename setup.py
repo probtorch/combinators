@@ -62,7 +62,6 @@ except FileNotFoundError:
     long_description = DESCRIPTION
 
 
-
 # Load the package's __version__.py module as a dictionary.
 about = {}
 if not VERSION:
@@ -74,10 +73,13 @@ else:
 
 
 def long_description():
+    """
+    Import the README and use it as the long-description.
+    Note: this will only work if 'README.md' is present in your MANIFEST.in file!
+    """
     here = os.path.abspath(os.path.dirname(__file__))
 
-    # Import the README and use it as the long-description.
-    # Note: this will only work if 'README.md' is present in your MANIFEST.in file!
+
     with io.open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
         return '\n' + f.read()
 
@@ -141,7 +143,6 @@ class PyTest(TestCommand):
         sys.exit(errno)
 
 
-
 # Where the magic happens:
 setup(
     name=NAME,
@@ -159,14 +160,11 @@ setup(
     tests_require=['pytest'],
     include_package_data=True,
     license='MIT',
-
     # entry_points={
     #     'console_scripts': ['mycli=mymodule:cli'],
     # },
     install_requires=REQUIRED,
     extras_require=EXTRAS,
-    include_package_data=True,
-    license='MIT',
     classifiers=[
         # Trove classifiers
         # Full list: https://pypi.python.org/pypi?%3Aaction=list_classifiers
