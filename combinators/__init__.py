@@ -73,6 +73,7 @@ class Program(ABC):  # TODO: (nn.Module):
         return AProgram()
 
 
+# FIXME: currently not used, but currying the annotations might be nice
 def curry(func):
     """ taken from: https://www.python-course.eu/currying_in_python.php """
     curry.__curried_func_name__ = func.__name__
@@ -100,6 +101,7 @@ def model(name:str = ""):
             PROGRAM_REGISTRY[model_key] = instance
         return PROGRAM_REGISTRY[model_key]
     return wrapper
+
 
 class Kernel:
     def __init__(self):
