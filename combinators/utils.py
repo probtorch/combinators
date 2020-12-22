@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-#
 import torch
 from probtorch import Trace
 from typing import Callable, Any, Tuple, Optional, Set
@@ -65,3 +64,21 @@ def copytrace(tr: Trace, subset: Optional[Set[str]]):
         if subset is None or key in subset:
             out[key] = node.detach().copy()
     return out
+
+
+# FIXME: currently not used, but currying the annotations might be nice
+def curry(func):
+    """ taken from: https://www.python-course.eu/currying_in_python.php """
+    curry.__curried_func_name__ = func.__name__
+    f_args, f_kwargs = [], {}
+    def f(*args, **kwargs):
+        nonlocal f_args, f_kwargs
+        if args or kwargs:
+            f_args += args
+            f_kwargs.update(kwargs)
+            return f
+        else:
+            result = func(*f_args, *f_kwargs)
+            f_args, f_kwargs = [], {}
+            return result
+    return f
