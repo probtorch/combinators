@@ -1,0 +1,81 @@
+#+TITLE: Notes
+
+#+begin_example python
+@combinator(data='x')
+def p(g, x):
+    z = sample(Normal(0, 1))
+    a = sample(Normal(z, 1))
+    observe(Normal(g(z), 1), x)
+    return x, z
+
+
+def combinator(fn, data=None):
+    initializer = partial(P.__init__, runnable_thing=fn)
+    return initializer # .__call__
+
+def q(e, f, x):
+    m, s = e(x)
+    b = sample(Normal(m, s))
+    u = sample(Normal(b, 1))
+    factor(f(u, x))
+    return u, x
+
+def f(k, u, x):
+    m, s = k(u, x)
+    z = sample(Normal(m, s))
+    return z
+
+def r(k, x, z):
+    m, s = k(z, x)
+    u = sample(Normal(m, s))
+    return u
+
+propose(reverse(p, r), forward(q, f))(g, e, k, x)  # -> 'data'
+#+end_example
+
+
+OO-style:
+#+begin_example python
+
+class P(nn.ProbTorchModule):
+    def __init__(self):
+        self.g = ...
+    def forward(self, x):
+        z = self.sample("z", Normal(0, 1))
+        a = self.sample("a", Normal(z, 1))
+        self.observe("x", Normal(g(z), 1), x)
+        return x, z
+
+class Q:
+    ...
+
+class F:
+    ...
+
+class K:
+    ...
+
+#+end_example
+
+#+begin_example
+propose(reverse(P(), R()), forward(Q(), F()))(x, 4, dict(s=10))  # -> 'data'
+                |                  |     \
+                |           _______:_____ `,
+                |           u, b = Q()(x)  |
+                |                    ______:______
+            ____:________            z = F()(u, x)
+            x, z = P()(x)
+
+forward(x):
+  u, b = Q()(x)
+  z    = F()(u, x)
+  return ?
+
+reverse(x):
+  x', z = P()(x)
+  u     = R()(x', z)
+  return x'
+
+propose:
+  reverse(x)
+#+end_example
