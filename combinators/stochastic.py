@@ -217,10 +217,12 @@ class Trace(MutableMapping):
                 dname = type(node).__name__
             if isinstance(node, Factor):
                 dtype = node.log_prob.type()
-                dsize = 'x'.join([str(d) for d in node.log_prob.size()])
+                is_scalar = len(node.log_prob.size()) == 0
+                dsize = "1" if is_scalar else 'x'.join([str(d) for d in node.log_prob.size()])
             else:
                 dtype = node.value.type()
-                dsize = 'x'.join([str(d) for d in node.value.size()])
+                is_scalar = len(node.value.size()) == 0
+                dsize = "1" if is_scalar else 'x'.join([str(d) for d in node.value.size()])
             val_repr = "[%s of size %s]" % (dtype, dsize)
             node_repr = "%s(%s)" % (dname, val_repr)
             item_reprs.append("%s: %s" % (repr(n), node_repr))
