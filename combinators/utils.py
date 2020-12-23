@@ -18,6 +18,7 @@ def is_valid_subtype(_subtr: Trace, _super: Trace)->bool:
         except:  # FIXME better capture
             return False
 
+    # FIXME: add better error message about dimension checks
     return len(super_keys - subtr_keys) == 0 and all([check(key) for key in super_keys])
 
 

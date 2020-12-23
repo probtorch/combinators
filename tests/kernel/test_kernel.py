@@ -1,13 +1,13 @@
 """ kernel introduction forms """
 import torch
+import torch.nn as nn
 from pytest import mark, raises
 from torch import Tensor
 from torch.distributions import Normal
 import hypothesis.strategies as st
 from hypothesis import given
 
-from combinators import Program, Kernel, Propose, Forward
-from combinators.stochastic import equiv, Trace
+from combinators import Program, Kernel, Forward, Reverse, Trace
 
 
 def test_kernel_creation():
@@ -34,78 +34,63 @@ def test_kernel_creation():
         cond_trace.normal(loc=-1, scale=3, name='q')
         tr, out = kernel(cond_trace, (1, 2))
 
-@mark.skip()
+
+class Simple(Program):
+    in_dim, out_dim = 8, 2
+    def __init__(self):
+        super().__init__()
+        self.g = nn.Sequential(
+            nn.Linear(Simple.in_dim, Simple.in_dim // 2),
+            nn.ReLU(),
+            nn.Linear(Simple.in_dim // 2, Simple.out_dim),
+        )
+
+    def model(self, trace, x:Tensor):
+        loc1 = torch.zeros([Simple.in_dim])
+        scale1, scale2 = torch.ones([Simple.in_dim]), torch.ones([Simple.out_dim])
+
+        z = trace.normal(loc=loc1, scale=scale1, name="z")
+        x_fixed = trace.normal(loc=self.g(z), scale=scale2, value=x, name="x")
+        assert x_fixed is x
+        return (x, z)
+
+class Kernel(Kernel):
+    def __init__(self):
+        super().__init__()
+
+    def apply_kernel(self, trace, cond_trace, obs):
+        mkten = lambda size, scale: torch.ones([size]) * scale
+
+        x, z = obs
+        z_k = trace.normal(loc=mkten(Simple.in_dim,  20), scale=mkten(Simple.in_dim, 1), name="z")
+        x_k = trace.normal(loc=mkten(Simple.out_dim, -20), scale=mkten(Simple.out_dim, 1), name="x")
+        return (x / x_k, z / z_k)
+
+
 def test_forward():
-    class P(Program):
-        def __init__(self):
-            super().__init__()
+    program = Simple()
+    prg_inp = torch.ones([program.out_dim])
 
-        def sample(self, trace, y:int, z:int):
-            x = trace.normal(loc=0, scale=1, name="x")
-            return (x, y)
+    kernel = Kernel()
+    p_tr, p_out = program(prg_inp)
+    k_tr, k_out = kernel(p_tr, p_out)
+    # TODO: add some checks here
 
-    class K(Kernel):
-        def __init__(self):
-            super().__init__()
+    forward = Forward(kernel, program)
+    f_tr, f_out = forward(prg_inp)
 
-        def apply(self, trace, cond_trace, obs):
-            x, y = obs
-            z = trace.normal(loc=0, scale=1, name="z")
-            return x + z
+    assert all(map(lambda ab: torch.allclose(ab[0], ab[1], atol=2.5), zip(f_out, k_out)))
 
-    run_program_followed_by_kernel = Forward(K(),P())  # implicitly runs program? at least for now to get moving...
+def test_reverse():
+    program = Simple()
+    prg_inp = torch.ones([program.out_dim])
 
-    run_kernel = run_program_followed_by_kernel(1, 2)
+    kernel = Kernel()
+    p_tr, p_out = program(prg_inp)
+    k_tr, k_out = kernel(p_tr, p_out)
+    # TODO: add some checks here
 
-    # run_program_followed_by_kernel.program_outputs
+    reverse = Reverse(program, kernel)
+    r_tr = reverse(prg_inp)
 
-    k_tr, x = run_kernel()
-
-    assert isinstance(x, Tensor)
-    assert isinstance(k_tr, Trace)
-
-    assert 'y' in k_tr
-    assert 'x' in program.trace
-
-    log_probs = program.log_probs()
-    assert 'x' in log_probs.keys() and isinstance(log_probs['x'], Tensor)
-    eval_log_probs = program.log_probs(dict(x=torch.ones_like(log_probs['x']) / log_probs['x']))
-    assert 'x' in eval_log_probs.keys() and not torch.allclose(log_probs['x'], eval_log_probs['x'])
-
-@mark.skip()
-def test_forward():
-    class P(Program):
-        def __init__(self):
-            super().__init__()
-
-        def sample(self, trace, y:int, z:int):
-            x = trace.normal(loc=0, scale=1, name="x")
-            return (x, y)
-
-    class K(Kernel):
-        def __init__(self):
-            super().__init__()
-
-        def apply(self, trace, cond_trace, obs):
-            x, y = obs
-            z = trace.normal(loc=0, scale=1, name="z")
-            return x + z
-
-    run_program_followed_by_kernel = Forward(K(),P())  # implicitly runs program? at least for now to get moving...
-
-    run_kernel = run_program_followed_by_kernel(1, 2)
-
-    # run_program_followed_by_kernel.program_outputs
-
-    k_tr, x = run_kernel()
-
-    assert isinstance(x, Tensor)
-    assert isinstance(k_tr, Trace)
-
-    assert 'y' in k_tr
-    assert 'x' in program.trace
-
-    log_probs = program.log_probs()
-    assert 'x' in log_probs.keys() and isinstance(log_probs['x'], Tensor)
-    eval_log_probs = program.log_probs(dict(x=torch.ones_like(log_probs['x']) / log_probs['x']))
-    assert 'x' in eval_log_probs.keys() and not torch.allclose(log_probs['x'], eval_log_probs['x'])
+    # TODO: better tests

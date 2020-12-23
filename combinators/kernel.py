@@ -45,19 +45,23 @@ class Kernel(Traceable, nn.Module):
         return trace, out
 
 
+@typechecked
 class Reverse(nn.Module):
-    def __init__(self, proposal: Program, kernel: Kernel):
+    """ FIXME: Reverse and Forward seem wrong """
+    def __init__(self, proposal: Program, kernel: Kernel) -> None:
         super().__init__()
         self.proposal = proposal
         self.kernel = kernel
 
-    def forward(self, *program_args:Any) -> Tuple[Trace, Output]:
+    def forward(self, *program_args:Any) -> Trace:
         tr, out = self.proposal(*program_args)
-        return self.kernel(tr, out)
+        ktr, _ = self.kernel(tr, out)
+        return ktr
 
-
+@typechecked
 class Forward(nn.Module):
-    def __init__(self, kernel: Kernel, target: Program):
+    """ FIXME: Reverse and Forward seem wrong """
+    def __init__(self, kernel: Kernel, target: Program) -> None:
         super().__init__()
         self.target = target
         self.kernel = kernel

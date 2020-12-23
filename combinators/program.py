@@ -48,12 +48,20 @@ class Program(Traceable, nn.Module):
         )
         return AProgram()
 
+
 class Propose(nn.Module):
     def __init__(self, target: Program, proposal: Program):
         super().__init__()
         self.target = target
         self.proposal = proposal
 
+    def forward(self, *target_args):
+        target_trace, _ = self.target(*target_args)
+
+        def run_proposal(*proposal_args):
+            return self.propsal(*proposal_args, trace=target_trace)
+
+        return run_proposal
 
 PROGRAM_REGISTRY = dict()
 
