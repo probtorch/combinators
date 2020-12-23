@@ -1,0 +1,3 @@
+[submodule "probtorch"]
+	path = probtorch
+	url = git@github.com:probtorch/probtorch.git
