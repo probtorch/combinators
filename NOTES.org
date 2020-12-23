@@ -79,3 +79,15 @@ reverse(x):
 propose:
   reverse(x)
 #+end_example
+
+# 1d gaussian
+#  - pi_1 1d gaus mean 0
+#  - pi_2 1d gaus mean 1   <<< at one step no need for detaches in the NVI step (only if you don't compute normalizing constants)
+#  - pi_3 1d gaus mean 2
+#  - pi_4 1d gaus mean 3
+#
+# NVI stuff -- target and proposal always fixed
+#           -- detaches happen in between (don't forget)
+#
+# 1-step NVI (VAE)
+# 3-step NVI (NVI-sequential): 4 intermediate densities

@@ -176,6 +176,7 @@ class Trace(MutableMapping):
         self._counters = {}
         self._mask = None
         self.idempotent = idempotent
+        self.lazy_observations = dict()
 
     def __getitem__(self, name):
         return self._nodes.get(name, None)
@@ -273,18 +274,28 @@ class Trace(MutableMapping):
         """Creates a new Loss node"""
         self[name] = Loss(objective, value, target, mask=self._mask)
 
+    def enqueue_observation(self, name:str, value):
+        if name in self.lazy_observations:
+            raise RuntimeError("observation for {} already defined as: {}".format(name, self.lazy_observations[name]))
+        else:
+            self.lazy_observations[name] = value
+
     def variable(self, Dist, *args, **kwargs):
         """Creates a new RandomVariable node"""
         name = kwargs.pop('name', None)
         value = kwargs.pop('value', None)
         provenance = kwargs.pop('provenance', None)
         dist = Dist(*args, **kwargs)
-
         if self.idempotent and name in self._nodes.keys() and equiv(dist, self[name].dist):
             value = self[name].value
             provenance = Provenance.REUSED
         elif value is None:
-            if dist.has_rsample:
+            if name in self.lazy_observations:
+                if not (provenance in [Provenance.OBSERVED, None]):
+                    raise RuntimeError(f"cannot apply enqueued observation when sampled with provenance {provenance}")
+                provenance = Provenance.OBSERVED
+                value = self.lazy_observations[name]
+            elif dist.has_rsample:
                 value = dist.rsample()
             else:
                 value = dist.sample()

@@ -3,13 +3,13 @@
 import torch
 import torch.nn as nn
 from pytest import mark
-from probtorch import Trace
 from torch import Tensor
 import hypothesis.strategies as st
 from hypothesis import given
+from torch.distributions import Normal
 
 from combinators import Program
-from combinators.stochastic import equiv
+from combinators.stochastic import equiv, Trace
 
 
 def test_simple_program_creation():
@@ -32,17 +32,6 @@ def test_simple_program_creation():
     eval_log_probs = program.log_probs(dict(x=torch.ones_like(log_probs['x']) / log_probs['x']))
     assert 'x' in eval_log_probs.keys() and not torch.allclose(log_probs['x'], eval_log_probs['x'])
 
-# 1d gaussian
-#  - pi_1 1d gaus mean 0
-#  - pi_2 1d gaus mean 1   <<< at one step no need for detaches in the NVI step (only if you don't compute normalizing constants)
-#  - pi_3 1d gaus mean 2
-#  - pi_4 1d gaus mean 3
-#
-# NVI stuff -- target and proposal always fixed
-#           -- detaches happen in between (don't forget)
-#
-# 1-step NVI (VAE)
-# 3-step NVI (NVI-sequential): 4 intermediate densities
 def test_slightly_more_complex_program_creation():
     class P(Program):
         def __init__(self):
@@ -75,55 +64,70 @@ def test_slightly_more_complex_program_creation():
     assert tr2['x'].value == torch.tensor(2)
     assert not equiv(tr['x'].dist, tr2['x'].dist)
 
+def test_nn_program_creation():
+    class P(Program):
+        def __init__(self):
+            super().__init__()
+            self.in_dim, self.out_dim = 20, 2
+
+            self.g = nn.Sequential(
+                nn.Linear(self.in_dim,5),
+                nn.ReLU(),
+                nn.Linear(5, self.out_dim),
+                nn.ReLU()
+            )
+
+        def model(self, trace, x:Tensor):
+            z = trace.normal(loc=torch.zeros([self.in_dim]), scale=torch.ones([self.in_dim]), name="z")
+            _ = trace.normal(loc=z, scale=torch.ones([self.in_dim]), name="a")
+            trace.normal(loc=self.g(z), scale=torch.ones([self.out_dim]), value=x, name="x")
+            return (x, z)
+
+    program = P()
+    tr, (x, z) = program(torch.ones([2]))
+
+    assert isinstance(x, Tensor)
+    assert isinstance(z, Tensor)
+    assert isinstance(tr, Trace)
+    log_probs = program.log_probs()
+    assert set(['x', 'a', 'z']) == program.variables \
+        and all([isinstance(log_probs[k], Tensor) for k in program.variables])
+
+    eval_log_probs = program.log_probs(tr)
+
+    for k in program.variables:
+       assert torch.allclose(log_probs[k], eval_log_probs[k])
 
 
-
-@mark.skip("need to do some inspection here or rethink how to define a model")
 def test_generative_program_creation():
     class P(Program):
         def __init__(self):
             super().__init__()
             self.g = lambda x: x
 
-        def sample(self, trace):
-            z = self.trace.normal(loc=0, scale=1, name="z")
-            _ = self.trace.normal(loc=z, scale=1, name="a")
-            x = self.trace.normal(loc=self.g(z), scale=1, name="x")
-            return trace, (x, z)
+        def model(self, trace):
+            z = trace.normal(loc=0, scale=1, name="z")
+            _ = trace.normal(loc=z, scale=1, name="a")
+            x = trace.normal(loc=self.g(z), scale=1, name="observed")
+            return (x, z)
 
     program = P()
     # FIXME: at this point there is nothing on the trace. Alternatively, we could define a `self.model` because here we
     # can only run a sample once -- otherwise we are trying to add new things to a trace a second time
-    program.observe("x", torch.ones([1]))
-    x, z = program()
+    ones = torch.ones([1])
+    program.observe("observed", ones)
+    tr, (x, z) = program()
 
-    assert torch.allclose(x, x)
+    assert torch.allclose(x, ones)
     assert isinstance(z, torch.Tensor)
-    assert program.trace['x'].log_probs is not None
-    assert program.trace['z'].log_probs is not None
-
-@mark.skip("this is currently broken. Probably need to define a 'model' instead of 'sample' or do different abstraction")
-def test_show_counterexample():
-    class P(Program):
-        def __init__(self):
-            super().__init__()
-            self.g = lambda x: x
-
-        def sample(self, trace):
-            z = self.trace.normal(loc=0, scale=1, name="z")
-            _ = self.trace.normal(loc=z, scale=1, name="a")
-            x = self.trace.normal(loc=self.g(z), scale=1, name="x")
-            return trace, (x, z)
-
-    program = P()
-    # FIXME: at this point there is nothing on the trace. Alternatively, we could define a `self.model` because here we
-    # can only run a sample once -- otherwise we are trying to add new things to a trace a second time
-    x, z = program()
-    x, z = program()
+    log_probs = program.log_probs()
+    assert 'observed' in log_probs
+    observed_loc = program._trace['observed'].dist.loc
+    assert (log_probs['observed'] == Normal(loc=observed_loc, scale=1).log_prob(ones)).item()
 
 
-@mark.skip()
-def test_sub_program_creation_option_1():
+
+def test_sub_program():
     """
     A couple of ways this can be done but for now here is a naive version
     NOTE: could also do `program.observe("sub.x", torch.ones([1]))`
@@ -132,75 +136,21 @@ def test_sub_program_creation_option_1():
         def __init__(self):
             super().__init__()
 
-        def sample(self, trace):
-            x = self.trace.normal(0, 1, name="x")
+        def model(self, trace, sub_arg:int):
+            x = trace.normal(sub_arg, 1, name="x")
             return x
 
     class P(Program):
         def __init__(self):
+            super().__init__()
             self.sub = Sub()
 
-        def sample(self, trace):
-            return self.sub()
+        def model(self, trace, sub_arg:int, prg_arg:float):
+            tr, x = self.sub(sub_arg)
+            return x * prg_arg
 
-    program = P()
-    program.sub.observe("x", torch.ones([1]))
-    x = program()
+    affine = P()
+    mean, scale = 5, 1.3
+    tr, x = affine(mean, scale)
 
-    assert torch.allclose(x, torch.ones([1]))
-
-@mark.skip()
-def test_sub_program_creation_option_2():
-    """
-    A couple of ways this can be done but for now here is a naive version
-    NOTE: could also do `program.observe("sub.x", torch.ones([1]))`
-    """
-    class Subber(Program):
-        def __init__(self):
-            super().__init__()
-
-    class Sub(Program):
-        def __init__(self):
-            super().__init__()
-            self.subber = Subber()
-
-        def sample(self, trace):
-            x = self.trace.normal(0, 1, name="x")
-            return x
-
-
-    class P(Program):
-        def __init__(self):
-            self.sub = Sub()
-
-        def sample(self, trace):
-            return self.sub()
-
-    # propose = Propose(P(), Q())
-    #
-    # propose().trace = {
-    #     'x': ...
-    #
-    #     'q.x': ...
-    #     'p.x': ...
-    #
-    #     'q.y': ...  # could 'assume that same variable exists in p'
-    #     # w = \frac{p(x) } / {q(x)}
-    #     # w = \frac{p(x) } / {q(x)q(y)}
-    #     # w = \frac{p(x) q(y)} / {q(x)q(y)} <== "assume q(y) in p so that it cancels in the weights"
-    #     # w = intersection(q.keys(), p.keys())
-    #     # tr = union(q.keys(), p.keys())
-    #
-    #     'p.z': ...
-    # }
-
-    propose = Propose(P(), Q())
-    # tr, output = propose(*p_args)(*q_args)
-    tr, (p_outputs, q_outs) = propose(*p_args)(*q_args)
-
-
-
-    program.observe("sub.x", torch.ones([1]))
-    x = program()
-
-    assert torch.allclose(x, torch.ones([1]))
+    assert torch.allclose(x, torch.ones([1]) * mean * scale, rtol=2.5)

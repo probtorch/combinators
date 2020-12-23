@@ -1,8 +1,8 @@
 """ type aliases """
 
 from torch import Tensor
-from probtorch import Trace, Factor
 from typing import Any, Tuple, Optional, Dict, List, Union, Set, Callable
+from combinators.stochastic import Trace, Factor
 
 State = Any
 Output = Union[Any, List[Any]]

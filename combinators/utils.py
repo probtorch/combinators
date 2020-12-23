@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import torch
-from probtorch import Trace
+from combinators.stochastic import Trace
 from typing import Callable, Any, Tuple, Optional, Set
 from copy import deepcopy
 from typeguard import typechecked
