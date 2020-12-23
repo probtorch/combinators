@@ -3,30 +3,36 @@ import torch
 from probtorch import Trace
 from typing import Callable, Any, Tuple, Optional, Set
 from copy import deepcopy
+from typeguard import typechecked
 
-def is_valid_subtype(_subtr: Trace, _super: Trace):
+@typechecked
+def is_valid_subtype(_subtr: Trace, _super: Trace)->bool:
     """ sub trace <: super trace """
     super_keys = frozenset(_super.keys())
     subtr_keys = frozenset(_subtr.keys())
 
-    def check(key):
+    @typechecked
+    def check(key:str)->bool:
         try:
-            return _subtr[key].shape == _super[key].shape
+            return _subtr[key].value.shape == _super[key].value.shape
         except:  # FIXME better capture
             return False
 
     return len(super_keys - subtr_keys) == 0 and all([check(key) for key in super_keys])
 
 
-def assert_valid_subtrace(prog1, prog2):
-    assert is_valid_subtype(prog1.trace, prog2.trace), "{} is not a subtype of {}".format(prog1.trace, prog2.trace)
+@typechecked
+def assert_valid_subtrace(tr1:Trace, tr2:Trace) -> None:
+    assert is_valid_subtype(tr1, tr2), "{} is not a subtype of {}".format(tr1, tr2)
 
 
-def remains_pure(tr: Trace):
+@typechecked
+def remains_pure(tr: Trace) -> Callable[[Trace], bool]:
     """ TODO """
     cached = tr.detach().deepcopy()  # something like this to detach and copy all tensors
 
-    def check(tr: Trace):
+    @typechecked
+    def check(tr: Trace) -> None:
         if cached is not None:
             # ensure check that everything is the same
             del cached
@@ -59,10 +65,11 @@ def valeq(t1, t2, nodes=None, check_exist=True):
 
 
 def copytrace(tr: Trace, subset: Optional[Set[str]]):
+    # FIXME: need to verify that this does the expected thing
     out = Trace()
-    for key, node in tr:
+    for key, node in tr.items():
         if subset is None or key in subset:
-            out[key] = node.detach().copy()
+            out[key] = node
     return out
 
 

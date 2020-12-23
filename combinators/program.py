@@ -8,25 +8,26 @@ from typing import Any, Tuple, Optional, Dict, List, Union, Set, Callable
 from collections import ChainMap
 from typeguard import typechecked
 from abc import ABC, abstractmethod
+import inspect
+import ast
+import weakref
 
-from combinators.types import Samples, State, TraceLike
+from combinators.types import Output, State, TraceLike
 from combinators.utils import assert_valid_subtrace, copytrace
 
 
+
 @typechecked
-class Program(ABC):  # TODO: (nn.Module):
+class Program(ABC, nn.Module):
     """ superclass of a program? """
     def __init__(self):
-        self.trace = Trace()
+        super().__init__()
+        self.trace: Optional[Trace] = None
 
-
-    # FIXME: currently this can only be run once. Need to do some more metaprogramming...
+    # FIXME: currently this can only be run once. Need to do some metaprogramming...
     @abstractmethod
-    def sample(self, trace: Trace, *args:Any) -> Tuple[Trace, Samples]:
+    def model(self, trace: Trace, *args:Any) -> Output:
         raise NotImplementedError()
-
-    def _sample(self, trace: Optional[Trace], *args:Any) -> Tuple[Trace, Samples]:
-        return self.sample(self.trace if trace is None else trace, *args)
 
     def log_probs(self, values:Optional[TraceLike] = None) -> Dict[str, Tensor]:
         def eval_under(getter, k):
@@ -35,38 +36,46 @@ class Program(ABC):  # TODO: (nn.Module):
             return log_prob
 
         if values is None:
-            return {k: self.trace[k].log_prob for k in self.variables()}
+            return {k: self.trace[k].log_prob for k in self.variables}
 
         elif isinstance(values, dict):
-            return {k: eval_under(lambda vals, k: vals[k], k) for k in self.variables()}
+            return {k: eval_under(lambda vals, k: vals[k], k) for k in self.variables}
 
         elif isinstance(values, Trace):
-            return {k: eval_under(lambda vals, k: vals[k].value, k) for k in self.variables()}
+            return {k: eval_under(lambda vals, k: vals[k].value, k) for k in self.variables}
 
-    def __call__(self, *args:Any, trace: Optional[Trace] = None) -> Tuple[Trace, Samples]:
-        tr = self.trace if trace is None else trace
+    def forward(self, *args:Any, trace: Optional[Trace] = None) -> Tuple[Trace, Output]:
+        # Create a new trace every time you run the model forward. not sure if the argument trce is going to cause problems
+        self.trace = Trace() if trace is None else trace
+
         # trace_out, trace_out = self.log_probs(*args) if trace is None else trace
-        trace_out, out = self._sample(tr, *args)
+        out = self.model(self.trace, *args)
         # TODO: enforce purity?
-        return trace_out, out
+        return self.trace, out
 
-    def variables(self) -> Set[str]:
+    def sample(self, dist:Any, value:Tensor, name:Optional[str]=None) -> None:
+        self.trace.append(dist)
+
         return set(self.trace.keys())
 
-    # TODO: verify that this works
     def observe(self, key:str, value:Tensor) -> None:
-        assert key in self.variables(), "attempting to abserve a non-existant variable '{}'. Trace contains: {}".format(
-            key, ", ".join(self.variables())
+        assert key in self.variables, "attempting to abserve a non-existant variable '{}'. Trace contains: {}".format(
+            key, ", ".join(self.variables)
         )
         self.trace[key].value = value
 
         return set(self.trace.keys())
 
+    @property
+    def variables(self) -> Set[str]:
+        return set(self.trace.keys())
+
     @classmethod
     def factory(cls, fn, name:str = ""):
+        raise RuntimeError('this is broken, clean up OO work first')
+
         def generic_sample(self, *args, **kwargs):
             return fn(*args, **kwargs)
-
         AProgram = type(
             "AProgram<{}>".format(repr(fn)), (cls,), dict(sample=generic_sample)
         )
@@ -74,7 +83,9 @@ class Program(ABC):  # TODO: (nn.Module):
 
 PROGRAM_REGISTRY = dict()
 
+# FIXME: check in with annotations at a later point
 def model(name:str = ""):
+    raise RuntimeError('this is broken, clean up OO work first')
     def wrapper(fn):
         global PROGRAM_REGISTRY
         model_key = name + repr(fn)
