@@ -13,10 +13,9 @@ import weakref
 
 from combinators.stochastic import Trace, Factor
 from combinators.types import Output, State, TraceLike
-from combinators.utils import assert_valid_subtrace, copytrace
+import combinators.trace.utils as trace_utils
 
 from combinators.traceable import Traceable
-
 
 @typechecked
 class Program(Traceable, nn.Module):
@@ -50,23 +49,6 @@ class Program(Traceable, nn.Module):
         )
 
         return AProgram()
-
-
-class Propose(nn.Module):
-    def __init__(self, target: Program, proposal: Program):
-        super().__init__()
-        self.target = target
-        self.proposal = proposal
-
-    def forward(self, *target_args):
-        target_trace, _ = self.target(*target_args)
-
-        # FIXME: make sure pytorch post-forward hooks are run at the correct time.
-        # def run_proposal(*proposal_args):
-        #     return self.propsal(*proposal_args, trace=target_trace)
-        # return run_proposal
-        return self.propsal(*target_args, trace=target_trace)
-
 
 PROGRAM_REGISTRY = dict()
 

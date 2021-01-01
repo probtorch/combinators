@@ -19,6 +19,7 @@ class Program(Combinator):
 
     We will require that, for any program $f$ with inputs $x$, it is possible to point-wise evaluate an unnormalized
     density and compute the return value from the trace and the inputs
+
     """
 
     def __init__(self, trace: Trace):

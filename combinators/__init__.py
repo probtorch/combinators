@@ -2,7 +2,7 @@
 
 from combinators.stochastic import Trace, Factor
 from combinators.types import Output, State, TraceLike
-from combinators.program import Program, model, Propose
-from combinators.kernel import Kernel, Reverse, Forward
-
+from combinators.program import Program, model
+from combinators.kernel import Kernel
+from combinators.inference import Reverse, Forward, Propose
 # __all__ = [] # TODO: fill this out when things stabalize

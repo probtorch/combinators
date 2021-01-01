@@ -12,8 +12,7 @@ import weakref
 
 from combinators.stochastic import Trace, Factor
 from combinators.types import Output, State, TraceLike
-from combinators.utils import assert_valid_subtrace, copytrace
-
+import combinators.trace.utils as trace_utils
 
 
 @typechecked
