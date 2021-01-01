@@ -11,6 +11,7 @@ mypy
 hypothesis
 typeguard
 mypy
+sparklines
 
 # docs
 Sphinx
