@@ -1,14 +1,14 @@
 {
     "mach-nix": {
-        "branch": "3.0.2",
+        "branch": "master",
         "description": "Tool to create highly reproducible python environments",
         "homepage": "",
         "owner": "DavHau",
         "repo": "mach-nix",
-        "rev": "9aa62d0d03587a2fb0accae70e4c036df51b0e13",
-        "sha256": "0w6i3wx9jyn29nnp6lsdk5kwlffpnsr4c80jk10s3drqyarckl2f",
+        "rev": "c4ef8f4a01f8ca8df857f6318fecb6cdbee37d58",
+        "sha256": "0kwbs2b219qrpszzdm514dfcyl5x9f7w6rw2wbbxn5q2jffp2q71",
         "type": "tarball",
-        "url": "https://github.com/DavHau/mach-nix/archive/9aa62d0d03587a2fb0accae70e4c036df51b0e13.tar.gz",
+        "url": "https://github.com/DavHau/mach-nix/archive/c4ef8f4a01f8ca8df857f6318fecb6cdbee37d58.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
         "version": "3.1.0"
     },
@@ -25,15 +25,15 @@
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "nixpkgs": {
-        "branch": "release-20.03",
+        "branch": "release-20.09",
         "description": "Nix Packages collection",
         "homepage": "",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "df25e214c8e662d693ef89e45ce56bbf58d6c59e",
-        "sha256": "117ir2ysw310q87mndv6czph5qjbhvggmhawcvak6x507yf0dxin",
+        "rev": "b00b8f07ac2f76f0763c07ca66b206f761f36f0f",
+        "sha256": "0cb5419hsxgdyvhfl33wnmxby5f0dr5ff222blilk07zbrgqxgcm",
         "type": "tarball",
-        "url": "https://github.com/NixOS/nixpkgs/archive/df25e214c8e662d693ef89e45ce56bbf58d6c59e.tar.gz",
+        "url": "https://github.com/NixOS/nixpkgs/archive/b00b8f07ac2f76f0763c07ca66b206f761f36f0f.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }

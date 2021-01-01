@@ -34,6 +34,7 @@ class Program(Traceable, nn.Module):
 
         # trace_out, trace_out = self.log_probs(*args) if trace is None else trace
         out = self.model(trace, *args)
+
         # TODO: enforce purity?
         return trace, out
 
@@ -41,11 +42,13 @@ class Program(Traceable, nn.Module):
     def factory(cls, fn, name:str = ""):
         raise RuntimeError('this is broken, clean up OO work first')
 
-        def generic_sample(self, *args, **kwargs):
+        def generic_model(self, *args, **kwargs):
             return fn(*args, **kwargs)
+
         AProgram = type(
-            "AProgram<{}>".format(repr(fn)), (cls,), dict(sample=generic_sample)
+            "AProgram<{}>".format(repr(fn)), (cls,), dict(model=generic_model)
         )
+
         return AProgram()
 
 
@@ -58,10 +61,12 @@ class Propose(nn.Module):
     def forward(self, *target_args):
         target_trace, _ = self.target(*target_args)
 
-        def run_proposal(*proposal_args):
-            return self.propsal(*proposal_args, trace=target_trace)
+        # FIXME: make sure pytorch post-forward hooks are run at the correct time.
+        # def run_proposal(*proposal_args):
+        #     return self.propsal(*proposal_args, trace=target_trace)
+        # return run_proposal
+        return self.propsal(*target_args, trace=target_trace)
 
-        return run_proposal
 
 PROGRAM_REGISTRY = dict()
 

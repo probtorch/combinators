@@ -39,6 +39,7 @@ class Traceable(ABC):
         elif isinstance(values, Trace):
             return {k: eval_under(lambda vals, k: vals[k].value, k) for k in self.variables}
 
+    # really a probtorch trace is "state"
     def get_trace(self, evict=False) -> Trace:
         # FIXME: traces are super complicated now : (
         self._trace = Trace() if self._trace is None or evict else self._trace

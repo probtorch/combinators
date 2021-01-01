@@ -18,7 +18,6 @@ from combinators.program import Program, model
 from combinators.traceable import Traceable
 
 
-@typechecked
 class Kernel(Traceable, nn.Module):
     """ superclass of a program? """
     def __init__(self) -> None:
@@ -26,7 +25,7 @@ class Kernel(Traceable, nn.Module):
 
     # TODO: do we need *args? I am thinking no for the time being
     @abstractmethod
-    def apply_kernel(self, trace: Trace, cond_trace: Trace, outs:Output) -> Output:
+    def apply_kernel(self, trace: Trace, cond_trace: Trace, outs: Output) -> Output:
         raise NotImplementedError()
 
     def forward(self, cond_trace: Trace, outs: Output) -> Tuple[Trace, Output]:
@@ -38,9 +37,14 @@ class Kernel(Traceable, nn.Module):
 
         # assert that the trace computed the right thing for importance weights
         assert_valid_subtrace(cond_trace, trace)
+        # FIXME: momentary hack
+        for name in cond_trace.keys():
+            trace.append(cond_trace[name], name=f'{name}_in')
+
 
         # TODO: update the trace? is this important?
-        trace.update(copytrace(cond_trace, set(cond_trace.keys() - set(trace.keys()))))
+        # trace.update(copytrace(cond_trace, set(cond_trace.keys() - set(trace.keys()))))
+
 
         return trace, out
 

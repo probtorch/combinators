@@ -232,7 +232,7 @@ class Trace(MutableMapping):
         """Indexes entries by integer position."""
         return list(self._nodes.values())[pos]
 
-    def append(self, node):
+    def append(self, node, name=None):
         """Appends a node, storing it according to the name attribute. If the
         node does not have a name attribute, then a unique name is generated.
         """
@@ -240,16 +240,17 @@ class Trace(MutableMapping):
             raise TypeError("Argument node must be an instance of"
                             "probtorch.Stochastic")
         # construct a new node name
-        if isinstance(node, RandomVariable):
-            node_name = type(node.dist).__name__.lower()
-        else:
-            node_name = type(node).__name__.lower()
-        while True:
-            node_count = self._counters.get(node_name, 0)
-            name = '%s_%d' % (node_name, node_count)
-            self._counters[node_name] = node_count + 1
-            if name not in self._nodes:
-                break
+        if name is None:
+            if isinstance(node, RandomVariable):
+                node_name = type(node.dist).__name__.lower()
+            else:
+                node_name = type(node).__name__.lower()
+            while True:
+                node_count = self._counters.get(node_name, 0)
+                name = '%s_%d' % (node_name, node_count)
+                self._counters[node_name] = node_count + 1
+                if name not in self._nodes:
+                    break
         self._nodes[name] = node
 
     def extend(self, nodes):
