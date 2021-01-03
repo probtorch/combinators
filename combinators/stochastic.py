@@ -6,6 +6,7 @@ from enum import Enum
 import re
 import math
 
+import combinators.tensor.utils as tensor_utils
 __all__ = ["Stochastic", "Factor", "RandomVariable", "Trace"]
 
 
@@ -223,7 +224,7 @@ class Trace(MutableMapping):
                 dtype = node.value.type()
                 is_scalar = len(node.value.size()) == 0
                 dsize = "1" if is_scalar else 'x'.join([str(d) for d in node.value.size()])
-            val_repr = "[%s of size %s]" % (dtype, dsize)
+            val_repr = tensor_utils.show(node.log_prob if isinstance(node, Factor) else node.value) # "[%s of size %s]" % (dtype, dsize)
             node_repr = "%s(%s)" % (dname, val_repr)
             item_reprs.append("%s: %s" % (repr(n), node_repr))
         return "Trace{%s}" % ", ".join(item_reprs)

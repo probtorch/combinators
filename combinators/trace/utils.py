@@ -7,6 +7,7 @@ from copy import deepcopy
 from typeguard import typechecked
 from itertools import chain
 from typing import *
+import combinators.tensor.utils as tensor_utils
 
 @typechecked
 def is_valid_subtype(_subtr: Trace, _super: Trace)->bool:
@@ -41,15 +42,32 @@ def valeq(t1:Trace, t2:Trace, nodes:Optional[Dict[str, Any]]=None, check_exist:b
     """
     if nodes is None:
         nodes = set(t1._nodes.keys()).intersection(t2._nodes.keys())
+    # pretty sure this is all you need:
+    all_in = all(name in t1 and name in t2 for name in nodes)
+    all_eq = all(trace_eq(t1, t2, name) for name in nodes)
+    # this is the original code:
     for name in nodes:
         # TODO: check if check_exist handes everything correctly
         if t1[name] is not None and t2[name] is not None:
             if not torch.equal(t1[name].value, t2[name].value):
+                if not all_eq:
+                    raise Exception("Check logic!!!")
                 return False
                 # raise Exception("Values for same RV differs in traces")
         elif check_exist:
+            if not all_in:
+                raise Exception("Check logic!!!")
             raise Exception("RV does not exist in traces")
     return True
+
+
+@typechecked
+def show(tr:Trace, fix_width=False):
+    return "{" + "; ".join([f"'{k}'-➢{tensor_utils.show(v.value, fix_width=fix_width)}" for k, v in tr.items()]) + "}"
+
+@typechecked
+def trace_eq(t0:Trace, t1:Trace, name:str):
+    return name in t0 and name in t1 and torch.equal(t0[name].value, t1[name].value)
 
 @typechecked
 def log_importance_weight(proposal_trace:Trace, target_trace:Trace, batch_dim:int=1, sample_dims:int=0, check_exist:bool=True)->Tensor:
@@ -75,6 +93,18 @@ def copysubtrace(tr: Trace, subset: Optional[Set[str]]):
     return out
 
 @typechecked
-def copytraces(*traces: Trace)->Trace:
+def copytraces(*traces: Trace, detach:Set[str]=set())->Trace:
     # FIXME: need to verify that this does the expected thing
-    return Trace(chain(map(lambda tr: tr.items(), traces)))
+    newtr = Trace()
+    for tr in traces:
+        for k, rv in tr.items():
+            RVClass = type(rv)
+            newval = rv.value.detach() if k in detach else rv.value
+            newrv = RVClass(rv.dist, newval, provenance=rv.provenance, mask=rv.mask)
+            newtr.append(newrv, name=k)
+    return newtr
+
+@typechecked
+def copytrace(tr: Trace, **kwargs)->Trace:
+    # sugar
+    return copytraces(tr, **kwargs)
