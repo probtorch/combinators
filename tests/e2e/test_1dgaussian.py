@@ -81,15 +81,15 @@ class Gaussian1d(Program):
 
 @typechecked
 class SimpleKernel(Kernel):
-    def __init__(self, num_hidden, name, ix=None):
+    def __init__(self, num_hidden, ext_name):
         super().__init__()
         self.net = Net(dim_in=1, dim_hidden=num_hidden, dim_out=1)
-        self.name = name if ix is None else name + "_" + str(ix)
+        self.ext_name = ext_name
 
     def apply_kernel(self, trace, cond_trace, obs):
         mu, scale = self.net(obs.detach())
         # mu, sigma = out[0], out[1]
-        return trace.normal(loc=mu, scale=scale, name=self.name)
+        return trace.normal(loc=mu, scale=scale, name=self.ext_name)
 
     def xforward(self, base_trace, base_name, trace_name, cond_trace=None, detach_base=False):
         trace = Trace()
@@ -126,15 +126,13 @@ def scaffolding():
     torch.manual_seed(1)
     yield
 
-@mark.skip("passes")
 def test_program():
     g = Gaussian1d(loc=0, std=1, name="g", num_samples=4)
     g()
 
-@mark.skip("passes")
 def test_forward():
     g = Gaussian1d(loc=0, std=1, name="g", num_samples=4)
-    fwd = SimpleKernel(num_hidden=4, name="fwd")
+    fwd = SimpleKernel(num_hidden=4, ext_name="fwd")
 
     ext = Forward(fwd, g)
     ext()
@@ -142,10 +140,9 @@ def test_forward():
     for k in ext._cache.program.trace.keys():
         assert torch.equal(ext._cache.program.trace[k].value, ext._cache.kernel.trace[k].value)
 
-@mark.skip("passes")
 def test_reverse():
     g = Gaussian1d(loc=0, std=1, name="g", num_samples=4)
-    rev = SimpleKernel(num_hidden=4, name="rev")
+    rev = SimpleKernel(num_hidden=4, ext_name="rev")
 
     ext = Reverse(g, rev)
     ext()
@@ -153,12 +150,11 @@ def test_reverse():
     for k in ext._cache.program.trace.keys():
         assert torch.equal(ext._cache.program.trace[k].value, ext._cache.kernel.trace[k].value)
 
-@mark.skip("passes")
 def test_propose():
     q = Gaussian1d(loc=4, std=1, name="q", num_samples=4)
     p = Gaussian1d(loc=0, std=4, name="p", num_samples=4)
-    fwd = SimpleKernel(num_hidden=4, name="ext")
-    rev = SimpleKernel(num_hidden=4, name="ext")
+    fwd = SimpleKernel(num_hidden=4, ext_name="p")
+    rev = SimpleKernel(num_hidden=4, ext_name="q")
 
     q_ext = Forward(fwd, q)
     p_ext = Reverse(p, rev)
@@ -169,12 +165,11 @@ def test_propose():
     assert isinstance(log_weights, Tensor)
     assert isinstance(state, PCache) # just a placeholder for the time being
 
-@mark.skip("ideal API")
 def test_propose_backprop():
     q = Gaussian1d(loc=0, std=4, name="q", num_samples=4)
     p = Gaussian1d(loc=4, std=1, name="p", num_samples=4)
-    fwd = SimpleKernel(num_hidden=4, name="ext")
-    rev = SimpleKernel(num_hidden=4, name="ext")
+    fwd = SimpleKernel(num_hidden=4, ext_name="p")
+    rev = SimpleKernel(num_hidden=4, ext_name="q")
 
     torch.manual_seed(1)
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [fwd, rev]], lr=0.5)
@@ -185,6 +180,9 @@ def test_propose_backprop():
     extend = Propose(target=p_ext, proposal=q_ext)
 
     state, log_weights = extend()
+    assert not state.proposal.trace['q'].value.requires_grad
+    assert not state.proposal.trace['ext'].value.requires_grad
+    assert state.proposal.trace['q'].value.requires_grad
     loss = nvo_avo(log_weights, sample_dims=0).mean()
     loss.backward()
 
@@ -193,31 +191,7 @@ def test_propose_backprop():
     after = fwd.net.joint[0].weight.detach()
     assert not torch.equal(aweight, after)
  
-def test_forward_reverse():
-    q = Gaussian1d(loc=0, std=4, name="q", num_samples=4)
-    p = Gaussian1d(loc=4, std=1, name="p", num_samples=4)
-    fwd = SimpleKernel(num_hidden=4, name="ext")
-    rev = SimpleKernel(num_hidden=4, name="ext")
 
-    torch.manual_seed(1)
-    optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [fwd, rev]], lr=0.5)
-
-    q_ext = Forward(fwd, q)
-    p_ext = Reverse(p, rev)
-    qtr, _ = q_ext()
-    ptr, _ = p_ext()
-
-    log_weights = Propose.log_weights(qtr, ptr)
-    loss = nvo_avo(log_weights, sample_dims=0).mean()
-    loss.backward()
-
-    aweight = fwd.net.joint[0].weight.detach()
-    optimizer.step()
-    after = fwd.net.joint[0].weight.detach()
-    assert not torch.equal(aweight, after)
-
-
-@mark.skip()
 def test_Gaussian_1step():
     """ The VAE test. At one step no need for any detaches. """
     Params = namedtuple("Params", ["mean", "std", "name"])

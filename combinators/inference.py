@@ -18,6 +18,30 @@ from combinators.program import Program
 from combinators.kernel import Kernel
 from combinators.traceable import Observable
 
+State = namedtuple("State", ['trace', 'output'])
+
+optional = lambda x, get: getattr(x, get) if x is not None else None
+
+@typechecked
+class KCache:
+    def __init__(self, program:Optional[State], kernel:Optional[State]):
+        self.program = program
+        self.kernel = kernel
+    def __repr__(self):
+
+        return "Kernel Cache:" + \
+            "\n  program: {}".format(optional(self.program, "trace")) + \
+            "\n  kernel:   {}".format(optional(self.kernel, "trace"))
+@typechecked
+class PCache:
+    def __init__(self, target:Optional[State], proposal:Optional[State]):
+        self.target = target
+        self.proposal = proposal
+    def __repr__(self):
+        return "Propose Cache:" + \
+            "\n  proposal: {}".format(optional(self.proposal, "trace")) + \
+            "\n  target:   {}".format(optional(self.target, "trace"))
+
 class Inf:
     pass
 
@@ -34,16 +58,6 @@ class KernelInf(nn.Module, Observable):
             print("program: {}".format(self._cache.program.trace))
             print("kernel : {}".format(self._cache.kernel.trace))
 
-KCache = namedtuple("KCache", ['program', 'kernel'])
-State = namedtuple("State", ['trace', 'output'])
-class PCache:
-    def __init__(self, target, proposal):
-        self.target = target
-        self.proposal = proposal
-    def __repr__(self):
-        return "PCache:" + \
-            "\n  proposal: {}".format(self.proposal.trace) + \
-            "\n  target:   {}".format(self.target.trace)
 
 @typechecked
 class Reverse(KernelInf, Inf):
@@ -52,7 +66,7 @@ class Reverse(KernelInf, Inf):
         self.program = program
         self.kernel = kernel
 
-    def forward(self, cond_trace:Trace, *program_args:Any) -> Tuple[Trace, Output]:
+    def new_forward(self, cond_trace:Trace, *program_args:Any) -> Tuple[Trace, Output]:
         self.program.update_conditions(self.observations)
         program_state = State(*self.program(*program_args))
         self.program.clear_conditions()
@@ -64,7 +78,7 @@ class Reverse(KernelInf, Inf):
         self._cache = KCache(program_state, kernel_state)
         return kernel_state.trace, None
 
-    def obs_forward(self, *program_args:Any) -> Tuple[Trace, Output]:
+    def forward(self, *program_args:Any) -> Tuple[Trace, Output]:
         self.program.update_conditions(self.observations)
         program_state = State(*self.program(*program_args))
         self.program.clear_conditions()
@@ -84,7 +98,7 @@ class Forward(KernelInf, Inf):
         self.program = program
         self.kernel = kernel
 
-    def forward(self, *program_args:Any) -> Tuple[Trace, Output]:
+    def new_forward(self, *program_args:Any) -> Tuple[Trace, Output]:
         program_state = State(*self.program(*program_args))
 
         self.kernel.update_conditions(self.observations)
@@ -93,7 +107,7 @@ class Forward(KernelInf, Inf):
         self._cache = KCache(program_state, kernel_state)
         return kernel_state.trace, kernel_state.output
 
-    def obs_forward(self, *program_args:Any) -> Tuple[Trace, Output]:
+    def forward(self, *program_args:Any) -> Tuple[Trace, Output]:
         program_state = State(*self.program(*program_args))
 
         self.kernel.update_conditions(self.observations)
