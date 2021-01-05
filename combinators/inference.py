@@ -78,22 +78,10 @@ class KernelInf(nn.Module, Observable):
 
 @typechecked
 class Reverse(KernelInf, Inf):
-    def __init__(self, program: Program, kernel: Kernel) -> None:
+    def __init__(self, program: Union[Program, KernelInf], kernel: Kernel) -> None:
         super().__init__()
         self.program = program
         self.kernel = kernel
-
-    def new_forward(self, cond_trace:Trace, *program_args:Any) -> Tuple[Trace, Output]:
-        self.program.update_conditions(self.observations)
-        program_state = State(*self.program(*program_args))
-        self.program.clear_conditions()
-
-        self.kernel.update_conditions(self.observations)
-        kernel_state = State(*self.kernel(*program_state, *program_args))
-        self.kernel.clear_conditions()
-
-        self._cache = KCache(program_state, kernel_state)
-        return kernel_state.trace, None
 
     def forward(self, *program_args:Any) -> Tuple[Trace, Output]:
         self.program.update_conditions(self.observations)
@@ -101,7 +89,7 @@ class Reverse(KernelInf, Inf):
         self.program.clear_conditions()
 
         self.kernel.update_conditions(self.observations)
-        kernel_state = State(*self.kernel(*program_state, *program_args))
+        kernel_state = State(*self.kernel(*program_state))
         self.kernel.clear_conditions()
 
         self._cache = KCache(program_state, kernel_state)
@@ -110,28 +98,19 @@ class Reverse(KernelInf, Inf):
 
 @typechecked
 class Forward(KernelInf, Inf):
-    def __init__(self, kernel: Kernel, program: Program) -> None:
+    def __init__(self, kernel: Kernel, program: Union[Program, KernelInf]) -> None:
         super().__init__()
         self.program = program
         self.kernel = kernel
 
-    def new_forward(self, *program_args:Any) -> Tuple[Trace, Output]:
-        program_state = State(*self.program(*program_args))
-
-        self.kernel.update_conditions(self.observations)
-        kernel_state = State(*self.kernel(*program_state, *program_args))
-        self.kernel.clear_conditions()
-        self._cache = KCache(program_state, kernel_state)
-        return kernel_state.trace, kernel_state.output
-
     def forward(self, *program_args:Any) -> Tuple[Trace, Output]:
         program_state = State(*self.program(*program_args))
-        # # stop gradients for nesting. FIXME: is this the correct location?
+        # stop gradients for nesting. FIXME: is this the correct location? if so, then traces conditioned on this fail to have a gradient
         # for k, v in program_state.trace.items():
         #     program_state.trace[k]._value = program_state.trace[k].value.detach()
 
         self.kernel.update_conditions(self.observations)
-        kernel_state = State(*self.kernel(*program_state, *program_args))
+        kernel_state = State(*self.kernel(*program_state))
         self.kernel.clear_conditions()
         self._cache = KCache(program_state, kernel_state)
         return kernel_state.trace, kernel_state.output
@@ -153,7 +132,13 @@ class Propose(nn.Module, Inf):
         self.target.condition_on(proposal_state.trace)
         target_state = State(*self.target(*args))
         self.target.clear_conditions()
-        proposal_state.trace['q']._value = proposal_state.trace['q'].value.detach()
+        if self.proposal._cache is not None:
+            # FIXME: this is a hack for the moment and should be removed somehow.
+            # NOTE: this is unnecessary for the e2e/test_1dgaussians.py, but I am a bit nervous about double-gradients
+            if isinstance(self.proposal._cache, PCache):
+                raise NotImplemented("If this is the case (which it can be) i will actually need a way to propogate these detachments in a smarter way")
+            for k, rv in self.proposal._cache.program.trace.items():
+                proposal_state.trace[k]._value = rv.value.detach()
 
         self._cache = PCache(target_state, proposal_state)
         return self._cache, Propose.log_weights(target_state.trace, proposal_state.trace, self.validate)

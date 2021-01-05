@@ -104,6 +104,15 @@ class Observable(ABC):
             for k, v in self.observations.items():
                 print("  {}: {}".format(key_template(k), tensor_utils.show(v)))
 
+
+def with_observations(observations:Dict[str, Tensor], runnable:Callable[[Trace], Output])->Output:
+    """ A better function that summarizes Observable """
+    # FIXME: replace the above with this
+    trace = Trace()
+    for key, value in observations.items():
+        trace.enqueue_observation(key, value)
+    return runnable(trace)
+
 class TraceModule(Observable, Traceable, nn.Module):
     def __init__(self):
         Observable.__init__(self)

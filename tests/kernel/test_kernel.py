@@ -1,7 +1,7 @@
 """ kernel introduction forms """
 import torch
 import torch.nn as nn
-from pytest import mark, raises
+from pytest import mark, raises, fixture
 from torch import Tensor
 from torch.distributions import Normal
 import hypothesis.strategies as st
@@ -9,30 +9,38 @@ from hypothesis import given
 
 from combinators import Program, Kernel, Forward, Reverse, Trace
 
+class K(Kernel):
+    def __init__(self):
+        super().__init__()
 
-def test_kernel_creation():
-    class K(Kernel):
-        def __init__(self):
-            super().__init__()
+    def apply_kernel(self, trace, cond_trace, obs):
+        x, y = obs
+        z = trace.normal(loc=0, scale=1, name="z")
+        return x + z
+@fixture
+def trivial_kernel():
+    yield K()
 
-        def apply_kernel(self, trace, cond_trace, obs):
-            x, y = obs
-            z = trace.normal(loc=0, scale=1, name="z")
-            return x + z
-
-    kernel = K()
+def test_trivial_condition(trivial_kernel):
+    # you can condition on a value
     cond_trace = Trace()
-    cond_trace.normal(loc=-1, scale=3, name='z')
-    tr, out = kernel(cond_trace, (1, 2))
+    # cond_trace.normal(loc=-1, scale=3, name='q')
+    tr, out = trivial_kernel(cond_trace, (1, 2))
 
-    with raises(Exception):
-        cond_trace = Trace()
-        tr, out = kernel(cond_trace, (1, 2))
+def test_condition(trivial_kernel):
+    # you can condition on a trace with some value
+    cond_trace = Trace()
+    zs = cond_trace.normal(loc=-1, scale=3, name='z')
 
-    with raises(Exception):
-        cond_trace = Trace()
-        cond_trace.normal(loc=-1, scale=3, name='q')
-        tr, out = kernel(cond_trace, (1, 2))
+    tr, out = trivial_kernel(cond_trace, (1, 2))
+    assert torch.equal(tr['z'].value, zs)
+
+def test_auxilary_condition(trivial_kernel):
+    # you can condition on a value
+    cond_trace = Trace()
+    zs = cond_trace.normal(loc=-1, scale=3, name='q')
+    tr, out = trivial_kernel(cond_trace, (1, 2))
+    assert not torch.equal(tr['z'].value, zs)
 
 
 class Simple(Program):
@@ -66,7 +74,6 @@ class Kernel(Kernel):
         x_k = trace.normal(loc=mkten(Simple.out_dim, -20), scale=mkten(Simple.out_dim, 1), name="x")
         return (x / x_k, z / z_k)
 
-
 def test_forward():
     program = Simple()
     prg_inp = torch.ones([program.out_dim])
@@ -74,12 +81,11 @@ def test_forward():
     kernel = Kernel()
     p_tr, p_out = program(prg_inp)
     k_tr, k_out = kernel(p_tr, p_out)
-    # TODO: add some checks here
 
     forward = Forward(kernel, program)
     f_tr, f_out = forward(prg_inp)
 
-    assert all(map(lambda ab: torch.allclose(ab[0], ab[1], atol=2.5), zip(f_out, k_out)))
+    assert all(map(lambda ab: torch.equal(ab[0], ab[1]), zip(f_out, k_out)))
 
 def test_reverse():
     program = Simple()

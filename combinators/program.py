@@ -28,14 +28,6 @@ class Program(TraceModule):
     def model(self, trace: Trace, *args:Any) -> Output:
         raise NotImplementedError()
 
-    def new_forward(self, *args:Any) -> Tuple[Trace, Output]:
-        # FIXME: Create a new trace every time you run the model forward. not sure if the argument trce is going to cause problems
-        trace = self.get_trace(evict=True)
-        out = self.model(trace, *args)
-
-        # TODO: enforce purity?
-        return trace, out
-
     def forward(self, *args:Any) -> Tuple[Trace, Output]:
         # FIXME: Create a new trace every time you run the model forward. not sure if the argument trce is going to cause problems
         trace = self._apply_observes(self.get_trace(evict=True))
@@ -47,10 +39,25 @@ class Program(TraceModule):
 
     @classmethod
     def factory(cls, fn, name:str = ""):
-        raise RuntimeError('this is broken, clean up OO work first')
-
         def generic_model(self, *args, **kwargs):
             return fn(*args, **kwargs)
+            # import ipdb; ipdb.set_trace();
+            #
+            # if not isinstance(out, (tuple, list)):
+            #     raise TypeError("ad-hoc models are expected to return a tuple or list with the input trace as the first return.")
+            # elif not isinstance(out[0], Trace):
+            #     # just being lazy here
+            #     raise TypeError("ad-hoc models are expected to return a tuple or list with the input trace as the first return.")
+            # elif len(out) == 1:
+            #     # okay not about to think about this part very hard...
+            #     return out[0], None
+            # elif len(out) == 2:
+            #     return out
+            # else:
+            #     # let users slide here, but this seems pretty painful
+            #     trace = out[0]
+            #     final = out[1:]
+            #     return trace, final
 
         AProgram = type(
             "AProgram<{}>".format(repr(fn)), (cls,), dict(model=generic_model)
@@ -70,9 +77,8 @@ class Program(TraceModule):
 
 PROGRAM_REGISTRY = dict()
 
-# FIXME: check in with annotations at a later point
+
 def model(name:str = ""):
-    raise RuntimeError('this is broken, clean up OO work first')
     def wrapper(fn):
         global PROGRAM_REGISTRY
         model_key = name + repr(fn)

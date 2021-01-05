@@ -12,8 +12,8 @@ from combinators import Program, Propose
 from combinators.stochastic import equiv, Trace
 
 
-@mark.skip()
-def test_propose():
+@mark.skip("for later")
+def test_nested_programs_in_propose():
     """
     A couple of ways this can be done but for now here is a naive version
     NOTE: could also do `program.observe("sub.x", torch.ones([1]))`
@@ -22,21 +22,33 @@ def test_propose():
         def __init__(self):
             super().__init__()
 
+        def model(self, trace):
+            x = self.trace.normal(4, 1, name="x")
+            return x
+
     class Sub(Program):
         def __init__(self):
             super().__init__()
             self.subber = Subber()
 
-        def sample(self, trace):
+        def model(self, trace):
             x = self.trace.normal(0, 1, name="x")
             return x
+
+    class Q(Program):
+        def __init__(self):
+            super().__init__()
+
+        def model(self, trace):
+            return None
 
 
     class P(Program):
         def __init__(self):
+            super().__init__()
             self.sub = Sub()
 
-        def sample(self, trace):
+        def model(self, trace):
             return self.sub()
 
     # propose = Propose(P(), Q())

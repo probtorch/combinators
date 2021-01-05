@@ -2,7 +2,7 @@
 
 import torch
 from pytest import mark
-from probtorch import Trace
+from combinators.stochastic import Trace
 from torch import Tensor
 import hypothesis.strategies as st
 from hypothesis import given
@@ -10,14 +10,14 @@ from hypothesis import given
 from combinators import model
 
 
-@mark.skip("figure out oo first")
 def test_simple_program_creation():
     @model()
     def program(trace):
         x = trace.normal(loc=0, scale=1, name="x")
-        return trace, x
+        return x
 
     tr, x = program()
+
     assert isinstance(x, Tensor)
     assert isinstance(tr, Trace)
     assert 'x' in tr
@@ -27,14 +27,13 @@ def test_simple_program_creation():
     assert 'x' in eval_log_probs.keys() and not torch.allclose(log_probs['x'], eval_log_probs['x'])
 
 
-@mark.skip("figure out oo first")
 def test_slightly_more_complex_program_creation():
     @model()
     def program(trace, g, x):
         z = trace.normal(loc=0, scale=1, name="z")
         _ = trace.normal(loc=z, scale=1, name="a")
         trace.normal(loc=g(z), scale=1, value=torch.tensor(x), name="x")
-        return trace, (x, z)
+        return x, z
 
     g = lambda x: x
     # FIXME: all of these should work eventually. Need to think of some ways to do fancy currying
@@ -48,10 +47,10 @@ def test_slightly_more_complex_program_creation():
     assert isinstance(z, Tensor)
     assert isinstance(tr, Trace)
     log_probs = program.log_probs()
-    assert set(['x', 'a', 'z']) == program.variables() \
-        and all([isinstance(log_probs[k], Tensor) for k in program.variables()])
+    assert set(['x', 'a', 'z']) == program.variables \
+        and all([isinstance(log_probs[k], Tensor) for k in program.variables])
 
     eval_log_probs = program.log_probs(tr)
 
-    for k in program.variables():
-       assert torch.allclose(log_probs[k], eval_log_probs[k])
+    for k in program.variables:
+       assert torch.equal(log_probs[k], eval_log_probs[k])
