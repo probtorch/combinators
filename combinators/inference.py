@@ -10,8 +10,10 @@ from abc import ABC, abstractmethod
 import inspect
 import ast
 import weakref
+from typing import Iterable
 
 import combinators.trace.utils as trace_utils
+import combinators.tensor.utils as tensor_utils
 from combinators.stochastic import Trace, Factor
 from combinators.types import Output, State, TraceLike
 from combinators.program import Program
@@ -23,15 +25,30 @@ State = namedtuple("State", ['trace', 'output'])
 optional = lambda x, get: getattr(x, get) if x is not None else None
 
 @typechecked
+class State(Iterable):
+    def __init__(self, trace:Optional[Trace], output:Optional[Output]):
+        self.trace = trace
+        self.output = output
+    def __repr__(self):
+        if self.trace is None:
+            return "None"
+        else:
+            out_str = tensor_utils.show(self.output) if isinstance(self.output, Tensor) else self.output
+            return "tr: {}; out: {}".format(trace_utils.show(self.trace), out_str)
+    def __iter__(self):
+        for x in [self.trace, self.output]:
+            yield x
+
+@typechecked
 class KCache:
     def __init__(self, program:Optional[State], kernel:Optional[State]):
         self.program = program
         self.kernel = kernel
     def __repr__(self):
-
         return "Kernel Cache:" + \
-            "\n  program: {}".format(optional(self.program, "trace")) + \
-            "\n  kernel:   {}".format(optional(self.kernel, "trace"))
+            "\n  program: {}".format(self.program) + \
+            "\n  kernel:  {}".format(self.kernel)
+
 @typechecked
 class PCache:
     def __init__(self, target:Optional[State], proposal:Optional[State]):
@@ -39,8 +56,8 @@ class PCache:
         self.proposal = proposal
     def __repr__(self):
         return "Propose Cache:" + \
-            "\n  proposal: {}".format(optional(self.proposal, "trace")) + \
-            "\n  target:   {}".format(optional(self.target, "trace"))
+            "\n  proposal: {}".format(self.proposal) + \
+            "\n  target:   {}".format(self.target)
 
 class Inf:
     pass
@@ -109,6 +126,9 @@ class Forward(KernelInf, Inf):
 
     def forward(self, *program_args:Any) -> Tuple[Trace, Output]:
         program_state = State(*self.program(*program_args))
+        # # stop gradients for nesting. FIXME: is this the correct location?
+        # for k, v in program_state.trace.items():
+        #     program_state.trace[k]._value = program_state.trace[k].value.detach()
 
         self.kernel.update_conditions(self.observations)
         kernel_state = State(*self.kernel(*program_state, *program_args))
@@ -133,6 +153,7 @@ class Propose(nn.Module, Inf):
         self.target.condition_on(proposal_state.trace)
         target_state = State(*self.target(*args))
         self.target.clear_conditions()
+        proposal_state.trace['q']._value = proposal_state.trace['q'].value.detach()
 
         self._cache = PCache(target_state, proposal_state)
         return self._cache, Propose.log_weights(target_state.trace, proposal_state.trace, self.validate)

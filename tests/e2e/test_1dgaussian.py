@@ -66,18 +66,7 @@ class Gaussian1d(Program):
             loc=self.expand_samples(torch.ones(self.size, requires_grad=True)*self.loc),
             scale=self.expand_samples(torch.ones(self.size)*self.std),
             # value=None if cond_trace is None else cond_trace[trace_name].value,
-            name="g")
-
-    def xforward(self, trace_name, cond_trace=None, num_samples=1):
-        trace = Trace()
-        out = trace.normal(
-            loc=self.expand_samples(torch.ones(self.size, requires_grad=True)*self.loc),
-            scale=self.expand_samples(torch.ones(self.size)*self.std),
-            value=None if cond_trace is None else cond_trace[trace_name].value,
-
-            name=trace_name)
-        return out, trace
-
+            name=self.name)
 
 @typechecked
 class SimpleKernel(Kernel):
@@ -88,29 +77,7 @@ class SimpleKernel(Kernel):
 
     def apply_kernel(self, trace, cond_trace, obs):
         mu, scale = self.net(obs.detach())
-        # mu, sigma = out[0], out[1]
         return trace.normal(loc=mu, scale=scale, name=self.ext_name)
-
-    def xforward(self, base_trace, base_name, trace_name, cond_trace=None, detach_base=False):
-        trace = Trace()
-
-        # INPUT TRACE
-        base_rv = base_trace[base_name]
-        new_val = base_rv.value.detach() if detach_base else base_rv.value
-        # new_val.requires_grad = not detach_base
-        copy_rv = RandomVariable(base_rv.dist, new_val, provenance=Provenance.OBSERVED) # ImproperRV in the general case (improper if improper, random if )
-        trace.append(copy_rv, name=base_name)
-
-        # Kernel code starts here
-        # EXTENDED ARGUMENTS HERE
-        mu, sig = self.net(copy_rv.value.detach())
-        value = None if cond_trace is None else cond_trace[trace_name].value.detach()
-        # import ipdb; ipdb.set_trace();
-
-        out = trace.normal(loc=mu, scale=sig, name=trace_name, value=value)
-        # ext_rv = RandomVariable(ext_dist, (ext_dist.sample() if cond_trace is None else cond_trace[trace_name].value), provenance=Provenance.SAMPLED)
-        # trace.append(ext_rv, name=trace_name)
-        return out, trace
 
 def nvo_avo(lv: Tensor, sample_dims=0) -> Tensor:
     values = -lv
@@ -155,34 +122,27 @@ def test_propose():
     p = Gaussian1d(loc=0, std=4, name="p", num_samples=4)
     fwd = SimpleKernel(num_hidden=4, ext_name="p")
     rev = SimpleKernel(num_hidden=4, ext_name="q")
+    optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [p, q, fwd, rev]], lr=0.5)
 
     q_ext = Forward(fwd, q)
     p_ext = Reverse(p, rev)
     extend = Propose(target=p_ext, proposal=q_ext)
 
-    state, log_weights = extend()
+    _, log_weights = extend()
 
     assert isinstance(log_weights, Tensor)
-    assert isinstance(state, PCache) # just a placeholder for the time being
 
-def test_propose_backprop():
-    q = Gaussian1d(loc=0, std=4, name="q", num_samples=4)
-    p = Gaussian1d(loc=4, std=1, name="p", num_samples=4)
-    fwd = SimpleKernel(num_hidden=4, ext_name="p")
-    rev = SimpleKernel(num_hidden=4, ext_name="q")
+    cache = extend._cache
+    # import ipdb; ipdb.set_trace();
 
-    torch.manual_seed(1)
-    optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [fwd, rev]], lr=0.5)
+    for k in ['p', 'q']:
+        assert torch.equal(cache.proposal.trace[k].value, cache.target.trace[k].value)
 
-    q_ext = Forward(fwd, q)
-    p_ext = Reverse(p, rev)
+    for k, prg in [('p', cache.target), ('q', cache.target), ('p', cache.proposal)]:
+        assert prg.trace[k].value.requires_grad
 
-    extend = Propose(target=p_ext, proposal=q_ext)
+    assert not cache.proposal.trace['q'].value.requires_grad
 
-    state, log_weights = extend()
-    assert not state.proposal.trace['q'].value.requires_grad
-    assert not state.proposal.trace['ext'].value.requires_grad
-    assert state.proposal.trace['q'].value.requires_grad
     loss = nvo_avo(log_weights, sample_dims=0).mean()
     loss.backward()
 
@@ -190,7 +150,8 @@ def test_propose_backprop():
     optimizer.step()
     after = fwd.net.joint[0].weight.detach()
     assert not torch.equal(aweight, after)
- 
+
+
 
 def test_Gaussian_1step():
     """ The VAE test. At one step no need for any detaches. """
@@ -198,9 +159,8 @@ def test_Gaussian_1step():
 
     target_params, proposal_params = all_params = [Params(4, 1, "p"), Params(1, 6, "q")]
     target,        proposal        = [Gaussian1d(loc=p.mean, std=p.std, name=p.name, num_samples=200) for p in all_params]
-    fwd, rev = [SimpleKernel(num_hidden=4, name=name) for name in ["ext", "ext"]]
+    fwd, rev = [SimpleKernel(num_hidden=4, ext_name=ext_name) for ext_name in ["p", "q"]]
 
-    torch.manual_seed(1)
     lr = 1e-2
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [proposal, target, fwd, rev]], lr=lr)
 
@@ -209,19 +169,8 @@ def test_Gaussian_1step():
 
     with trange(num_steps) as bar:
         for i in bar:
-            #=====================================
-            # q_prp_trace, _ = proposal()
-            # FIXME: for now this is acceptable, but long-term I think thereis a question of
-            # 1. inspecting arguments of the proposal and fwd_kernel then compacting the call
-            # 2. being able to pull out the trace of the proposal / kernel from forward?
-            #   - right now how do you compute logprobs? you need to do this under the trace only, but it would
-            #     be nice to just tuck `log_inc_weights` somewhere (maybe on Trace?).
             q_ext = Forward(fwd, proposal)
-            qtr, _ = q_ext()
             p_ext = Reverse(target, rev)
-            ptr, _ = p_ext()
-            import ipdb; ipdb.set_trace();
-
             extend = Propose(target=p_ext, proposal=q_ext)
 
             _, log_weights = extend()
@@ -233,6 +182,7 @@ def test_Gaussian_1step():
             optimizer.step()
             optimizer.zero_grad()
 
+            # REPORTING
             loss_ct += 1
             loss_scalar = loss.detach().cpu().mean().item()
             loss_sum += loss_scalar
