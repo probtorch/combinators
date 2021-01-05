@@ -4,76 +4,130 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from typing import Any, Tuple, Optional, Dict, List, Union, Set, Callable
-from collections import ChainMap
+from collections import ChainMap, namedtuple
 from typeguard import typechecked
 from abc import ABC, abstractmethod
 import inspect
 import ast
 import weakref
 
-import combinators.utils as trace_utils
+import combinators.trace.utils as trace_utils
 from combinators.stochastic import Trace, Factor
 from combinators.types import Output, State, TraceLike
 from combinators.program import Program
 from combinators.kernel import Kernel
+from combinators.traceable import Observable
 
 class Inf:
     pass
 
-class KernelInf:
-    pass
+class KernelInf(nn.Module, Observable):
+    def __init__(self):
+        nn.Module.__init__(self)
+        Observable.__init__(self)
+        self._cache = KCache(None, None)
+
+    def _show_traces(self):
+        if all(map(lambda x: x is None, self._cache)):
+            print("No traces found!")
+        else:
+            print("program: {}".format(self._cache.program.trace))
+            print("kernel : {}".format(self._cache.kernel.trace))
+
+KCache = namedtuple("KCache", ['program', 'kernel'])
+State = namedtuple("State", ['trace', 'output'])
+class PCache:
+    def __init__(self, target, proposal):
+        self.target = target
+        self.proposal = proposal
+    def __repr__(self):
+        return "PCache:" + \
+            "\n  proposal: {}".format(self.proposal.trace) + \
+            "\n  target:   {}".format(self.target.trace)
 
 @typechecked
-class Reverse(nn.Module, KernelInf, Inf):
-    """ FIXME: Reverse and Forward seem wrong """
-    def __init__(self, proposal: Program, kernel: Kernel) -> None:
+class Reverse(KernelInf, Inf):
+    def __init__(self, program: Program, kernel: Kernel) -> None:
         super().__init__()
-        self.proposal = proposal
+        self.program = program
         self.kernel = kernel
 
-    def forward(self, *program_args:Any) -> Trace:
-        tr, out = self.proposal(*program_args)
-        ktr, _ = self.kernel(tr, out)
-        return ktr
+    def forward(self, cond_trace:Trace, *program_args:Any) -> Tuple[Trace, Output]:
+        self.program.update_conditions(self.observations)
+        program_state = State(*self.program(*program_args))
+        self.program.clear_conditions()
+
+        self.kernel.update_conditions(self.observations)
+        kernel_state = State(*self.kernel(*program_state, *program_args))
+        self.kernel.clear_conditions()
+
+        self._cache = KCache(program_state, kernel_state)
+        return kernel_state.trace, None
+
+    def obs_forward(self, *program_args:Any) -> Tuple[Trace, Output]:
+        self.program.update_conditions(self.observations)
+        program_state = State(*self.program(*program_args))
+        self.program.clear_conditions()
+
+        self.kernel.update_conditions(self.observations)
+        kernel_state = State(*self.kernel(*program_state, *program_args))
+        self.kernel.clear_conditions()
+
+        self._cache = KCache(program_state, kernel_state)
+        return kernel_state.trace, None
+
 
 @typechecked
-class Forward(nn.Module, KernelInf, Inf):
-    """ FIXME: Reverse and Forward seem wrong """
-    def __init__(self, kernel: Kernel, target: Program) -> None:
+class Forward(KernelInf, Inf):
+    def __init__(self, kernel: Kernel, program: Program) -> None:
         super().__init__()
-        self.target = target
+        self.program = program
         self.kernel = kernel
 
     def forward(self, *program_args:Any) -> Tuple[Trace, Output]:
-        tr, out = self.target(*program_args)
-        return self.kernel(tr, out)
+        program_state = State(*self.program(*program_args))
+
+        self.kernel.update_conditions(self.observations)
+        kernel_state = State(*self.kernel(*program_state, *program_args))
+        self.kernel.clear_conditions()
+        self._cache = KCache(program_state, kernel_state)
+        return kernel_state.trace, kernel_state.output
+
+    def obs_forward(self, *program_args:Any) -> Tuple[Trace, Output]:
+        program_state = State(*self.program(*program_args))
+
+        self.kernel.update_conditions(self.observations)
+        kernel_state = State(*self.kernel(*program_state, *program_args))
+        self.kernel.clear_conditions()
+        self._cache = KCache(program_state, kernel_state)
+        return kernel_state.trace, kernel_state.output
+
 
 @typechecked
 class Propose(nn.Module, Inf):
-    def __init__(self, target: Union[Program, KernelInf], proposal: Union[Program, Inf], batch_dim=None):
+    def __init__(self, target: Union[Program, KernelInf], proposal: Union[Program, Inf], validate:bool=True):
         super().__init__()
         self.target = target
         self.proposal = proposal
-        self.batch_dim = batch_dim
+        self._cache = PCache(None, None)
+        self.validate = validate
 
-    def forward(self, *target_args):
-        target_trace, _ = self.target(*target_args)
+    def forward(self, *args):
+        # FIXME: target and proposal args can / should be separated
+        proposal_state = State(*self.proposal(*args))
 
-        # FIXME: make sure pytorch post-forward hooks are run at the correct time.
-        # def run_proposal(*proposal_args):
-        #     return self.propsal(*proposal_args, trace=target_trace)
-        # return run_proposal
-        return self.proposal(*target_args, cond_trace=target_trace)
+        self.target.condition_on(proposal_state.trace)
+        target_state = State(*self.target(*args))
+        self.target.clear_conditions()
 
+        self._cache = PCache(target_state, proposal_state)
+        return self._cache, Propose.log_weights(target_state.trace, proposal_state.trace, self.validate)
 
-    @property
-    def log_weights(self):
-        target_trace = self.target.get_trace()
-        proposal_trace = self.proposal.get_trace()
-        return proposal_trace.log_joint(batch_dim=self.batch_dim) - target_trace.log_joint(batch_dim=self.batch_dim)
+    @classmethod
+    def log_weights(cls, target_trace, proposal_trace, validate=True):
+        if validate:
+            assert trace_utils.valeq(proposal_trace, target_trace, nodes=target_trace._nodes, check_exist=True)
 
-    @property
-    def trace(self):
-        ttr = self.target.get_trace()
-        ptr = self.proposal.get_trace()
-        return Trace(list(d1.items()) + list(d2.items()))
+        return target_trace.log_joint(batch_dim=None, sample_dims=0, nodes=target_trace._nodes) - \
+            proposal_trace.log_joint(batch_dim=None, sample_dims=0, nodes=target_trace._nodes)
+

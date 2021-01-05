@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import torch
 from torch import Tensor
-from combinators.stochastic import Trace
+from combinators.stochastic import Trace, Provenance, RandomVariable
 from typing import Callable, Any, Tuple, Optional, Set
 from copy import deepcopy
 from typeguard import typechecked
@@ -51,11 +51,13 @@ def valeq(t1:Trace, t2:Trace, nodes:Optional[Dict[str, Any]]=None, check_exist:b
         if t1[name] is not None and t2[name] is not None:
             if not torch.equal(t1[name].value, t2[name].value):
                 if not all_eq:
+                    import ipdb; ipdb.set_trace();
                     raise Exception("Check logic!!!")
                 return False
                 # raise Exception("Values for same RV differs in traces")
         elif check_exist:
             if not all_in:
+                import ipdb; ipdb.set_trace();
                 raise Exception("Check logic!!!")
             raise Exception("RV does not exist in traces")
     return True
@@ -93,11 +95,19 @@ def copysubtrace(tr: Trace, subset: Optional[Set[str]]):
     return out
 
 @typechecked
-def copytraces(*traces: Trace, detach:Set[str]=set())->Trace:
-    # FIXME: need to verify that this does the expected thing
+def copytraces(*traces: Trace, detach:Set[str]=set(), overwrite=False)->Trace:
+    """
+    shallow-copies nodes from many traces into a new trace.
+    unless overwrite is set, there is a first-write presidence.
+    """
     newtr = Trace()
     for tr in traces:
         for k, rv in tr.items():
+            if k in newtr:
+                if overwrite:
+                    raise NotImplementedError("")
+                else:
+                    pass
             RVClass = type(rv)
             newval = rv.value.detach() if k in detach else rv.value
             newrv = RVClass(rv.dist, newval, provenance=rv.provenance, mask=rv.mask)
@@ -108,3 +118,17 @@ def copytraces(*traces: Trace, detach:Set[str]=set())->Trace:
 def copytrace(tr: Trace, **kwargs)->Trace:
     # sugar
     return copytraces(tr, **kwargs)
+
+def copyrv(tr: Trace, addr: str, requires_grad: bool=True, provenance: Provenance=Provenance.OBSERVED):
+    ''' ImproperRV in the general case (improper if improper, random if normalized) '''
+    RVClass = RandomVariable
+    rv = tr[addr]
+    if (requires_grad and not rv.value.requires_grad):
+       raise NotImplementedError()
+    elif (requires_grad and rv.value.requires_grad) or (not requires_grad and not rv.value.requires_grad):
+        value = rv.value
+    else: # (not requires_grad and rv.value.requires_grad):
+        value = rv.value.detach()
+
+    # new_val.requires_grad = not detach_base
+    return RVClass(rv.dist, value, provenance=provenance)

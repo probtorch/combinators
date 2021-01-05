@@ -10,14 +10,15 @@ from abc import ABC, abstractmethod
 import inspect
 import ast
 import weakref
+import combinators.trace.utils as trace_utils
 
 from combinators.stochastic import Trace, Factor
 from combinators.types import Output, State, TraceLike
 from combinators.program import Program, model
-from combinators.traceable import Traceable
+from combinators.traceable import TraceModule
 
 
-class Kernel(Traceable, nn.Module):
+class Kernel(TraceModule):
     """ superclass of a program? """
     def __init__(self) -> None:
         super().__init__()
@@ -29,19 +30,14 @@ class Kernel(Traceable, nn.Module):
 
     def forward(self, cond_trace: Trace, outs: Output) -> Tuple[Trace, Output]:
         # get a fresh trace
-        trace = self.get_trace(evict=True)
+        self.condition_on(cond_trace, overwrite=True)
+        trace = self._apply_observes(self.get_trace(evict=True))
 
         # apply the kernel
         out = self.apply_kernel(trace, cond_trace, outs)
+        self.clear_conditions()
 
-        # FIXME: momentary hack
-        for name in cond_trace.keys():
-            trace.append(cond_trace[name], name=f'{name}_in')
+        # grab anything that is missing from the cond_trace
+        full_trace = trace_utils.copytraces(cond_trace, trace)
 
-
-        # TODO: update the trace? is this important?
-        # trace.update(copytrace(cond_trace, set(cond_trace.keys() - set(trace.keys()))))
-
-
-        return trace, out
-
+        return full_trace, out

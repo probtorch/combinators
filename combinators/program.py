@@ -7,6 +7,7 @@ from typing import Any, Tuple, Optional, Dict, List, Union, Set, Callable
 from collections import ChainMap
 from typeguard import typechecked
 from abc import ABC, abstractmethod
+from copy import deepcopy
 import inspect
 import ast
 import weakref
@@ -15,10 +16,10 @@ from combinators.stochastic import Trace, Factor
 from combinators.types import Output, State, TraceLike
 import combinators.trace.utils as trace_utils
 
-from combinators.traceable import Traceable
+from combinators.traceable import TraceModule
 
 @typechecked
-class Program(Traceable, nn.Module):
+class Program(TraceModule):
     """ superclass of a program? """
     def __init__(self):
         super().__init__()
@@ -27,12 +28,19 @@ class Program(Traceable, nn.Module):
     def model(self, trace: Trace, *args:Any) -> Output:
         raise NotImplementedError()
 
-    def forward(self, *args:Any, trace: Optional[Trace] = None) -> Tuple[Trace, Output]:
+    def forward(self, *args:Any) -> Tuple[Trace, Output]:
         # FIXME: Create a new trace every time you run the model forward. not sure if the argument trce is going to cause problems
-        trace = self._apply_observes(self.get_trace(evict=True) if trace is None else trace)
-
-        # trace_out, trace_out = self.log_probs(*args) if trace is None else trace
+        trace = self.get_trace(evict=True)
         out = self.model(trace, *args)
+
+        # TODO: enforce purity?
+        return trace, out
+
+    def obs_forward(self, *args:Any) -> Tuple[Trace, Output]:
+        # FIXME: Create a new trace every time you run the model forward. not sure if the argument trce is going to cause problems
+        trace = self._apply_observes(self.get_trace(evict=True))
+        out = self.model(trace, *args)
+        self.clear_conditions()
 
         # TODO: enforce purity?
         return trace, out
@@ -41,6 +49,16 @@ class Program(Traceable, nn.Module):
     def factory(cls, fn, name:str = ""):
         raise RuntimeError('this is broken, clean up OO work first')
 
+        def generic_model(self, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        AProgram = type(
+            "AProgram<{}>".format(repr(fn)), (cls,), dict(model=generic_model)
+        )
+
+        return AProgram()
+
+    def copy(self):
         def generic_model(self, *args, **kwargs):
             return fn(*args, **kwargs)
 
