@@ -45,7 +45,7 @@ class Net(nn.Module):
         super().__init__()
         self.joint = nn.Sequential(nn.Linear(dim_in, dim_hidden), nn.ReLU())
         self.mu = nn.Sequential(nn.Linear(dim_hidden, dim_hidden), nn.ReLU(), nn.Linear(dim_hidden, dim_out))
-        self.sigma = nn.Sequential(nn.Linear(dim_hidden, dim_hidden), nn.ReLU(), nn.Linear(dim_hidden, dim_out))
+        # self.sigma = nn.Sequential(nn.Linear(dim_hidden, dim_hidden), nn.ReLU(), nn.Linear(dim_hidden, dim_out))
         self.dim_out = dim_out
 
     def forward(self, x):
@@ -63,12 +63,15 @@ class Gaussian1d(Program):
         self.size = torch.Size([1])
         self.expand_samples = lambda ten: ten.expand(num_samples, *ten.size())
 
-    def model(self, trace, cond_trace=None, num_samples=1):
+    def model(self, trace):
         return trace.normal(
             loc=self.expand_samples(torch.ones(self.size, requires_grad=True)*self.loc),
             scale=self.expand_samples(torch.ones(self.size)*self.std),
             # value=None if cond_trace is None else cond_trace[trace_name].value,
             name=self.name)
+
+    def __repr__(self):
+        return f"Gaussian1d(loc={self.loc}, scale={self.std})"
 
 @typechecked
 class SimpleKernel(Kernel):
@@ -199,9 +202,14 @@ def test_Gaussian_1step():
 
     with trange(num_steps) as bar:
         for i in bar:
-            q_ext = Forward(fwd, proposal)
+            # tr_q[q]   , out_q = proposal()
+            # tr_f[q, p], out_f = fwd(tr_q, out_q)  ==> tr_f[q] == tr_q[q]
+            q_ext = Forward(fwd, proposal) # <- this is a program
+            # tr_qext[q, p], out_qext = q_ext() => tr_qext[q, p] == tr_f[q, p]
+
             p_ext = Reverse(target, rev)
             extend = Propose(target=p_ext, proposal=q_ext)
+
             _, log_weights = extend()
 
             loss = nvo_avo(log_weights, sample_dims=0).mean()
@@ -241,18 +249,24 @@ def test_Gaussian_2step():
 
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses, *targets]], lr=1e-2)
 
-    num_steps = 100
+    num_steps = 1000
     loss_ct, loss_sum, loss_avgs, loss_all = 0, 0.0, [], []
 
     with trange(num_steps) as bar:
         for i in bar:
-            q_prev = targets[0]
+            q0 = targets[0]
+            q_prv_tr, _ = q0()
             losses = []
+
+            debug_states = []
             for fwd, rev, q, p in zip(forwards, reverses, targets[:-1], targets[1:]):
+                q.condition_on(q_prv_tr)
                 q_ext = Forward(fwd, q)
                 p_ext = Reverse(p, rev)
                 extend = Propose(target=p_ext, proposal=q_ext)
-                _, log_weights = extend()
+                state, log_weights = extend()
+                debug_states.append(state)
+                q_prv_tr = state.proposal.trace
                 losses.append(nvo_avo(log_weights, sample_dims=0).mean())
 
             loss = torch.vstack(losses).mean()
@@ -277,8 +291,11 @@ def test_Gaussian_2step():
                    loss_avgs.append(loss_avg)
     with torch.no_grad():
         report_sparkline(loss_avgs)
+
         predict_g2 = lambda: Forward(f12, g1)()[1]
         predict_g3 = lambda: Forward(f23, Forward(f12, g1))()[1]
+        import ipdb; ipdb.set_trace();
+
         tol = Tolerance(mean=0.15, std=0.15)
         eval_mean_std(predict_g2, Params(mean=2, std=1), tol)
         eval_mean_std(predict_g3, Params(mean=3, std=1), tol)
@@ -336,12 +353,23 @@ def test_Gaussian_4step():
                    loss_avgs.append(loss_avg)
     with torch.no_grad():
         report_sparkline(loss_avgs)
-        predict_g2 = lambda: Forward(f12, g1)()[1]
-        predict_g3 = lambda: Forward(f23, Forward(f12, g1))()[1]
-        predict_g4 = lambda: Forward(f34, Forward(f23, Forward(f12, g1)))()[1]
-        predict_g5 = lambda: Forward(f45, Forward(f34, Forward(f23, Forward(f12, g1))))()[1]
-
         tol = Tolerance(mean=0.15, std=0.15)
+
+        predict_g2_chain = lambda: Forward(f12, g1)()[1]
+        predict_g3_chain = lambda: Forward(f23, Forward(f12, g1))()[1]
+        predict_g4_chain = lambda: Forward(f34, Forward(f23, Forward(f12, g1)))()[1]
+        predict_g5_chain = lambda: Forward(f45, Forward(f34, Forward(f23, Forward(f12, g1))))()[1]
+
+        eval_mean_std(predict_g2_chain, Params(mean=2, std=1), tol)
+        eval_mean_std(predict_g3_chain, Params(mean=3, std=1), tol)
+        eval_mean_std(predict_g4_chain, Params(mean=4, std=1), tol)
+        eval_mean_std(predict_g5_chain, Params(mean=5, std=1), tol)
+
+        predict_g2 = lambda: Forward(f12, g1)()[1]
+        predict_g3 = lambda: Forward(f23, g2)()[1]
+        predict_g4 = lambda: Forward(f34, g3)()[1]
+        predict_g5 = lambda: Forward(f45, g4)()[1]
+
         eval_mean_std(predict_g2, Params(mean=2, std=1), tol)
         eval_mean_std(predict_g3, Params(mean=3, std=1), tol)
         eval_mean_std(predict_g4, Params(mean=4, std=1), tol)

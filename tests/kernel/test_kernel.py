@@ -13,18 +13,17 @@ class K(Kernel):
     def __init__(self):
         super().__init__()
 
-    def apply_kernel(self, trace, cond_trace, obs):
+    def apply_kernel(self, trace, cond_trace, cond_outputs):
         x, y = obs
         z = trace.normal(loc=0, scale=1, name="z")
         return x + z
+
 @fixture
 def trivial_kernel():
     yield K()
 
 def test_trivial_condition(trivial_kernel):
-    # you can condition on a value
     cond_trace = Trace()
-    # cond_trace.normal(loc=-1, scale=3, name='q')
     tr, out = trivial_kernel(cond_trace, (1, 2))
 
 def test_condition(trivial_kernel):

@@ -1,6 +1,6 @@
 # Combinators
-## old combinator semantics
 
+## old combinator semantics
 
 ```python
 class Reweight(Inference):
@@ -97,3 +97,7 @@ def move():
 if __name__ == '__main__':
     print('success!')
 ```
+
+## Nix and python
+
+Be sure to `cachix use combinators`.
