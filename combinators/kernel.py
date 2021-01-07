@@ -28,13 +28,13 @@ class Kernel(TraceModule):
     def apply_kernel(self, trace: Trace, cond_trace: Trace, outs: Output) -> Output:
         raise NotImplementedError()
 
-    def forward(self, cond_trace: Trace, outs: Output) -> Tuple[Trace, Output]:
+    def forward(self, cond_trace: Trace, cond_outs: Output) -> Tuple[Trace, Output]:
         # get a fresh trace
         self.condition_on(cond_trace, overwrite=True)
         trace = self._apply_observes(self.get_trace(evict=True))
 
         # apply the kernel
-        out = self.apply_kernel(trace, cond_trace, outs)
+        out = self.apply_kernel(trace, cond_trace, cond_outs)
         self.clear_conditions()
 
         # grab anything that is missing from the cond_trace
