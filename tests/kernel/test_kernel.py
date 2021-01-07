@@ -14,7 +14,7 @@ class K(Kernel):
         super().__init__()
 
     def apply_kernel(self, trace, cond_trace, cond_outputs):
-        x, y = obs
+        x, y = cond_outputs
         z = trace.normal(loc=0, scale=1, name="z")
         return x + z
 
