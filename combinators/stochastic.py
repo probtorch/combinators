@@ -37,33 +37,15 @@ class Stochastic(object):
     def mask(self):
         """Holds a mask for batch items"""
 
-
-class RandomVariable(Stochastic):
-    """Random variables wrap a PyTorch Variable to associate a distribution
-    and a log probability density or mass.
-
-    Parameters:
-        dist(:obj:`Distribution`): The distribution of the variable.
-        value(:obj:`Variable`): The value of the variable.
-        observed(bool): Indicates whether the value was sampled or observed.
-    """
-
-    def __init__(self, dist, value, provenance=Provenance.SAMPLED, mask=None,
-                 use_pmf=True):
-        self._dist = dist
-        self._value = value
-        if use_pmf and hasattr(dist, 'log_pmf'):
-            self._log_prob = dist.log_pmf(value)
-        else:
-            self._log_prob = dist.log_prob(value)
+class GenericRandomVariable(Stochastic):
+    """ Shared between ImproperRandomVariable and RandomVariable """
+    def __init__(self, value, log_prob, provenance=Provenance.SAMPLED, mask=None):
         assert isinstance(provenance, Provenance)
+        self._value = value
+        self._log_prob = log_prob
         self._provenance = provenance
         self._mask = mask
         self._reparameterized = dist.has_rsample
-
-    @property
-    def dist(self):
-        return self._dist
 
     @property
     def value(self):
@@ -88,6 +70,48 @@ class RandomVariable(Stochastic):
     @property
     def reparameterized(self):
         return self._reparameterized
+
+
+class ImproperRandomVariable(GenericRandomVariable):
+    """Improper random variables wrap a PyTorch Variable to associate a log density.
+
+    Parameters:
+        fn(:obj:`Distribution`): The density function of the variable.
+        value(:obj:`Variable`): The value of the variable.
+        observed(bool): Indicates whether the value was sampled or observed.
+    """
+
+    def __init__(self, fn, value, log_weight=None, # log_weight is unused?
+                 provenance=Provenance.SAMPLED, mask=None):
+        super().__init__(value=value, log_prob=fn(value), provenance=provenance, mask=mask)
+
+    def __repr__(self):
+        return "%s InproperRandomVariable containing: %s" % (type(self._dist).__name__,
+                                                             repr(self._value))
+
+class RandomVariable(GenericRandomVariable):
+    """Random variables wrap a PyTorch Variable to associate a distribution
+    and a log probability density or mass.
+
+    Parameters:
+        dist(:obj:`Distribution`): The distribution of the variable.
+        value(:obj:`Variable`): The value of the variable.
+        observed(bool): Indicates whether the value was sampled or observed.
+    """
+
+    def __init__(self, dist, value, provenance=Provenance.SAMPLED, mask=None, use_pmf=True):
+        self._dist = dist
+        log_prob = dist.log_pmf(value) if use_pmf and hasattr(dist, 'log_pmf') else dist.log_prob(value)
+
+        super().__init__(value=value, log_prob=log_prob, provenance=provenance, mask=mask)
+
+    def __repr__(self):
+        return "%s InproperRandomVariable containing: %s" % (type(self._dist).__name__,
+                                                             repr(self._value))
+
+    @property
+    def dist(self):
+        return self._dist
 
     def __repr__(self):
         return "%s RandomVariable containing: %s" % (type(self._dist).__name__,
