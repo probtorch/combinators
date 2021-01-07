@@ -45,7 +45,6 @@ class GenericRandomVariable(Stochastic):
         self._log_prob = log_prob
         self._provenance = provenance
         self._mask = mask
-        self._reparameterized = dist.has_rsample
 
     @property
     def value(self):
@@ -66,10 +65,6 @@ class GenericRandomVariable(Stochastic):
     @property
     def mask(self):
         return self._mask
-
-    @property
-    def reparameterized(self):
-        return self._reparameterized
 
 
 class ImproperRandomVariable(GenericRandomVariable):
@@ -102,16 +97,17 @@ class RandomVariable(GenericRandomVariable):
     def __init__(self, dist, value, provenance=Provenance.SAMPLED, mask=None, use_pmf=True):
         self._dist = dist
         log_prob = dist.log_pmf(value) if use_pmf and hasattr(dist, 'log_pmf') else dist.log_prob(value)
+        self._reparameterized = dist.has_rsample
 
         super().__init__(value=value, log_prob=log_prob, provenance=provenance, mask=mask)
-
-    def __repr__(self):
-        return "%s InproperRandomVariable containing: %s" % (type(self._dist).__name__,
-                                                             repr(self._value))
 
     @property
     def dist(self):
         return self._dist
+
+    @property
+    def reparameterized(self):
+        return self._reparameterized
 
     def __repr__(self):
         return "%s RandomVariable containing: %s" % (type(self._dist).__name__,
