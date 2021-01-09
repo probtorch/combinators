@@ -83,8 +83,17 @@ class Reverse(KernelInf, Inf):
         self.program = program
         self.kernel = kernel
 
-    def forward(self, *program_args:Any, **program_kwargs:Any) -> Tuple[Trace, Output]:
+    def forward(self, *program_args:Any, cond_trace:Optional[Trace]=None, **program_kwargs:Any) -> Tuple[Trace, Output]:
+        if cond_trace is not None:
+            if isinstance(self.program, Program):
+                self.program.with_observations(cond_trace)
+            else:
+                raise NotImplementedError("propation is not defined... handled in the greenfield-lazy branch")
+
         program_state = State(*self.program(*program_args, **program_kwargs))
+
+        if cond_trace is not None and isinstance(self.program, Program):
+            self.program.clear_observations()
 
         # # validate conditions are kept
         # _observed_keys, _program_keys = set(self.observations.keys()), set(program_state.trace.keys())
@@ -141,8 +150,10 @@ class Propose(nn.Module, Inf):
         proposal_state = State(*self.proposal(*shared_args, **shared_kwargs))
 
         # self.target.condition_on(proposal_state.trace)
-        target_state = State(*self.target(*shared_args, **shared_kwargs))
+        # target_state = State(*self.target(*shared_args, **shared_kwargs))
         # self.target.clear_conditions()
+        conditions = dict(cond_trace=proposal_state.trace) if isinstance(self.target, (Reverse, Kernel)) else dict()
+        target_state = State(*self.target(*shared_args, **shared_kwargs, **conditions))
 
         if self.proposal._cache is not None:
             # FIXME: this is a hack for the moment and should be removed somehow.

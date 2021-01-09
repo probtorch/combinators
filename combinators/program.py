@@ -37,7 +37,7 @@ class Program(TraceModule):
         return trace, out
 
     def with_observations(self, trace:Trace) -> None:
-        self._conditioning_trace = trace
+        self._conditioning_trace = trace_utils.copytrace(trace)
 
     def clear_observations(self) -> None:
         # NOTE: the user has to run this! it _should_ be automated
