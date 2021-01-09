@@ -28,10 +28,10 @@ class Program(TraceModule):
     def model(self, trace: Trace, *args:Any) -> Output:
         raise NotImplementedError()
 
-    def forward(self, *args:Any) -> Tuple[Trace, Output]:
+    def forward(self, *args:Any, **kwargs:Any) -> Tuple[Trace, Output]:
         # FIXME: Create a new trace every time you run the model forward. not sure if the argument trce is going to cause problems
         trace = self._apply_observes(self.get_trace(evict=True))
-        out = self.model(trace, *args)
+        out = self.model(trace, *args, **kwargs)
         self.clear_conditions()
 
         # TODO: enforce purity?

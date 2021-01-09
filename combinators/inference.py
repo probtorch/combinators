@@ -83,9 +83,9 @@ class Reverse(KernelInf, Inf):
         self.program = program
         self.kernel = kernel
 
-    def forward(self, *program_args:Any) -> Tuple[Trace, Output]:
+    def forward(self, *program_args:Any, **program_kwargs:Any) -> Tuple[Trace, Output]:
         self.program.update_conditions(self.observations)
-        program_state = State(*self.program(*program_args))
+        program_state = State(*self.program(*program_args, **program_kwargs))
         self.program.clear_conditions()
 
         self.kernel.update_conditions(self.observations)
@@ -103,8 +103,8 @@ class Forward(KernelInf, Inf):
         self.program = program
         self.kernel = kernel
 
-    def forward(self, *program_args:Any) -> Tuple[Trace, Output]:
-        program_state = State(*self.program(*program_args))
+    def forward(self, *program_args:Any, **program_kwargs) -> Tuple[Trace, Output]:
+        program_state = State(*self.program(*program_args, **program_kwargs))
         # stop gradients for nesting. FIXME: is this the correct location? if so, then traces conditioned on this fail to have a gradient
         # for k, v in program_state.trace.items():
         #     program_state.trace[k]._value = program_state.trace[k].value.detach()
@@ -125,13 +125,14 @@ class Propose(nn.Module, Inf):
         self._cache = PCache(None, None)
         self.validate = validate
 
-    def forward(self, *args):
+    def forward(self, *shared_args, **shared_kwargs):
         # FIXME: target and proposal args can / should be separated
-        proposal_state = State(*self.proposal(*args))
+        proposal_state = State(*self.proposal(*shared_args, **shared_kwargs))
 
         self.target.condition_on(proposal_state.trace)
-        target_state = State(*self.target(*args))
+        target_state = State(*self.target(*shared_args, **shared_kwargs))
         self.target.clear_conditions()
+
         if self.proposal._cache is not None:
             # FIXME: this is a hack for the moment and should be removed somehow.
             # NOTE: this is unnecessary for the e2e/test_1dgaussians.py, but I am a bit nervous about double-gradients
