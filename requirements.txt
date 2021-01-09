@@ -1,4 +1,4 @@
-torch==1.7.1
+torch>=1.7.1
 probtorch
 numpy # don't forget mkl
 typeguard
@@ -11,7 +11,7 @@ mypy
 hypothesis
 typeguard
 mypy
-sparklines
+# sparklines
 
 # docs
 Sphinx
@@ -30,10 +30,9 @@ ipdb
 tensorboard
 
 # visualization / notebooks
-jupyter
 matplotlib
 seaborn
 
 # currently having some trouble with mach-nix
-# hydra-core==1.0.4
-# hydra_colorlog
+hydra-core>=1.0.4
+hydra_colorlog

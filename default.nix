@@ -1,60 +1,115 @@
+{ use-nix-science ? true }:
 let
-  pynixifyOverlay = self: super: {
-    python3 = super.python3.override { inherit packageOverrides; };
-    python37 = super.python37.override { inherit packageOverrides; };
-    python38 = super.python38.override { inherit packageOverrides; };
-  };
-
-  packageOverrides = self: super: {
-    antlr4-python3-runtime =
-      self.callPackage ./nix/antlr4.nix { };
-
-    hydra-core = self.callPackage ./nix/hydra.nix { };
-
-    # omegaconf = self.callPackage ./packages/omegaconf { };
-
-  };
-
   sources = import ./nix/sources.nix;
-  pkgs = import sources.nixpkgs {
-    overlays = [
-      (_: _: { inherit sources; })
-      pynixifyOverlay
-      (self: super: {
-        mach-nix = import sources.mach-nix {
-          pkgs = self;
-          python = "python38";
-          # optionally update pypi data revision from https://github.com/DavHau/pypi-deps-db
-          pypiDataRev = "4a14f99";  # 12-22-2020
-          pypiDataSha256 = "1a3a8r2wrd2rh6yznkjjvcx7cxbx070kwxnpycpjbrvn2i96d4i3";
-        };
-      })
-    ];
+  mach-nix = import sources.mach-nix {
+    python = "python38";
+    # optionally update pypi data revision from https://github.com/DavHau/pypi-deps-db
+    pypiDataRev = "1d6a42de350651280e66c7a20b8166301515f2fd";  # 01-08-2020
+    pypiDataSha256 = "01yccf8z15m4mgf971bv670xx7l1p3i8khjz4c8662nrjirslm43";
   };
+  hydra-core = (mach-nix.buildPythonPackage {
+    src = sources.hydra;
+    requirements = builtins.readFile "${sources.hydra}/requirements/requirements.txt";
+    providers.antlr4-python3-runtime = "nixpkgs";
+  }).overrideAttrs (old:{
+    postPatch = ''
+      substituteInPlace build_helpers/build_helpers.py --replace "java" "${mach-nix.nixpkgs.jre}/bin/java"
+    '';
+  });
+  inherit (mach-nix.nixpkgs) lib;
 in
-
-pkgs.mach-nix.mkPython {
-  requirements = (builtins.readFile ./requirements.txt)
-   # + "\njupyterlab\njson5==0.9.5"
-   # + "\nhydra-core==1.0.4"
-  ;
+mach-nix.mkPython {
+  requirements = lib.strings.concatStringsSep "\n" [
+    (builtins.readFile ./requirements.txt)
+    "hydra-core"
+    "hydra_colorlog"
+    "jupyterlab"
+  ];
 
   packagesExtra = [
     ./probtorch # local branch starting from nvi-dev on probtorch
     # "https://github.com/probtorch/probtorch/tarball/1a9af26"
+    hydra-core
   ];
-  providers = {
+  providers = let fast = false; in {
     # disallow wheels by default
-    _default = "nixpkgs,sdist";
-    # allow wheels only for torch
-    torch = "wheel";
-    # jupyterlab = "wheel";
+    _default = "wheel,nixpkgs,sdist";
+  } // {
+    torch = "wheel"; # allow wheels only for torch
     torchvision = "wheel";
     Sphinx = "wheel";
-    json5 = "wheel";
-  };
-  # _.hydra-core.buildInputs.add = [ pkgs.jre ];
-  # _.hydra-core.patches.add = [
-  #   ''substituteInPlace build_helpers/build_helpers.py --replace "java" "${pkgs.jre}/bin/java"''
-  # ];
+    protobuf = "wheel"; # otherwise infinite recursion..
+    jupyterlab = "wheel";
+    anyio = "wheel";
+  } // {
+    antlr4-python3-runtime = "nixpkgs";
+    tornado = "nixpkgs";
+    tensorboard = "nixpkgs";
+    jinja2 = "nixpkgs";
+    six = "nixpkgs";
+    requests = "nixpkgs";
+    urllib3 = "nixpkgs";
+    pyzmq = "nixpkgs";
+    prometheus-client = "nixpkgs";
+    packaging = "nixpkgs";
+    pygments = "nixpkgs";
+    traitlets = "nixpkgs";
+    python-dateutil = "nixpkgs";
+    mypy = "nixpkgs";
+    typing-extensions ="nixpkgs";
+    mypy-extensions ="nixpkgs";
+    typed-ast ="nixpkgs";
+    pillow = "nixpkgs";
+    tqdm = "nixpkgs";
+    typeguard = "nixpkgs";
+
+    joblib = "nixpkgs";
+    threadpoolctl = "nixpkgs";
+
+    matplotlib = "wheel";
+      kiwisolver = "nixpkgs";
+      certifi = "nixpkgs";
+      cycler = "nixpkgs";
+      pyparsing = "nixpkgs";
+
+    pytz = "nixpkgs";
+    pytest-mock = "nixpkgs";
+    pytest = "nixpkgs";
+      iniconfig = "nixpkgs";
+      pluggy = "nixpkgs";
+      py = "nixpkgs";
+      attrs = "nixpkgs";
+      toml = "nixpkgs";
+
+  } // (lib.optionalAttrs (use-nix-science) {
+    numpy = "nixpkgs";
+    scipy = "nixpkgs";
+    scikit-learn = "nixpkgs";
+    scikit-image = "nixpkgs";
+    seaborn = "nixpkgs";
+    pandas = "nixpkgs";
+    matplotlib = "nixpkgs";
+
+#     tensorboard = "nixpkgs";
+#       pywavelets = "nixpkgs";
+#       tifffile = "nixpkgs";
+#       imageio = "nixpkgs";
+#       networkx = "nixpkgs";
+#       decorator = "nixpkgs";
+#       werkzeug = "nixpkgs";
+       six = "nixpkgs";
+#       requests = "nixpkgs";
+#       abs-py = "nixpkgs";
+#       markdown = "nixpkgs";
+#       google-auth = "nixpkgs";
+#       cachetools = "nixpkgs";
+#       rsa = "nixpkgs";
+#       pyasn1 = "nixpkgs";
+#       pyasn1-modules = "nixpkgs";
+#       setuptools = "nixpkgs";
+#       google-auth-oauthlib = "nixpkgs";
+#       requests-oauthlib = "nixpkgs";
+#       oauthlib = "nixpkgs";
+#       grpcio = "nixpkgs";
+  });
 }

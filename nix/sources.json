@@ -1,4 +1,16 @@
 {
+    "hydra": {
+        "branch": "master",
+        "description": "Hydra is a framework for elegantly configuring complex applications",
+        "homepage": "https://hydra.cc",
+        "owner": "facebookresearch",
+        "repo": "hydra",
+        "rev": "v1.0.5",
+        "sha256": "1xzq2hpsz4y73nljk4hfsasymphxagwxarcvdhj5y060d5wsdxji",
+        "type": "tarball",
+        "url": "https://github.com/facebookresearch/hydra/archive/v1.0.5.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
     "jupyterWith": {
         "branch": "master",
         "description": "declarative and reproducible Jupyter environments - powered by Nix",
@@ -46,6 +58,18 @@
         "sha256": "0cb5419hsxgdyvhfl33wnmxby5f0dr5ff222blilk07zbrgqxgcm",
         "type": "tarball",
         "url": "https://github.com/NixOS/nixpkgs/archive/b00b8f07ac2f76f0763c07ca66b206f761f36f0f.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "unstable": {
+        "branch": "nixpkgs-unstable",
+        "description": "Nix Packages collection",
+        "homepage": "",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "5000e5707bcd9010669e2ad7da8042dbf68f85c7",
+        "sha256": "0v0l69q1jmwpr7j056dvs94mljz8k045x5hz0ivq945b5qbjab5v",
+        "type": "tarball",
+        "url": "https://github.com/NixOS/nixpkgs/archive/5000e5707bcd9010669e2ad7da8042dbf68f85c7.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }
