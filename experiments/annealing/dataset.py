@@ -44,6 +44,45 @@ class GMM(Program):
         return log_probs[ixs]
 
 
+class Mixture(Density):
+    def __init__(self, name, dim, components, weights=None, normalize_weights=True, **kwargs):
+        super().__init__(name, dim, **kwargs)
+        self.components = components
+        self.K = len(self.components)
+        for idx, comp in enumerate(components):
+            assert comp.dim == dim
+            self.add_module('component_{}'.format(idx), comp)
+
+        if weights is None:
+            log_weights = torch.zeros(self.K)
+        elif weights.shape == (self.K,):
+            log_weights = weights.log()
+        else:
+            raise ValueError("log_weights shape must match the number of components")
+
+        self.normalize_weights = normalize_weights
+        if self.normalize_weights is True:
+            log_weights -= log_weights.sum()
+        self.log_weights = nn.Parameter(log_weights)
+
+    def parameter_map(self, cond_set, param_set):
+        if self.normalize_weights:
+            log_weights = self.log_weights - \
+                torch.logsumexp(self.log_weights, dim=0)
+        else:
+            log_weights = self.log_weights
+        return {'log_weights': log_weights, 'cond_set': cond_set, 'param_set': param_set}
+
+    def log_density_fn(self, value, log_weights, cond_set, param_set):
+        lds = []
+        for i, comp in enumerate(self.components):
+            ld_i = log_weights[i] + \
+                comp.get_log_density(cond_set, param_set)(value)
+            lds.append(ld_i)
+        lds = torch.stack(lds, dim=0)
+        ld = torch.logsumexp(lds, dim=0)
+        return ld
+
 class RingGMM(GMM):
     def __init__(self, name="RingGMM", scale=10, count=8):
         angles = list(range(0, 360, 360//count))[:count] # integer division may give +1
@@ -96,9 +135,11 @@ class MultivariateNormalKernel(Kernel):
             cov_embedding:CovarianceEmbedding=CovarianceEmbedding.SoftPlusDiagonal,
         ):
         super().__init__()
+        self.ext_name = ext_name
         self.dim_in = 2
-        self.cov_shape = cov.shape
+        self.cov_dim = cov.shape[0]
         self.cov_embedding = cov_embedding
+
         self.register_parameter(self.cov_embedding.embed_name, nn.Parameter(self.cov_embedding.embed(cov, embedding_dim)))
 
         self.net = ResMLPJ(dim_in=self.dim_in, dim_hidden=dim_hidden, dim_out=embedding_dim, with_cov_embedding=False)
@@ -106,5 +147,5 @@ class MultivariateNormalKernel(Kernel):
 
     def apply_kernel(self, trace, cond_trace, cond_output):
         mu, cov_emb = self.net(cond_output.detach())
-        cov = self.cov_embedding.unembed(getattr(self, self.cov_embedding.embed_name), self.cov_shape)
+        cov = self.cov_embedding.unembed(getattr(self, self.cov_embedding.embed_name), self.cov_dim)
         return trace.multivariate_normal(loc=mu, covariance_matrix=cov, name=self.ext_name)
