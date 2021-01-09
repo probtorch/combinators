@@ -29,7 +29,8 @@ class Density(Program):
 
     def model(self, trace, sample_shape=Size([1, 1])):
         generator = self.generator
-        value=generator(sample_shape=sample_shape)
+        # FIXME: ensure conditioning a program work like this is automated?
+        value=trace[self.name].value if self.name in trace else generator(sample_shape=sample_shape) # should be implicit ?
         assert len(value.shape) >= 2, "must have at least sample and output dims"
 
         rv = self.RandomVariable(fn=generator, value=value, provenance=Provenance.SAMPLED)
@@ -47,7 +48,9 @@ class Distribution(Program):
 
     def model(self, trace, sample_shape=torch.Size([1, 1])):
         dist = self.dist
-        value = dist.rsample(sample_shape) if dist.has_rsample else dist.sample(sample_shape)
+        # FIXME: ensure conditioning a program work like this is automated?
+        value = trace[self.name].value if self.name in trace else \
+            (dist.rsample(sample_shape) if dist.has_rsample else dist.sample(sample_shape))
         assert len(value.shape) >= 2, "must have at least sample and output dims"
 
         rv = self.RandomVariable(dist=dist, value=value, provenance=Provenance.SAMPLED)
