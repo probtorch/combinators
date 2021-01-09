@@ -12,6 +12,7 @@ import sparklines
 from typing import Optional
 
 import combinators.trace.utils as trace_utils
+from combinators.objectives import nvo_avo
 from combinators.tensor.utils import thash, show
 from combinators.inference import PCache # temporary
 from combinators.stochastic import RandomVariable, Provenance
@@ -87,13 +88,6 @@ class SimpleKernel(Kernel):
         mu, scale = self.net(obs.detach())
         return trace.normal(loc=mu, scale=scale, name=self.ext_name)
 
-def nvo_avo(lv: Tensor, sample_dims=0) -> Tensor:
-    values = -lv
-    log_weights = torch.zeros_like(lv)
-
-    nw = torch.nn.functional.softmax(log_weights, dim=sample_dims)
-    loss = (nw * values).sum(dim=(sample_dims,), keepdim=False)
-    return loss
 
 
 @fixture(autouse=True)
