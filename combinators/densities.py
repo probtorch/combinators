@@ -47,6 +47,25 @@ class Distribution(Program):
         trace.append(rv, name=self.name)
         return trace[self.name].value
 
+class Normal(Distribution):
+    def __init__(self, loc, scale, name, reparam=True):
+        as_tensor = lambda x: x if isinstance(x, Tensor) else torch.tensor(x, dtype=torch.float, requires_grad=reparam)
+
+        self.loc = as_tensor(loc)
+        self._loc = self.loc.cpu().item()
+        self.scale = as_tensor(scale)
+        self._scale = self.scale.cpu().item()
+
+        self._dist = distributions.Normal(loc=self.loc, scale=self.scale)
+        super().__init__(name, self._dist)
+
+    def __repr__(self):
+        return f"Normal(name={self.name}, loc={self._loc}, scale={self._scale})"
+
+    def dist(self, as_multivariate=False):
+        return self._dist if as_multivariate else \
+            distributions.MultivariateNormal(loc=self._dist.loc, covariance_matrix=torch.eye(1))
+
 class MultivariateNormal(Distribution):
     def __init__(self, loc, cov, name, reparam=True):
         self.loc = loc if isinstance(loc, Tensor) else torch.tensor(loc, dtype=torch.float, requires_grad=reparam)
