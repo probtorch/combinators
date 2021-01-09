@@ -44,6 +44,16 @@ def eval_mean_std(runnable, target_params:Params, tolerances:Tolerance, num_vali
         assert (target_params.std  - tolerances.std ) < eval_stdv and  eval_stdv < (target_params.std  + tolerances.std )
 
 
+class LinearNet(nn.Module):
+    def __init__(self, dim_in, dim_hidden, dim_out):
+        super().__init__()
+        self.mu = nn.Linear(dim_in, dim_out)
+        self.dim_out = dim_out
+
+    def forward(self, x):
+        mu = self.mu(x)
+        return mu, torch.ones([self.dim_out])
+
 class Net(nn.Module):
     def __init__(self, dim_in, dim_hidden, dim_out):
         super().__init__()
@@ -54,7 +64,7 @@ class Net(nn.Module):
 
     def forward(self, x):
         y = self.joint(x)
-        mu = self.mu(y)
+        mu = self.mu(y) + x
         # sigma = torch.pow(self.sigma(y), 2) / 4 # keep things positive but also scale it down and keep things opinionated
         return mu, torch.ones([self.dim_out]) # This works, but test sparklines become less pretty
 
@@ -76,6 +86,17 @@ class Gaussian1d(Program):
 
     def __repr__(self):
         return f"Gaussian1d(loc={self.loc}, scale={self.std})"
+
+@typechecked
+class LinearKernel(Kernel):
+    def __init__(self, num_hidden, ext_name):
+        super().__init__()
+        self.net = LinearNet(dim_in=1, dim_hidden=num_hidden, dim_out=1)
+        self.ext_name = ext_name
+
+    def apply_kernel(self, trace, cond_trace, cond_output):
+        mu, scale = self.net(cond_output.detach())
+        return trace.normal(loc=mu, scale=scale, name=self.ext_name)
 
 @typechecked
 class SimpleKernel(Kernel):
@@ -241,16 +262,16 @@ def test_Gaussian_2step():
     With four steps, you'll need to detach whenever you compute a normalizing constant in all the intermediate steps.
     """
     g1, g2, g3 = targets = [Gaussian1d(loc=i, std=1, name=f"z_{i}", num_samples=200) for i in range(1,4)]
-    f12, f23 = forwards = [SimpleKernel(num_hidden=4, ext_name=f"z_{i}") for i in range(2,4)]
-    r21, r32 = reverses = [SimpleKernel(num_hidden=4, ext_name=f"z_{i}") for i in range(1,3)]
+    f12, f23 = forwards = [LinearKernel(num_hidden=16, ext_name=f"z_{i}") for i in range(2,4)]
+    r21, r32 = reverses = [LinearKernel(num_hidden=16, ext_name=f"z_{i}") for i in range(1,3)]
 
-    optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses, *targets]], lr=1e-1)
+    optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses, *targets]], lr=1e-3)
     mk_hashes = lambda: [[thash(y) for y in x.parameters()] for x in [*forwards, *reverses, *targets]]
     initial_hashes = mk_hashes()
 
-
-    num_steps = 100
+    num_steps = 5000
     loss_ct, loss_sum, loss_avgs, loss_all = 0, 0.0, [], []
+    lvs_all = []
 
     with trange(num_steps) as bar:
         for i in bar:
@@ -259,14 +280,20 @@ def test_Gaussian_2step():
 
             loss = torch.zeros([1])
 
+            lvs = []
             for fwd, rev, q, p in zip(forwards, reverses, targets[:-1], targets[1:]):
                 q.condition_on(q_prv_tr)
                 q_ext = Forward(fwd, q)
                 p_ext = Reverse(p, rev)
-                extend = Propose(target=p_ext, proposal=q_ext)
-                state, log_weights = extend()
-                q_prv_tr = state.proposal.trace
-                loss += nvo_avo(log_weights, sample_dims=0).mean()
+                extend_argument = Propose(target=p_ext, proposal=q_ext)
+                state, lv = extend_argument()
+                lvs.append(lv)
+
+                q_prv_tr = state.target.trace
+                loss = nvo_avo(lv, sample_dims=0).mean()
+
+            lvs_ten = torch.stack(lvs, dim=0)
+            lvs_all.append(lvs_ten)
 
             loss.backward()
 
@@ -287,10 +314,32 @@ def test_Gaussian_2step():
                loss_ct, loss_sum  = 0, 0.0
                if num_steps > 100:
                    loss_avgs.append(loss_avg)
+
+
     with torch.no_grad():
         # report.sparkline(loss_avgs)
+        lvs = torch.stack(lvs_all, dim=0)
+        lws = torch.cumsum(lvs, dim=1)
+        ess = effective_sample_size(lws)
+        mk_mnormal = lambda m: MultivariateNormal(loc=torch.tensor([m+0.]), covariance_matrix=torch.eye(1))
+        import matplotlib.pyplot as plt
+        plt.plot(ess)
+        plt.savefig("fig.png")
+        import ipdb; ipdb.set_trace();
+
+        # This is the analytic marginal for the forward kernel
+        # propagate(N=mk_mnormal(1), F=f12.net.mu.weight, t=f12.net.mu.bias, B=torch.eye(1))
+
+        out12 = propagate(N=mk_mnormal(1), F=f12.net.mu.weight, t=f12.net.mu.bias, B=torch.eye(1), marginalize=True);
+        print(out12.loc);
+        out23 = propagate(N=mk_mnormal(2), F=f23.net.mu.weight, t=f23.net.mu.bias, B=torch.eye(1), marginalize=True);
+        print(out23.loc);
+
         tol = Tolerance(mean=0.15, std=0.15)
 
+        tr, out = g1()
+        tr, out = f12(tr, out)
+        assert abs(out.mean().item() - 2) < 0.15
         # # FIXME: this doesn't learn balanced targets... possibly because this is too easy? Possibly because of
         # # information loss aggregation of weight?
         # import ipdb; ipdb.set_trace();
@@ -306,12 +355,14 @@ def test_Gaussian_2step():
         tr, out = pre2.program()
         assert abs(out.mean().item() - 1) < tol.mean
         tr, out = pre2.kernel(tr, out)
+
         # assert abs(out.mean() - 2) < tol.mean
         if abs(out.mean().item() - 2) < tol.mean:
             logger.warn("haven't resolved the uneven learning of 2-step 1d with nvo")
 
         tr, out = g2()
         assert abs(out.mean().item() - 2) < tol.mean
+
         tr, out = f23(tr, out)
         assert abs(out.mean().item() - 3) < tol.mean
 
@@ -321,7 +372,7 @@ def test_Gaussian_2step():
         tr, out = pre3.kernel(tr, out)
         assert abs(out.mean().item() - 3) < tol.mean
 
-        # predict_g2 = lambda: pre2(debug=True)[1]
+        predict_g2 = lambda: pre2(debug=True)[1]
         predict_g3 = lambda: pre3()[1] # Forward(f12, g1))()[1]
 
         # eval_mean_std(predict_g2, Params(mean=2, std=1), tol)
