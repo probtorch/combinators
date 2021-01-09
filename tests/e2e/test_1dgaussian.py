@@ -1,20 +1,20 @@
 import torch
+import torch.nn as nn
 import logging
 from torch import Tensor
-from torch.distributions import Normal
-import torch.nn as nn
-from combinators.inference import PCache # temporary
-from combinators.stochastic import RandomVariable, Provenance
+from torch.distributions import Normal, MultivariateNormal
 from probtorch.util import expand_inputs
 from collections import namedtuple
 from typeguard import typechecked
 from tqdm import trange
 from pytest import mark, fixture
 import sparklines
-import combinators.trace.utils as trace_utils
-from combinators.tensor.utils import thash, show
 from typing import Optional
 
+import combinators.trace.utils as trace_utils
+from combinators.tensor.utils import thash, show
+from combinators.inference import PCache # temporary
+from combinators.stochastic import RandomVariable, Provenance
 from combinators import Program, Kernel, Trace, Forward, Reverse, Propose
 
 logger = logging.getLogger(__name__)
@@ -135,10 +135,10 @@ def test_reverse():
         assert torch.equal(ext._cache.program.trace[k].value, ext._cache.kernel.trace[k].value)
 
 def test_propose_values():
-    q = Gaussian1d(loc=4, std=1, name="q", num_samples=4)
-    p = Gaussian1d(loc=0, std=4, name="p", num_samples=4)
-    fwd = SimpleKernel(num_hidden=4, ext_name="p")
-    rev = SimpleKernel(num_hidden=4, ext_name="q")
+    q = Gaussian1d(loc=4, std=1, name="z_0", num_samples=4)
+    p = Gaussian1d(loc=0, std=4, name="z_1", num_samples=4)
+    fwd = SimpleKernel(num_hidden=4, ext_name="z_1")
+    rev = SimpleKernel(num_hidden=4, ext_name="z_0")
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [p, q, fwd, rev]], lr=0.5)
     assert len(list(p.parameters())) == 0
     assert len(list(q.parameters())) == 0
@@ -156,7 +156,7 @@ def test_propose_values():
     cache = extend._cache
     # import ipdb; ipdb.set_trace();
 
-    for k in ['p', 'q']:
+    for k in ['z_0', 'z_1']:
         assert torch.equal(cache.proposal.trace[k].value, cache.target.trace[k].value)
 
     loss = nvo_avo(log_weights, sample_dims=0).mean()
@@ -171,10 +171,10 @@ def test_propose_values():
 
 # @mark.skip("this is not a problem anymore because of the observation clearing -- not sure if this is a problem yet...")
 def test_propose_gradients():
-    q = Gaussian1d(loc=4, std=1, name="q", num_samples=4)
-    p = Gaussian1d(loc=0, std=4, name="p", num_samples=4)
-    fwd = SimpleKernel(num_hidden=4, ext_name="p")
-    rev = SimpleKernel(num_hidden=4, ext_name="q")
+    q = Gaussian1d(loc=4, std=1, name="z_0", num_samples=4)
+    p = Gaussian1d(loc=0, std=4, name="z_1", num_samples=4)
+    fwd = SimpleKernel(num_hidden=4, ext_name="z_1")
+    rev = SimpleKernel(num_hidden=4, ext_name="z_0")
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [p, q, fwd, rev]], lr=0.5)
 
     q_ext = Forward(fwd, q)
@@ -184,19 +184,19 @@ def test_propose_gradients():
     _, log_weights = extend()
     cache = extend._cache
 
-    for k, prg in [('p', cache.target), ('q', cache.target), ('p', cache.proposal)]:
+    for k, prg in [("z_1", cache.target), ("z_0", cache.target), ("z_1", cache.proposal)]:
         assert k == k and prg is prg and prg.trace[k].value.requires_grad # k==k for debugging the assert
 
-    assert not cache.proposal.trace['q'].value.requires_grad
+    assert not cache.proposal.trace["z_0"].value.requires_grad
 
 
 def test_Gaussian_1step():
     """ The VAE test. At one step no need for any detaches. """
     Params = namedtuple("Params", ["mean", "std", "name"])
 
-    target_params, proposal_params = all_params = [Params(4, 1, "p"), Params(1, 4, "q")]
+    target_params, proposal_params = all_params = [Params(4, 1, "z_1"), Params(1, 4, "z_0")]
     target,        proposal        = [Gaussian1d(loc=p.mean, std=p.std, name=p.name, num_samples=200) for p in all_params]
-    fwd, rev = [SimpleKernel(num_hidden=4, ext_name=ext_name) for ext_name in ["p", "q"]]
+    fwd, rev = [SimpleKernel(num_hidden=4, ext_name=ext_name) for ext_name in ["z_1", "z_0"]]
 
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [proposal, target, fwd, rev]], lr=0.01)
 
