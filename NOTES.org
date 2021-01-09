@@ -1,5 +1,20 @@
 #+TITLE: Notes
+* On Lazy observations
+As-is, lazy observations are a requirement in order to statically reason
+(really, "assume") a trace's structure before running it. The core of why this
+is happening is really surrounding nesting of program.
 
+Maybe combinators doesn't need them and they are only sugar for defining
+generative models (in which case tests need to be double-checked for later).
+
+** On the planned removal
+the main design question is "does the creation of an enqueue observe statement
+produce a new model?" two options here:
+- no: you will need to wrap your generative models in new another program to
+  keep observations persistent.
+- yes: requires more infrastructure
+
+* Proto work
 #+begin_example python
 @combinator(data='x')
 def p(g, x):
