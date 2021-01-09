@@ -8,7 +8,6 @@ from collections import namedtuple
 from typeguard import typechecked
 from tqdm import trange
 from pytest import mark, fixture
-import sparklines
 from typing import Optional
 
 import combinators.trace.utils as trace_utils
@@ -21,6 +20,7 @@ from combinators import Program, Kernel, Trace, Forward, Reverse, Propose
 logger = logging.getLogger(__name__)
 
 def report_sparkline(losses:list):
+    import sparklines
     tlosses = torch.tensor(losses)
     min_loss = tlosses.min().item()
     max_loss = tlosses.max().item()
@@ -288,7 +288,7 @@ def test_Gaussian_2step():
                if num_steps > 100:
                    loss_avgs.append(loss_avg)
     with torch.no_grad():
-        report_sparkline(loss_avgs)
+        # report.sparkline(loss_avgs)
         tol = Tolerance(mean=0.15, std=0.15)
 
         # # FIXME: this doesn't learn balanced targets... possibly because this is too easy? Possibly because of
