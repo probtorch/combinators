@@ -2,6 +2,7 @@
 import torch
 from torch import Tensor
 from combinators.stochastic import Trace, Provenance, RandomVariable
+from combinators.types import TraceLike
 from typing import Callable, Any, Tuple, Optional, Set
 from copy import deepcopy
 from typeguard import typechecked
@@ -50,7 +51,7 @@ def valeq(t1:Trace, t2:Trace, nodes:Optional[Dict[str, Any]]=None, check_exist:b
         # TODO: check if check_exist handes everything correctly
         if t1[name] is not None and t2[name] is not None:
             if not torch.equal(t1[name].value, t2[name].value):
-                if not all_eq:
+                if all_eq:
                     import ipdb; ipdb.set_trace();
                     raise Exception("Check logic!!!")
                 return False
@@ -60,12 +61,19 @@ def valeq(t1:Trace, t2:Trace, nodes:Optional[Dict[str, Any]]=None, check_exist:b
                 import ipdb; ipdb.set_trace();
                 raise Exception("Check logic!!!")
             raise Exception("RV does not exist in traces")
+
+    if not (all_in and all_eq):
+        import ipdb; ipdb.set_trace();
+        raise Exception("Check logic!!!")
+
     return True
 
 
 @typechecked
-def show(tr:Trace, fix_width=False):
-    return "{" + "; ".join([f"'{k}'-➢{tensor_utils.show(v.value, fix_width=fix_width)}" for k, v in tr.items()]) + "}"
+def show(tr:TraceLike, fix_width=False):
+    get_value = lambda v: v if isinstance(v, Tensor) else v.value
+    ten_show = lambda v: tensor_utils.show(get_value(v), fix_width=fix_width)
+    return "{" + "; ".join([f"'{k}'-➢{ten_show(v)}" for k, v in tr.items()]) + "}"
 
 @typechecked
 def trace_eq(t0:Trace, t1:Trace, name:str):
