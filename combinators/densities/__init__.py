@@ -10,6 +10,13 @@ from combinators.embeddings import CovarianceEmbedding
 from combinators.stochastic import Trace, ImproperRandomVariable, RandomVariable, Provenance
 from combinators.types import TraceLike
 
+def typecheck_dims(fn, expected_dims):
+    def wrapper(*args, **kwargs):
+        tr, out = fn(*args, **kwargs)
+        assert len(out.shape) == expected_ndims, f"expected shape should be of length {expected_dims}"
+        return tr, out
+    return wrapper
+
 
 class Density(Program):
     """ A program that represents a single unnormalized distribution (and allows for sampling a shape). """

@@ -12,7 +12,7 @@ import weakref
 from copy import deepcopy
 
 from combinators.stochastic import Trace, Factor
-from combinators.types import Output, State, TraceLike
+from combinators.types import Output, State, TraceLike, get_value
 import combinators.trace.utils as trace_utils
 import combinators.tensor.utils as tensor_utils
 
@@ -105,16 +105,16 @@ class Observable(ABC):
                 print("  {}: {}".format(key_template(k), tensor_utils.show(v)))
 
 
-def with_observations(observations:Dict[str, Tensor], runnable:Callable[[Trace], Output])->Output:
+def with_observations(observations:TraceLike, runnable:Callable[[Trace], Output])->Output:
     """ A better function that summarizes Observable """
     # FIXME: replace the above with this
     trace = Trace()
-    for key, value in observations.items():
-        trace.enqueue_observation(key, value)
+    for key, v in observations.items():
+        trace.enqueue_observation(key, get_value(v))
     return runnable(trace)
 
-class TraceModule(Observable, Traceable, nn.Module):
+class TraceModule(Traceable, nn.Module): # , Observable):
     def __init__(self):
-        Observable.__init__(self)
+        # Observable.__init__(self)
         Traceable.__init__(self)
         nn.Module.__init__(self)

@@ -62,10 +62,10 @@ class PCache:
 class Inf:
     pass
 
-class KernelInf(nn.Module, Observable):
+class KernelInf(nn.Module): # , Observable):
     def __init__(self):
         nn.Module.__init__(self)
-        Observable.__init__(self)
+        # Observable.__init__(self)
         self._cache = KCache(None, None)
 
     def _show_traces(self):
@@ -84,13 +84,24 @@ class Reverse(KernelInf, Inf):
         self.kernel = kernel
 
     def forward(self, *program_args:Any, **program_kwargs:Any) -> Tuple[Trace, Output]:
-        self.program.update_conditions(self.observations)
         program_state = State(*self.program(*program_args, **program_kwargs))
-        self.program.clear_conditions()
 
-        self.kernel.update_conditions(self.observations)
+        # # validate conditions are kept
+        # _observed_keys, _program_keys = set(self.observations.keys()), set(program_state.trace.keys())
+        #
+        # for k in _observed_keys.intersection(_program_keys):
+        #     oval = self.observations[k]
+        #     pval = program_state.trace[k].value
+        #     assert torch.equal(oval, pval), \
+        #         f'{k}: {tensor_utils.show(oval)} vs. {tensor_utils.show(pval)}'
+        #
+        # # add new conditions
+        # for k in (_program_key - _observed_keys):
+        #     self.observations[k] = program_state.trace[k].value
+
+        #self.kernel.update_conditions(self.observations)
         kernel_state = State(*self.kernel(*program_state))
-        self.kernel.clear_conditions()
+        # self.kernel.clear_conditions()
 
         self._cache = KCache(program_state, kernel_state)
         return kernel_state.trace, None
@@ -109,9 +120,9 @@ class Forward(KernelInf, Inf):
         # for k, v in program_state.trace.items():
         #     program_state.trace[k]._value = program_state.trace[k].value.detach()
 
-        self.kernel.update_conditions(self.observations)
+        # self.kernel.update_conditions(self.observations)
         kernel_state = State(*self.kernel(*program_state))
-        self.kernel.clear_conditions()
+        # self.kernel.clear_conditions()
         self._cache = KCache(program_state, kernel_state)
         return kernel_state.trace, kernel_state.output
 
@@ -129,9 +140,9 @@ class Propose(nn.Module, Inf):
         # FIXME: target and proposal args can / should be separated
         proposal_state = State(*self.proposal(*shared_args, **shared_kwargs))
 
-        self.target.condition_on(proposal_state.trace)
+        # self.target.condition_on(proposal_state.trace)
         target_state = State(*self.target(*shared_args, **shared_kwargs))
-        self.target.clear_conditions()
+        # self.target.clear_conditions()
 
         if self.proposal._cache is not None:
             # FIXME: this is a hack for the moment and should be removed somehow.
@@ -142,6 +153,7 @@ class Propose(nn.Module, Inf):
                 proposal_state.trace[k]._value = rv.value.detach()
 
         self._cache = PCache(target_state, proposal_state)
+        # import ipdb; ipdb.set_trace();
         return self._cache, Propose.log_weights(target_state.trace, proposal_state.trace, self.validate)
 
     @classmethod

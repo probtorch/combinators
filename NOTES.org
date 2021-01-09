@@ -1,8 +1,11 @@
 #+TITLE: Notes
 * On Lazy observations
 As-is, lazy observations are a requirement in order to statically reason
-(really, "assume") a trace's structure before running it. The core of why this
-is happening is really surrounding nesting of program.
+(really, "assume") a trace's structure before running it.
+
+This allows us to unify the idea of a "conditioned program" and a "program" into
+just "a generative model" without purity so that we don't have to keep building
+up new instances of programs in an NVI loop.
 
 Maybe combinators doesn't need them and they are only sugar for defining
 generative models (in which case tests need to be double-checked for later).

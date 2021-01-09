@@ -23,19 +23,25 @@ class Program(TraceModule):
     """ superclass of a program? """
     def __init__(self):
         super().__init__()
+        self._conditioning_trace = Trace()
 
     @abstractmethod
     def model(self, trace: Trace, *args:Any) -> Output:
         raise NotImplementedError()
 
     def forward(self, *args:Any, **kwargs:Any) -> Tuple[Trace, Output]:
-        # FIXME: Create a new trace every time you run the model forward. not sure if the argument trce is going to cause problems
-        trace = self._apply_observes(self.get_trace(evict=True))
+        trace = self._conditioning_trace
         out = self.model(trace, *args, **kwargs)
-        self.clear_conditions()
 
         # TODO: enforce purity?
         return trace, out
+
+    def with_observations(self, trace:Trace) -> None:
+        self._conditioning_trace = trace
+
+    def clear_observations(self) -> None:
+        # NOTE: the user has to run this! it _should_ be automated
+        self._conditioning_trace = Trace()
 
     @classmethod
     def factory(cls, fn, name:str = ""):

@@ -12,6 +12,7 @@ from typing import Optional
 
 import combinators.trace.utils as trace_utils
 from combinators.densities import Normal, MultivariateNormal
+from combinators.densities.kernels import NormalLinearKernel
 from combinators.nnets import LinearMap
 from combinators.tensor.utils import thash, show
 from combinators.inference import PCache # temporary
@@ -60,29 +61,17 @@ def eval_mean_std(runnable, target_params:Params, tolerances:Tolerance, num_vali
         assert (target_params.mean - tolerances.mean) < eval_mean and  eval_mean < (target_params.mean + tolerances.mean)
         assert (target_params.std  - tolerances.std ) < eval_stdv and  eval_stdv < (target_params.std  + tolerances.std )
 
-class LinearKernel(Kernel):
-    def __init__(self, ext_name):
-        super().__init__()
-        self.net = LinearMap(dim=1)
-        self.ext_name = ext_name
-
-    def apply_kernel(self, trace, cond_trace, cond_output):
-        mu = self.net(cond_output.detach())
-        return trace.normal(loc=mu, scale=torch.ones_like(mu), name=self.ext_name)
-
-    def __repr__(self):
-        return f'ext={self.ext_name}:' + super().__repr__()
 
 @fixture(autouse=True)
 def scaffolding():
     torch.manual_seed(1)
 
 # @mark.skip("this is not a problem anymore because of the observation clearing -- not sure if this is a problem yet...")
-def test_independent_compute_graphs():
+def test_disjoint_compution_graphs():
     g = lambda i: f"g{i}"
     g1, g2, g3 = targets  = [Normal(loc=i, scale=1, name=g(i)) for i in range(1,4) ]
-    f12, f23   = forwards = [LinearKernel(ext_name=g(i)) for i in range(2,4) ]
-    r21, r32   = reverses = [LinearKernel(ext_name=g(i)) for i in range(1,3) ]
+    f12, f23   = forwards = [NormalLinearKernel(ext_name=g(i)) for i in range(2,4) ]
+    r21, r32   = reverses = [NormalLinearKernel(ext_name=g(i)) for i in range(1,3) ]
 
     lr=1e-2
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*targets, *forwards, *reverses]], lr=lr)
@@ -97,7 +86,7 @@ def test_independent_compute_graphs():
     for k, prg in [(g(1), state12.target), (g(2), state12.target), (g(2), state12.proposal)]:
         assert k == k and prg is prg and prg.trace[k].value.requiresgrad # k==k for debugging the assert
 
-    assert not state12.proposal.trace[g(1)].value.requiresgrad
+    assert not state12.proposal.trace[g(1)].value.requires_grad
     analytic_forward_marginal2 = propagate(g1, f12.net.weight, f12.net.bias, torch.eye(1), marginalize=True)
     import ipdb; ipdb.set_trace();
 
