@@ -7,10 +7,9 @@ tqdm
 # testing
 pytest
 pytest-mock
-mypy
 hypothesis
 typeguard
-mypy
+# mypy # : ( mypy, why do fail me so often?
 # sparklines
 
 # docs

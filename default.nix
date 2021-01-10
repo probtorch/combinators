@@ -41,6 +41,7 @@ mach-nix.mkPython {
     protobuf = "wheel"; # otherwise infinite recursion..
     jupyterlab = "wheel";
     anyio = "wheel";
+    mypy = "wheel"; # must be up-to-date
   } // {
     antlr4-python3-runtime = "nixpkgs";
     tornado = "nixpkgs";
@@ -55,7 +56,6 @@ mach-nix.mkPython {
     pygments = "nixpkgs";
     traitlets = "nixpkgs";
     python-dateutil = "nixpkgs";
-    mypy = "nixpkgs";
     typing-extensions ="nixpkgs";
     mypy-extensions ="nixpkgs";
     typed-ast ="nixpkgs";
