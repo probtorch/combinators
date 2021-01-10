@@ -19,3 +19,9 @@ class NormalLinearKernel(Kernel):
 
     def __repr__(self):
         return f'ext={self.ext_name}:' + super().__repr__()
+
+    def weight(self):
+        return self.net.weight()
+
+    def bias(self):
+        return self.net.bias()

@@ -11,3 +11,8 @@ class LinearMap(nn.Module):
     def forward(self, x):
         return self.net(x)
 
+    def weight(self):
+        return self.net.weight
+
+    def bias(self):
+        return self.net.bias

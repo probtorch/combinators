@@ -72,9 +72,9 @@ class Normal(Distribution):
     def __repr__(self):
         return f"Normal(name={self.name}, loc={self._loc}, scale={self._scale})"
 
-    def dist(self, as_multivariate=False):
-        return self._dist if as_multivariate else \
-            distributions.MultivariateNormal(loc=self._dist.loc, covariance_matrix=torch.eye(1))
+    def as_dist(self, as_multivariate=False):
+        return self._dist if not as_multivariate else \
+            distributions.MultivariateNormal(loc=self._dist.loc.unsqueeze(0), covariance_matrix=torch.eye(1))
 
 class MultivariateNormal(Distribution):
     def __init__(self, loc, cov, name, reparam=True):
