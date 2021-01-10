@@ -26,6 +26,7 @@ def test_trivial_condition(trivial_kernel):
     cond_trace = Trace()
     tr, out = trivial_kernel(cond_trace, (1, 2))
 
+@mark.skip("TODO: traces no longer condition automatically")
 def test_condition(trivial_kernel):
     # you can condition on a trace with some value
     cond_trace = Trace()
@@ -73,6 +74,7 @@ class Kernel(Kernel):
         x_k = trace.normal(loc=mkten(Simple.out_dim, -20), scale=mkten(Simple.out_dim, 1), name="x")
         return (x / x_k, z / z_k)
 
+@mark.skip("TODO: traces no longer condition automatically")
 def test_forward():
     program = Simple()
     prg_inp = torch.ones([program.out_dim])
@@ -86,6 +88,7 @@ def test_forward():
 
     assert all(map(lambda ab: torch.equal(ab[0], ab[1]), zip(f_out, k_out)))
 
+@mark.skip("TODO: traces no longer condition automatically")
 def test_reverse():
     program = Simple()
     prg_inp = torch.ones([program.out_dim])

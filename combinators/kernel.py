@@ -13,7 +13,7 @@ import weakref
 import combinators.trace.utils as trace_utils
 
 from combinators.stochastic import Trace, Factor
-from combinators.types import Output, State, TraceLike
+from combinators.types import Output, State, TraceLike, get_shape_kwargs, check_passable_kwarg
 from combinators.program import Program, model
 from combinators.traceable import TraceModule
 
@@ -25,16 +25,23 @@ class Kernel(TraceModule):
 
     # TODO: do we need *args? I am thinking no for the time being
     @abstractmethod
-    def apply_kernel(self, trace: Trace, cond_trace: Trace, outs: Output) -> Output:
+    def apply_kernel(self, trace: Trace, cond_trace: Trace, outs: Output, sample_dims:Optional[int]=None): #, batch_dim:Optional[int]=None) -> Output:
         raise NotImplementedError()
 
-    def forward(self, cond_trace: Trace, cond_outs: Output) -> Tuple[Trace, Output]:
+    def forward(self, cond_trace: Trace, cond_outs: Output, sample_dims=None, validate=True) -> Tuple[Trace, Output]:
         # get a fresh trace to make sure we don't have inplace mutation
         trace = Trace()
+        shape_kwargs = dict(sample_dims=sample_dims) if check_passable_kwarg('sample_dims', self.apply_kernel) else dict()
 
-        out = self.apply_kernel(trace, cond_trace, cond_outs)
+        out = self.apply_kernel(trace, cond_trace, cond_outs, **shape_kwargs)#, batch_dim=batch_dim)
+        # print(f"Kernel{self.ext_name}:", "trace",  trace)
+        if validate and not trace_utils.valeq(cond_trace, trace):
+            raise RuntimeError("RVs in trace are not correctly conditioned on the cond_trace")
 
         # grab anything that is missing from the cond_trace
         full_trace = trace_utils.copytraces(cond_trace, trace)
+
+        # print(f"Kernel{self.ext_name}:", "full_trace", full_trace)
+        # print("<><><>")
 
         return full_trace, out

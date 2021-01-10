@@ -19,6 +19,21 @@ from combinators.types import Output, State, TraceLike
 from combinators.program import Program
 from combinators.kernel import Kernel
 from combinators.traceable import Observable
+from inspect import signature
+import inspect
+
+def check_passable_kwarg(name, fn):
+    fullspec = inspect.getfullargspec(fn)
+    return fullspec.varkw is not None or name in fullspec.kwonlyargs
+
+def get_shape_kwargs(fn, sample_dims=None, batch_dim=None):
+    fullspec = inspect.getfullargspec(fn)
+    kwargs = dict()
+    if check_passable_kwarg('sample_dims', fn):
+        kwargs['sample_dims'] = sample_dims
+    if check_passable_kwarg('batch_dim', fn):
+        kwargs['batch_dim'] = batch_dim
+    return kwargs
 
 State = namedtuple("State", ['trace', 'output'])
 
@@ -76,21 +91,21 @@ class KernelInf(nn.Module): # , Observable):
             print("kernel : {}".format(self._cache.kernel.trace))
 
 
-@typechecked
 class Reverse(KernelInf, Inf):
     def __init__(self, program: Union[Program, KernelInf], kernel: Kernel) -> None:
         super().__init__()
         self.program = program
         self.kernel = kernel
 
-    def forward(self, *program_args:Any, cond_trace:Optional[Trace]=None, **program_kwargs:Any) -> Tuple[Trace, Output]:
+    def forward(self, *program_args:Any, cond_trace:Optional[Trace]=None, sample_dims=None, **program_kwargs:Any) -> Tuple[Trace, Output]:
         if cond_trace is not None:
             if isinstance(self.program, Program):
-                self.program.with_observations(cond_trace)
+                self.program.with_observations(trace_utils.copytrace(cond_trace, detach=set()))# cond_trace.keys()))
             else:
                 raise NotImplementedError("propation is not defined... handled in the greenfield-lazy branch")
+        # breakpoint();
 
-        program_state = State(*self.program(*program_args, **program_kwargs))
+        program_state = State(*self.program(*program_args, sample_dims=sample_dims, **program_kwargs))
 
         if cond_trace is not None and isinstance(self.program, Program):
             self.program.clear_observations()
@@ -109,51 +124,57 @@ class Reverse(KernelInf, Inf):
         #     self.observations[k] = program_state.trace[k].value
 
         #self.kernel.update_conditions(self.observations)
-        kernel_state = State(*self.kernel(*program_state))
+        kernel_state = State(*self.kernel(*program_state, sample_dims=sample_dims))
         # self.kernel.clear_conditions()
 
         self._cache = KCache(program_state, kernel_state)
         return kernel_state.trace, None
 
 
-@typechecked
 class Forward(KernelInf, Inf):
     def __init__(self, kernel: Kernel, program: Union[Program, KernelInf]) -> None:
         super().__init__()
         self.program = program
         self.kernel = kernel
 
-    def forward(self, *program_args:Any, **program_kwargs) -> Tuple[Trace, Output]:
-        program_state = State(*self.program(*program_args, **program_kwargs))
+    def forward(self, *program_args:Any, sample_dims=None, **program_kwargs) -> Tuple[Trace, Output]:
+        program_state = State(*self.program(*program_args, sample_dims=sample_dims, **program_kwargs))
         # stop gradients for nesting. FIXME: is this the correct location? if so, then traces conditioned on this fail to have a gradient
         # for k, v in program_state.trace.items():
         #     program_state.trace[k]._value = program_state.trace[k].value.detach()
 
         # self.kernel.update_conditions(self.observations)
-        kernel_state = State(*self.kernel(*program_state))
+        kernel_state = State(*self.kernel(*program_state, sample_dims=sample_dims))
         # self.kernel.clear_conditions()
         self._cache = KCache(program_state, kernel_state)
         return kernel_state.trace, kernel_state.output
 
 
-@typechecked
 class Propose(nn.Module, Inf):
-    def __init__(self, target: Union[Program, KernelInf], proposal: Union[Program, Inf], validate:bool=True):
+    def __init__(self, target: Union[Program, KernelInf], proposal: Union[Program, Inf], validate:bool=True, print_grad=None, i=0):
         super().__init__()
         self.target = target
         self.proposal = proposal
         self._cache = PCache(None, None)
         self.validate = validate
+        self.pg = print_grad
+        self.i=i
 
-    def forward(self, *shared_args, **shared_kwargs):
+    def forward(self, *shared_args, sample_dims=None, **shared_kwargs):
         # FIXME: target and proposal args can / should be separated
-        proposal_state = State(*self.proposal(*shared_args, **shared_kwargs))
+        proposal_state = State(*self.proposal(*shared_args, sample_dims=sample_dims, **shared_kwargs))
+        # print()
+        # print("proposal:", proposal_state.trace)
+        # print("==============================================================")
 
         # self.target.condition_on(proposal_state.trace)
         # target_state = State(*self.target(*shared_args, **shared_kwargs))
         # self.target.clear_conditions()
         conditions = dict(cond_trace=proposal_state.trace) if isinstance(self.target, (Reverse, Kernel)) else dict()
-        target_state = State(*self.target(*shared_args, **shared_kwargs, **conditions))
+
+        target_state = State(*self.target(*shared_args, sample_dims=sample_dims, **shared_kwargs, **conditions))
+        # print("target: ", target_state.trace)
+        # print("==============================================================")
 
         if self.proposal._cache is not None:
             # FIXME: this is a hack for the moment and should be removed somehow.
@@ -164,14 +185,25 @@ class Propose(nn.Module, Inf):
                 proposal_state.trace[k]._value = rv.value.detach()
 
         self._cache = PCache(target_state, proposal_state)
-        # import ipdb; ipdb.set_trace();
-        return self._cache, Propose.log_weights(target_state.trace, proposal_state.trace, self.validate)
+        # breakpoint()
+        return self._cache, Propose.log_weights(target_state.trace, proposal_state.trace, validate=self.validate, sample_dims=sample_dims)
 
     @classmethod
-    def log_weights(cls, target_trace, proposal_trace, validate=True):
+    def log_weights(cls, target_trace, proposal_trace, sample_dims=None, validate=True):
         if validate:
             assert trace_utils.valeq(proposal_trace, target_trace, nodes=target_trace._nodes, check_exist=True)
 
-        return target_trace.log_joint(batch_dim=None, sample_dims=0, nodes=target_trace._nodes) - \
-            proposal_trace.log_joint(batch_dim=None, sample_dims=0, nodes=target_trace._nodes)
+        assert sample_dims != -1, "seems to be a bug in probtorch which blocks this behavior"
 
+        batch_dim=None # TODO
+        q_tar = target_trace.log_joint(batch_dim=batch_dim, sample_dims=sample_dims, nodes=target_trace._nodes)
+        p_tar = proposal_trace.log_joint(batch_dim=batch_dim, sample_dims=sample_dims, nodes=target_trace._nodes)
+        if validate:
+            arv = list(target_trace.values())[0]
+            dim = 0 if sample_dims is None else sample_dims
+            lp_shape = q_tar.shape[0] if len(q_tar.shape) > 0 else 1
+            rv_shape = arv.value.shape[dim] if len(arv.value.shape) > 0 else 1
+            if rv_shape != lp_shape:
+                raise RuntimeError("shape mismatch between log weight and elements in trace, you are probably missing sample_dims")
+
+        return q_tar - p_tar

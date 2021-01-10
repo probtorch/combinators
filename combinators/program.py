@@ -13,12 +13,11 @@ import ast
 import weakref
 
 from combinators.stochastic import Trace, Factor
-from combinators.types import Output, State, TraceLike
+from combinators.types import Output, State, TraceLike, get_shape_kwargs
 import combinators.trace.utils as trace_utils
 
 from combinators.traceable import TraceModule
 
-@typechecked
 class Program(TraceModule):
     """ superclass of a program? """
     def __init__(self):
@@ -26,14 +25,17 @@ class Program(TraceModule):
         self._conditioning_trace = Trace()
 
     @abstractmethod
-    def model(self, trace: Trace, *args:Any) -> Output:
+    def model(self, trace: Trace, *args:Any, **kwargs:Any) -> Output:
         raise NotImplementedError()
 
-    def forward(self, *args:Any, **kwargs:Any) -> Tuple[Trace, Output]:
+    def forward(self, *args:Any, sample_dims=None, **kwargs:Any) -> Tuple[Trace, Output]:
         trace = self._conditioning_trace
-        out = self.model(trace, *args, **kwargs)
+
+        out = self.model(trace, *args, **get_shape_kwargs(self.model, sample_dims=sample_dims), **kwargs)
 
         # TODO: enforce purity?
+        self.clear_observations()
+
         return trace, out
 
     def with_observations(self, trace:Trace) -> None:

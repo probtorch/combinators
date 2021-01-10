@@ -26,6 +26,19 @@ def test_simple_program_creation():
     assert isinstance(x, Tensor)
     assert isinstance(tr, Trace)
     assert 'x' in tr
+
+@mark.skip("traces are no longer cached for Observable and, therefore, all log_probs are invalid")
+def test_simple_program_log_probs():
+    class P(Program):
+        def __init__(self):
+            super().__init__()
+
+        def model(self, trace):
+            x = trace.normal(loc=0, scale=1, name="x")
+            return x
+
+    program = P()
+    tr, x = program()
     log_probs = program.log_probs()
     assert 'x' in log_probs.keys() and isinstance(log_probs['x'], Tensor)
 
@@ -50,6 +63,27 @@ def test_slightly_more_complex_program_creation():
     assert isinstance(x, int)
     assert isinstance(z, Tensor)
     assert isinstance(tr, Trace)
+
+    tr2, (x2, z2) = program(2)
+    assert tr2 is not tr
+    assert tr2['x'].value == torch.tensor(2)
+    assert not equiv(tr['x'].dist, tr2['x'].dist)
+
+@mark.skip("traces are no longer cached for Observable and, therefore, all log_probs are invalid")
+def test_slightly_more_complex_program_logprobs():
+    class P(Program):
+        def __init__(self):
+            super().__init__()
+            self.g = lambda x: x
+
+        def model(self, trace, x:int):
+            z = trace.normal(loc=0, scale=1, name="z")
+            _ = trace.normal(loc=z, scale=1, name="a")
+            trace.normal(loc=self.g(z), scale=1, value=torch.tensor(x), name="x")
+            return (x, z)
+
+    program = P()
+    tr, (x, z) = program(1)
     log_probs = program.log_probs()
     assert set(['x', 'a', 'z']) == program.variables \
         and all([isinstance(log_probs[k], Tensor) for k in program.variables])
@@ -58,11 +92,6 @@ def test_slightly_more_complex_program_creation():
 
     for k in program.variables:
        assert torch.allclose(log_probs[k], eval_log_probs[k])
-
-    tr2, (x2, z2) = program(2)
-    assert tr2 is not tr
-    assert tr2['x'].value == torch.tensor(2)
-    assert not equiv(tr['x'].dist, tr2['x'].dist)
 
 def test_nn_program_creation():
     class P(Program):
@@ -89,16 +118,18 @@ def test_nn_program_creation():
     assert isinstance(x, Tensor)
     assert isinstance(z, Tensor)
     assert isinstance(tr, Trace)
-    log_probs = program.log_probs()
-    assert set(['x', 'a', 'z']) == program.variables \
-        and all([isinstance(log_probs[k], Tensor) for k in program.variables])
 
-    eval_log_probs = program.log_probs(tr)
+    # log_probs = program.log_probs()
+    # assert set(['x', 'a', 'z']) == program.variables \
+    #     and all([isinstance(log_probs[k], Tensor) for k in program.variables])
+    #
+    # eval_log_probs = program.log_probs(tr)
+    #
+    # for k in program.variables:
+    #    assert torch.allclose(log_probs[k], eval_log_probs[k])
 
-    for k in program.variables:
-       assert torch.allclose(log_probs[k], eval_log_probs[k])
 
-
+@mark.skip("lazy observes are no longer supported")
 def test_generative_program_creation():
     class P(Program):
         def __init__(self):
@@ -120,10 +151,10 @@ def test_generative_program_creation():
 
     assert torch.allclose(x, ones)
     assert isinstance(z, torch.Tensor)
-    log_probs = program.log_probs()
-    assert 'observed' in log_probs
-    observed_loc = program._trace['observed'].dist.loc
-    assert (log_probs['observed'] == Normal(loc=observed_loc, scale=1).log_prob(ones)).item()
+    # log_probs = program.log_probs()
+    # assert 'observed' in log_probs
+    # observed_loc = program._trace['observed'].dist.loc
+    # assert (log_probs['observed'] == Normal(loc=observed_loc, scale=1).log_prob(ones)).item()
 
 
 

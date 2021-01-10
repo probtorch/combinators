@@ -10,6 +10,7 @@ from hypothesis import given
 from combinators import model
 
 
+@mark.skip("TODO: after observe statements are more conrcete")
 def test_simple_program_creation():
     @model()
     def program(trace):
@@ -27,6 +28,7 @@ def test_simple_program_creation():
     assert 'x' in eval_log_probs.keys() and not torch.allclose(log_probs['x'], eval_log_probs['x'])
 
 
+@mark.skip("TODO: after observe statements are more conrcete")
 def test_slightly_more_complex_program_creation():
     @model()
     def program(trace, g, x):

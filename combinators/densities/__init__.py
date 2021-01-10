@@ -46,12 +46,13 @@ class Distribution(Program):
         self.dist = dist
         self.RandomVariable = RandomVariable
 
-    def model(self, trace, sample_shape=torch.Size([1, 1])):
+    def model(self, trace, sample_shape=torch.Size([1,1])):
         dist = self.dist
         # FIXME: ensure conditioning a program work like this is automated?
         value = trace[self.name].value if self.name in trace else \
             (dist.rsample(sample_shape) if dist.has_rsample else dist.sample(sample_shape))
-        assert len(value.shape) >= 2, "must have at least sample and output dims"
+        assert len(value.shape) >= 2, "must have at least sample dim + output dim"
+        value = value.view(sample_shape)
 
         rv = self.RandomVariable(dist=dist, value=value, provenance=Provenance.SAMPLED)
         trace.append(rv, name=self.name)
