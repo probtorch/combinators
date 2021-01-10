@@ -6,6 +6,7 @@ from torch.distributions import Normal
 import torch.nn as nn
 from combinators import Program, Kernel, Forward, Reverse, Propose, Trace
 from combinators.stochastic import RandomVariable, Provenance
+from combinators.densities import Normal
 from probtorch.util import expand_inputs
 from typeguard import typechecked
 from tqdm import trange
@@ -14,21 +15,9 @@ import sparklines
 import combinators.trace.utils as trace_utils
 from combinators.tensor.utils import thash, show
 from typing import Optional
+from combinators.densities.kernels import NormalLinearKernel
+from torch import distributions
 
-
-class Net(nn.Module):
-    def __init__(self, dim_in, dim_hidden, dim_out):
-        super().__init__()
-        self.joint = nn.Sequential(nn.Linear(dim_in, dim_hidden), nn.ReLU())
-        self.mu = nn.Sequential(nn.Linear(dim_hidden, dim_hidden), nn.ReLU(), nn.Linear(dim_hidden, dim_out))
-        # self.sigma = nn.Sequential(nn.Linear(dim_hidden, dim_hidden), nn.ReLU(), nn.Linear(dim_hidden, dim_out))
-        self.dim_out = dim_out
-
-    def forward(self, x):
-        y = self.joint(x)
-        mu = self.mu(y)
-        # sigma = torch.pow(self.sigma(y), 2)
-        return mu, torch.ones([self.dim_out]) # *0.5 # sigma
 
 class _Gaussian1d(nn.Module):
     def __init__(self, loc:int, std:int, name:str, num_samples:int):
@@ -57,7 +46,7 @@ class _Gaussian1d(nn.Module):
 class _SimpleKernel(nn.Module):
     def __init__(self, num_hidden, name, ix=None):
         super().__init__()
-        self.net = Net(dim_in=1, dim_hidden=num_hidden, dim_out=1)
+        self.net = nn.Linear(1, 1)
         self.name = name if ix is None else name + "_" + str(ix)
 
     def forward(self, base_trace, base_name, trace_name, cond_trace=None, detach_base=False):
@@ -72,11 +61,11 @@ class _SimpleKernel(nn.Module):
 
         # Kernel code starts here
         # EXTENDED ARGUMENTS HERE
-        mu, sig = self.net(copy_rv.value.detach())
+        mu = self.net(copy_rv.value.detach())
         value = None if cond_trace is None else cond_trace[trace_name].value.detach()
         # import ipdb; ipdb.set_trace();
 
-        out = trace.normal(loc=mu, scale=sig, name=trace_name, value=value)
+        out = trace.normal(loc=mu, scale=torch.ones((1,)), name=trace_name, value=value)
 
 
         # ext_rv = RandomVariable(ext_dist, (ext_dist.sample() if cond_trace is None else cond_trace[trace_name].value), provenance=Provenance.SAMPLED)
@@ -259,13 +248,13 @@ def test_Gaussian_sanitycheck():
     target_mean, target_stdv = 4, 1
     num_samples=200
     lr = 1e-2
-    proposal = _Gaussian1d(loc=target_stdv, std=6, name='g_0', num_samples=num_samples)
-    target = _Gaussian1d(loc=target_mean, std=1, name='g_1', num_samples=num_samples)
+    proposal = _Gaussian1d(loc=1, std=6, name='g_0', num_samples=num_samples)
+    target = _Gaussian1d(loc=target_mean, std=target_stdv, name='g_1', num_samples=num_samples)
     fwd = _SimpleKernel(num_hidden=4, name='f_01')
     rev = _SimpleKernel(num_hidden=4, name='r_10')
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [proposal, target, fwd, rev]], lr=lr)
 
-    num_steps = 150
+    num_steps = 1500
     loss_ct, loss_sum = 0, 0.0
     loss_all = []
     loss_every = []
@@ -352,6 +341,7 @@ def test_Gaussian_sanitycheck():
             # loss = loss_k
             loss = loss.mean()
 
+
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
@@ -375,7 +365,6 @@ def test_Gaussian_sanitycheck():
         max_loss = max(loss_all)
         print("loss: [max:{:.4f}, min: {:.4f}]".format(max_loss, min_loss))
         baseline = min_loss if min_loss > 0 else -min_loss
-        print(sparklines.sparklines((tlosses - baseline).numpy())[0])
 
         num_validate_samples = 400
         samples = []
@@ -391,3 +380,196 @@ def test_Gaussian_sanitycheck():
         assert (target_mean - mean_tol) < eval_mean and  eval_mean < (target_mean + mean_tol)
         assert (target_stdv - stdv_tol) < eval_stdv and  eval_stdv < (target_stdv + stdv_tol)
 
+
+def test_2step_sanitycheck():
+    g = lambda i: f'g{i}'
+    torch.manual_seed(1)
+    num_samples=100
+    sample_shape = (num_samples,1)
+    lr = 1e-2
+    g1, g2, g3 = targets  = [Normal(loc=i, scale=1, name=g(i)) for i in range(1,4) ]
+    f12, f23 = forwards = [NormalLinearKernel(ext_name=g(i)) for i in range(2,4) ]
+    r21, r32 = reverses = [NormalLinearKernel(ext_name=g(i)) for i in range(1,3) ]
+
+    optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses]], lr=lr)
+
+    num_steps = 800
+    loss_ct, loss_sum = 0, 0.0
+    loss_all = []
+    loss_every = []
+
+    def print_grad():
+        for i, x in enumerate( [*forwards, *reverses] ):
+            for j, param in enumerate(x.parameters()):
+                print(i, j, param.grad)
+
+    with trange(num_steps) as bar:
+        for i in bar:
+            # Initial
+            p_prv_tr, _ = g1(sample_shape=sample_shape)
+            # sampling reparameterized will have a gradient
+            # NOTE: probtorch will default to running rsample
+            lw = torch.zeros([1])
+            loss = torch.zeros([1])
+            # ================== #
+            # Nestable           #
+            # ================== #
+            # TODO: reduce number of samples, and just fix the samples to something simple
+            g1.with_observations(p_prv_tr)
+            q_prp_tr, o = g1(sample_shape=sample_shape) # q_prp: {z_0: normal(1,6).detach()}
+            g1.clear_observations()
+            # NOTE: ALL OF p_prv is detached
+
+            # TODO: Remove joint nn. Fix weights of NN to [xavier?]
+            q_ext_tr, o = f12(q_prp_tr, o)                    # q_ext: {z_0: normal(1,6).detach(), z_1: normal(nnet(q_prp['z_0'].value.detach()),1).detach()}
+
+            # NOTE: z_0 must _not_ have grad
+            # NOTE: z_1 must have grad
+            # NOTE: AVO ONLY WORKS FOR REPARAMETERIZED <<< maybe probtorch does this already. doublecheck
+            #  - check if samples have grad
+
+            g2.with_observations(q_ext_tr)
+            # TODO: same as with proposal above
+            p_tar_tr, o = g2(sample_shape=sample_shape) # p_tar: {z_1: normal(4,1).detach()}
+            # NOTE: z_1 must have grad
+            g2.clear_observations()
+
+            # TODO: same as with fwd above
+            p_ext_tr, o = r21(p_tar_tr, o) # q_ext: {z_0: normal(nnet(p_tar['z_1'].value.detach()), 6).detach(), z_1: normal(4,1).detach()}
+            # NOTE: z_1 must have grad <<< note!!! important for connecting the gradients
+            # NOTE: z_0 must have grad
+            # q_ext['z_0'].value.requires_grad = False
+            # print_traces(ext_only=False)
+            #import ipdb; ipdb.set_trace();
+
+            # FIXME: this should happen in advance
+            q_ext_tr = trace_utils.copytrace(q_ext_tr, detach=p_prv_tr.keys())
+            # ================== #
+            # Compute Weight     #
+            # ================== #
+
+            # breakpoint();
+
+            assert trace_utils.valeq(q_ext_tr, p_ext_tr, nodes=p_ext_tr._nodes, check_exist=True)
+            lv = p_ext_tr.log_joint(batch_dim=None, sample_dims=0, nodes=p_ext_tr._nodes) - \
+                q_ext_tr.log_joint(batch_dim=None, sample_dims=0, nodes=p_ext_tr._nodes)
+            # ^^^^ everything will work out with reparams
+            lw = lw.detach() # completely detached so this is okay with reparam
+            values = -lv
+            # convice yourself: current intro of JMLR + check with forward grad
+            log_weights = torch.zeros_like(lv)
+            sample_dims=0
+            reducedims=(sample_dims,)
+            keepdims=False
+            # loss = _estimate_mc(-lv, torch.zeros_like(lv), sample_dims=0, reducedims=(0,), keepdims=False,)
+            nw = torch.nn.functional.softmax(torch.zeros_like(lv), dim=sample_dims)
+
+            loss += (nw * values).sum(dim=reducedims, keepdim=keepdims).mean()
+
+
+            p_prv_tr = trace_utils.copytrace(p_tar_tr, detach=p_tar_tr.keys())
+            # ================================================================== #
+            # Nestable                                                           #
+            # ================================================================== #
+            # TODO: reduce number of samples, and just fix the samples to something simple
+
+            g2.with_observations(p_prv_tr)
+            q_prp_tr, o = g2(sample_shape=sample_shape) # q_prp: {z_0: normal(1,6).detach()}
+            g2.clear_observations()
+            # NOTE: ALL OF p_prv is detached
+
+            # TODO: Remove joint nn. Fix weights of NN to [xavier?]
+            q_ext_tr, o = f23(q_prp_tr, o)                    # q_ext: {z_0: normal(1,6).detach(), z_1: normal(nnet(q_prp['z_0'].value.detach()),1).detach()}
+
+            # NOTE: z_0 must _not_ have grad
+            # NOTE: z_1 must have grad
+            # NOTE: AVO ONLY WORKS FOR REPARAMETERIZED <<< maybe probtorch does this already. doublecheck
+            #  - check if samples have grad
+
+            g3.with_observations(q_ext_tr)
+            # TODO: same as with proposal above
+            p_tar_tr, o = g3(sample_shape=sample_shape) # p_tar: {z_1: normal(4,1).detach()}
+            # NOTE: z_1 must have grad
+            g3.clear_observations()
+
+            # TODO: same as with fwd above
+            p_ext_tr, o = r32(p_tar_tr, o) # q_ext: {z_0: normal(nnet(p_tar['z_1'].value.detach()), 6).detach(), z_1: normal(4,1).detach()}
+            # NOTE: z_1 must have grad <<< note!!! important for connecting the gradients
+            # NOTE: z_0 must have grad
+            # q_ext['z_0'].value.requires_grad = False
+            # print_traces(ext_only=False)
+            #import ipdb; ipdb.set_trace();
+
+            # FIXME: this should happen in advance
+            q_ext_tr = trace_utils.copytrace(q_ext_tr, detach=p_prv_tr.keys())
+            # ================================================================== #
+            # Compute Weight                                                     #
+            # ================================================================== #
+
+            assert trace_utils.valeq(q_ext_tr, p_ext_tr, nodes=p_ext_tr._nodes, check_exist=True)
+            lv = p_ext_tr.log_joint(batch_dim=None, sample_dims=0, nodes=p_ext_tr._nodes) - \
+                q_ext_tr.log_joint(batch_dim=None, sample_dims=0, nodes=p_ext_tr._nodes)
+            # ^^^^ everything will work out with reparams
+            lw = lw.detach() # completely detached so this is okay with reparam
+            values = -lv
+            # convice yourself: current intro of JMLR + check with forward grad
+            log_weights = torch.zeros_like(lv)
+            sample_dims=0
+            reducedims=(sample_dims,)
+            keepdims=False
+            # loss = _estimate_mc(-lv, torch.zeros_like(lv), sample_dims=0, reducedims=(0,), keepdims=False,)
+            nw = torch.nn.functional.softmax(torch.zeros_like(lv), dim=sample_dims)
+
+            loss += ((nw * values).sum(dim=reducedims, keepdim=keepdims)).mean()
+            loss.backward()
+            optimizer.step()
+            # print_grad()
+            optimizer.zero_grad()
+
+
+
+            loss_ct += 1
+            loss_scalar = loss.detach().cpu().mean().item()
+            loss_sum += loss_scalar
+            loss_every.append(loss_scalar)
+            if num_steps <= 100:
+               loss_all.append(loss_scalar)
+            if i % 10 == 0:
+               loss_avg = loss_sum / loss_ct
+               loss_template = 'loss={}{:.4f}'.format('' if loss_avg < 0 else ' ', loss_avg)
+               bar.set_postfix_str(loss_template)
+               loss_ct, loss_sum  = 0, 0.0
+               if num_steps > 100:
+                   loss_all.append(loss_avg)
+
+    with torch.no_grad():
+        tlosses = torch.tensor(loss_all)
+        min_loss = min(loss_all)
+        max_loss = max(loss_all)
+        print("loss: [max:{:.4f}, min: {:.4f}]".format(max_loss, min_loss))
+        mean_tol = 0.15
+        num_validate_samples = 400
+
+        samples = []
+        for _ in range(num_validate_samples):
+            q_prp_tr, o = g1()
+            q_ext_tr, o = f12(q_prp_tr, o)
+            samples.append(o)
+        evaluation = torch.cat(samples)
+        eval_mean, eval_stdv = evaluation.mean().item(), evaluation.std().item()
+        print("mean: {:.4f}, std: {:.4f}".format(eval_mean, eval_stdv))
+        assert abs(2 - eval_mean) < mean_tol
+
+        samples = []
+        for _ in range(num_validate_samples):
+            q1_prp_tr, o = g1()
+            q1_ext_tr, o = f12(q1_prp_tr, o)
+            g2.with_observations(q_ext_tr)
+            q2_prp_tr, o = g2()
+            q2_ext_tr, o = f23(q2_prp_tr, o)
+            # out, _ = proposal()
+            samples.append(o)
+        evaluation = torch.cat(samples)
+        eval_mean, eval_stdv = evaluation.mean().item(), evaluation.std().item()
+        print("mean: {:.4f}, std: {:.4f}".format(eval_mean, eval_stdv))
+        assert abs(3 - eval_mean) < mean_tol
