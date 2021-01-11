@@ -35,6 +35,7 @@ class Program(TraceModule):
 
         # TODO: enforce purity?
         self.clear_observations()
+        self._trace = trace
 
         return trace, out
 
