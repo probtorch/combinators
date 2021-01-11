@@ -141,13 +141,6 @@ class Tempered(Density):
             g_1_log_prob = log_prob(g_1, value)
             return g_0_log_prob*(1-t) + g_1_log_prob*t
 
-    def log_probs(self, values:TraceLike) -> Dict[str, Tensor]:
-        with torch.no_grad(): # you can't learn anything about this density
-            t, g_0, g_1 = self.beta, self.g_0, self.g_1
-            g_0_log_probs = g_0.log_probs(values)
-            g_1_log_probs = g_1.log_probs(values)
-            return {self.name: g_0_log_probs[self.name]*(1-t) + g_1_log_probs[self.name]*t}
-
     def __repr__(self):
         return f"β=1/{int((1/self.beta.item())+0.0001)}" + super().__repr__()
 
