@@ -76,9 +76,14 @@ class ImproperRandomVariable(GenericRandomVariable):
         observed(bool): Indicates whether the value was sampled or observed.
     """
 
-    def __init__(self, fn, value, log_weight=None, # log_weight is unused?
-                 provenance=Provenance.SAMPLED, mask=None):
-        super().__init__(value=value, log_prob=fn(value), provenance=provenance, mask=mask)
+    def __init__(self, fn, log_density_fn, value, log_weight=None, # log_weight is unused?
+                 log_prob=None, provenance=Provenance.SAMPLED, mask=None):
+        super().__init__(value=value, log_prob=log_density_fn(value) if log_prob is None else log_prob, provenance=provenance, mask=mask)
+        self._log_density_fn = log_density_fn
+        self._generator = fn
+
+    def log_density(self, value):
+        return self._log_density_fn(value)
 
     def __repr__(self):
         return "%s InproperRandomVariable containing: %s" % (type(self._dist).__name__,

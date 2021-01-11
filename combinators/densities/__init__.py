@@ -2,6 +2,7 @@
 import torch
 from abc import ABC
 from functools import partial
+import operator
 from torch import Tensor, distributions, Size
 from typing import Optional, Dict, Union, Callable
 
@@ -21,19 +22,21 @@ def typecheck_dims(fn, expected_dims):
 class Density(Program):
     """ A program that represents a single unnormalized distribution (and allows for sampling a shape). """
 
-    def __init__(self, name, generator:Callable[[Size], Tensor]):
+    def __init__(self, name, generator:Callable[[Size], Tensor], log_density_fn:Callable[[Tensor], Tensor]):
         super().__init__()
         self.name = name
         self.generator = generator
+        self.log_density_fn = log_density_fn
         self.RandomVariable = ImproperRandomVariable
 
     def model(self, trace, sample_shape=Size([1, 1])):
         generator = self.generator
         # FIXME: ensure conditioning a program work like this is automated?
-        value=trace[self.name].value if self.name in trace else generator(sample_shape=sample_shape) # should be implicit ?
+        value = trace[self.name].value if self.name in trace else generator(sample_shape=sample_shape) # should be implicit ?
+
         assert len(value.shape) >= 2, "must have at least sample and output dims"
 
-        rv = self.RandomVariable(fn=generator, value=value, provenance=Provenance.SAMPLED)
+        rv = self.RandomVariable(fn=generator, log_density_fn=self.log_density_fn, value=value, provenance=Provenance.SAMPLED)
         trace.append(rv, name=self.name)
         return trace[self.name].value
 
@@ -46,13 +49,16 @@ class Distribution(Program):
         self.dist = dist
         self.RandomVariable = RandomVariable
 
-    def model(self, trace, sample_shape=torch.Size([1,1])):
+    def model(self, trace, sample_shape=torch.Size([1,1]), validate=True):
         dist = self.dist
         # FIXME: ensure conditioning a program work like this is automated?
         value = trace[self.name].value if self.name in trace else \
             (dist.rsample(sample_shape) if dist.has_rsample else dist.sample(sample_shape))
-        assert len(value.shape) >= 2, "must have at least sample dim + output dim"
-        value = value.view(sample_shape)
+        if validate and not (len(value.shape) >= 2):
+            raise RuntimeError("must have at least sample dim + output dim")
+        if not all(map(lambda lr: lr[0] == lr[1], zip(sample_shape, value.shape))):
+            adjust_shape = [*sample_shape, *value.shape[len(sample_shape):]]
+            value = value.view(adjust_shape)
 
         rv = self.RandomVariable(dist=dist, value=value, provenance=Provenance.SAMPLED)
         trace.append(rv, name=self.name)
@@ -95,36 +101,38 @@ class Tempered(Density):
     def __init__(
             self,
             name,
-            g_0:Union[Distribution, Density, Program],
-            g_1:Union[Distribution, Density, Program],
+            g_0:Union[Distribution, Density],
+            g_1:Union[Distribution, Density],
             beta:Tensor
     ):
         assert torch.all(beta > 0.) and torch.all(beta < 1.), "tempered densities are β=(0, 1) for clarity/debugging"
-        super().__init__(name, self._generator)
+        super().__init__(name, self._generator, self.log_density_fn)
         self.beta = beta
         self.g_0 = g_0
         self.g_1 = g_1
         # self.logit = nn.Parameter(torch.logit(beta)) # got rid of parameter_map so this is currently unused...
 
-    def _sample_from(self, sample_shape:Size, g:Union[Distribution, Density, Program]) -> Tensor:
-       if isinstance(g, (Distribution, Density)):
-           tr, out = g(sample_shape)
-       else:
-           try:
-               # need to be more opinionated here : /
-               tr, out = g(sample_shape=sample_shape)
-           except:
-               tr, out = g()
-               assert tr[self.name].value.shape == sample_shape
-       return tr[self.name].value
+    def _sample_from(self, g:Union[Distribution, Density, Program], sample_shape:Size=Size([1,1])) -> Tensor:
+        tr, out = g(sample_shape=sample_shape)
+        return tr[g.name].value
 
-    def _generator(self, sample_shape:Size) -> Tensor:
+    def _generator(self, sample_shape:Size=Size([1,1])) -> Tensor:
         with torch.no_grad(): # you can't learn anything about this density
             t, g_0, g_1 = self.beta, self.g_0, self.g_1
-            sample_from = partial(self._sample_from, sample_shape)
-            # breakpoint();
-            return sample_from(g_0)*(1-t) + sample_from(g_1)*t
+            t0 = self._sample_from(g_0, sample_shape=sample_shape)*(1-t)
+            t1 = self._sample_from(g_1, sample_shape=sample_shape)*t
+            return t0 + t1
 
+    def log_density_fn(self, value:Tensor) -> Tensor:
+        def log_prob(g, value):
+            return g.log_density_fn(value) if isinstance(g, Density) else g.dist.log_prob(value)
+
+        with torch.no_grad(): # you can't learn anything about this density
+            t, g_0, g_1 = self.beta, self.g_0, self.g_1
+
+            g_0_log_prob = log_prob(g_0, value)
+            g_1_log_prob = log_prob(g_1, value)
+            return g_0_log_prob*(1-t) + g_1_log_prob*t
 
     def log_probs(self, values:TraceLike) -> Dict[str, Tensor]:
         with torch.no_grad(): # you can't learn anything about this density
@@ -132,3 +140,6 @@ class Tempered(Density):
             g_0_log_probs = g_0.log_probs(values)
             g_1_log_probs = g_1.log_probs(values)
             return {self.name: g_0_log_probs[self.name]*(1-t) + g_1_log_probs[self.name]*t}
+
+    def __repr__(self):
+        return f"β=1/{int((1/self.beta.item())+0.0001)}" + super().__repr__()

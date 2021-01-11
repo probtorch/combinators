@@ -1,27 +1,32 @@
 import math
 import torch
-from functools import partial
+from functools import partial, reduce
+import operator
 from torch import Tensor, distributions, Size, nn
 from combinators.embeddings import CovarianceEmbedding
 from combinators.stochastic import Trace, ImproperRandomVariable, RandomVariable, Provenance
 from combinators.types import TraceLike
-from combinators.densities import MultivariateNormal, Categorical
+from combinators.densities import MultivariateNormal, Categorical, Density
 from combinators import Kernel, Program
 from abc import ABC
 from typing import Optional, Dict, Union, Callable
 
 
-class GMM(Program):
+class GMM(Density):
     def __init__(self, locs, covs, name="GMM"):
-        super().__init__()
         assert len(locs) == len(covs)
         self.K = K = len(locs)
+        super().__init__(name, self._generator, self.log_density_fn)
         self.components = [MultivariateNormal(name=f'g_{k}', loc=locs[k], cov=covs[k]) for k in range(K)]
-        self.assignments = Categorical("assignments", probs=torch.ones(K))
+        self.assignments = distributions.Categorical(torch.ones(K)) # take this off the trace
+        # self.assignments = Categorical("assignments", probs=torch.ones(K))
 
-    def model(self, trace, sample_shape=torch.Size([1]), with_indicies=False):
-        a_trace, zs = self.assignments(sample_shape=sample_shape)
-        trace.update(a_trace)
+    def _generator(self, sample_shape=torch.Size([1])):
+        # NOTE: no trace being used here
+        # a_trace, zs = self.assignments(sample_shape=sample_shape)
+        zs = self.assignments.sample(sample_shape=sample_shape)
+
+        # trace.update(a_trace)
         cluster_shape = (1, *zs.shape[1:-1])
         xs = []
         values, indicies = torch.sort(zs)
@@ -29,19 +34,14 @@ class GMM(Program):
         for k in range(self.K):
             n_k = (values == k).sum()
             g_tr, x_k = self.components[k](sample_shape=(n_k, *zs.shape[1:-1]))
-            trace.update(g_tr)
+            # trace.update(g_tr)
             xs.append(x_k)
+
         xs = torch.cat(xs)
+        return xs[indicies]
 
-        if with_indicies:
-            return (xs[indicies], zs, indicies)
-        else:
-            return (xs[indicies], zs)
-
-    def log_probs(self, tr, ixs):
-        # FIXME: incorrect codomain
-        log_probs = torch.cat([tr[k].log_prob for k in [f'g_{i}' for i in range(self.K)]])
-        return log_probs[ixs]
+    def log_density_fn(self, values):
+        return reduce(operator.add, map(lambda k: self.components[k].dist.log_prob(values), range(self.K)))
 
 
 class Mixture(Density):
@@ -148,4 +148,7 @@ class MultivariateNormalKernel(Kernel):
     def apply_kernel(self, trace, cond_trace, cond_output):
         mu, cov_emb = self.net(cond_output.detach())
         cov = self.cov_embedding.unembed(getattr(self, self.cov_embedding.embed_name), self.cov_dim)
-        return trace.multivariate_normal(loc=mu, covariance_matrix=cov, name=self.ext_name)
+        return trace.multivariate_normal(loc=mu,
+                                         covariance_matrix=cov,
+                                         value=cond_trace[self.ext_name].value if self.ext_name in cond_trace else None,
+                                         name=self.ext_name)

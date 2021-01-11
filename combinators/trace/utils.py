@@ -118,7 +118,10 @@ def copytraces(*traces: Trace, detach:Set[str]=set(), overwrite=False)->Trace:
                     pass
             RVClass = type(rv)
             newval = rv.value.detach() if k in detach else rv.value
-            newrv = RVClass(rv.dist, newval, provenance=rv.provenance, mask=rv.mask)
+            if isinstance(rv, RandomVariable):
+                newrv = RVClass(rv.dist, newval, provenance=rv.provenance, mask=rv.mask)
+            else:
+                newrv = RVClass(rv._generator, rv._log_density_fn, newval, log_prob=rv.log_prob, provenance=rv.provenance, mask=rv.mask)
             newtr.append(newrv, name=k)
     return newtr
 
