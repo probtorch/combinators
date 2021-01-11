@@ -92,10 +92,11 @@ class KernelInf(nn.Module): # , Observable):
 
 
 class Reverse(KernelInf, Inf):
-    def __init__(self, program: Union[Program, KernelInf], kernel: Kernel) -> None:
+    def __init__(self, program: Union[Program, KernelInf], kernel: Kernel, _step=None) -> None:
         super().__init__()
         self.program = program
         self.kernel = kernel
+        self._step = _step # used for debugging
 
     def forward(self, *program_args:Any, cond_trace:Optional[Trace]=None, sample_dims=None, **program_kwargs:Any) -> Tuple[Trace, Output]:
         if cond_trace is not None:
@@ -131,10 +132,11 @@ class Reverse(KernelInf, Inf):
 
 
 class Forward(KernelInf, Inf):
-    def __init__(self, kernel: Kernel, program: Union[Program, KernelInf]) -> None:
+    def __init__(self, kernel: Kernel, program: Union[Program, KernelInf], _step=None) -> None:
         super().__init__()
         self.program = program
         self.kernel = kernel
+        self._step = _step # used for debugging
 
     def forward(self, *program_args:Any, sample_dims=None, **program_kwargs) -> Tuple[Trace, Output]:
         program_state = State(*self.program(*program_args, sample_dims=sample_dims, **program_kwargs))
@@ -150,12 +152,13 @@ class Forward(KernelInf, Inf):
 
 
 class Propose(nn.Module, Inf):
-    def __init__(self, target: Union[Program, KernelInf], proposal: Union[Program, Inf], validate:bool=True):
+    def __init__(self, target: Union[Program, KernelInf], proposal: Union[Program, Inf], validate:bool=True, _step=None):
         super().__init__()
         self.target = target
         self.proposal = proposal
         self._cache = PCache(None, None)
         self.validate = validate
+        self._step = _step # used for debugging
 
     def forward(self, *shared_args, sample_dims=None, **shared_kwargs):
         # FIXME: target and proposal args can / should be separated
