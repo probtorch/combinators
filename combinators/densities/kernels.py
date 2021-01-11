@@ -76,12 +76,12 @@ class MultivariateNormalKernel(Kernel):
             pass
 
     def apply_kernel(self, trace, cond_trace, cond_output, sample_dims=None):
-        sample_shape = cond_output.shape
-        if sample_dims is not None and cond_output.shape[0] == 1 and len(cond_output.shape) == 2:
-            cond_output = cond_output.T
+        # sample_shape = cond_output.shape
+        # if sample_dims is not None and cond_output.shape[0] == 1 and len(cond_output.shape) == 2:
+        #     cond_output = cond_output.T
 
         # mu, cov_emb = self.net(cond_output.detach()).view(sample_shape)
-        mu, cov_emb = self.net(cond_output.detach()).view(sample_shape)
+        mu, cov_emb = self.net(cond_output.detach())
         cov = self.cov_embedding.unembed(getattr(self, self.cov_embedding.embed_name), self.cov_dim)
         return trace.multivariate_normal(loc=mu,
                                          covariance_matrix=cov,

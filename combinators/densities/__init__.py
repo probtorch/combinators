@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
+#
+import math
 import torch
-from abc import ABC
-from functools import partial
 import operator
+from functools import partial, reduce
 from torch import Tensor, distributions, Size
 from typing import Optional, Dict, Union, Callable
 
@@ -149,3 +150,41 @@ class Tempered(Density):
 
     def __repr__(self):
         return f"β=1/{int((1/self.beta.item())+0.0001)}" + super().__repr__()
+
+
+class GMM(Density):
+    def __init__(self, locs, covs, name="GMM"):
+        assert len(locs) == len(covs)
+        self.K = K = len(locs)
+        super().__init__(name, self._generator, self.log_density_fn)
+        self.components = [distributions.MultivariateNormal(loc=locs[k], covariance_matrix=covs[k]) for k in range(K)]
+        self.assignments = distributions.Categorical(torch.ones(K)) # take this off the trace
+        # self.assignments = Categorical("assignments", probs=torch.ones(K))
+
+    def _generator(self, sample_shape=torch.Size([1])):
+        # NOTE: no trace being used here
+        zs = self.assignments.sample(sample_shape=sample_shape)
+
+        # trace.update(a_trace)
+        cluster_shape = (1, *zs.shape[1:-1])
+        xs = []
+        values, indicies = torch.sort(zs)
+
+        for k in range(self.K):
+            n_k = (values == k).sum()
+            x_k = self.components[k].sample(sample_shape=(n_k, *zs.shape[1:-1]))
+            xs.append(x_k)
+
+        xs = torch.cat(xs)
+        return xs[indicies]
+
+    def log_density_fn(self, values):
+        return reduce(operator.add, map(lambda k: self.components[k].log_prob(values), range(self.K)))
+
+class RingGMM(GMM):
+    def __init__(self, name="RingGMM", scale=10, count=8):
+        angles = list(range(0, 360, 360//count))[:count] # integer division may give +1
+        position = lambda radians: [math.cos(radians), math.sin(radians)]
+        locs = torch.tensor([position(a*math.pi/180) for a in angles]) * scale
+        covs = [torch.eye(2) for _ in range(count)]
+        super().__init__(name=name, locs=locs, covs=covs)
