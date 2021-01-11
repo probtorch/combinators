@@ -19,7 +19,7 @@ class CovarianceEmbedding(Enum):
             return cov.diag().expm1().log()
 
         elif self == CovarianceEmbedding.LowerCholesky:
-            tidx = torch.tril_indices(row=dim, col=dim, offset=0)
+            tidx = torch.tril_indices(row=dim, col=dim, offset=0, **kw_autodevice(cov.device))
             return torch.cholesky(cov, upper=False)[tidx[0], tidx[1]]
 
         raise RuntimeError()
@@ -35,11 +35,8 @@ class CovarianceEmbedding(Enum):
 
         elif self == CovarianceEmbedding.LowerCholesky:
             assert dim == int((math.sqrt(8*emb.shape[-1]+1) - 1)/2)
-            tidx = torch.tril_indices(row=dim, col=dim, offset=0)
-            if torch.cuda.is_available():
-                L = torch.cuda.FloatTensor((*emb.shape[:-1], dim, dim)).fill_(0)
-            else:
-                L = torch.FloatTensor((*emb.shape[:-1], dim, dim)).fill_(0)
+            tidx = torch.tril_indices(row=dim, col=dim, offset=0, **kw_autodevice(emb.device))
+            L = torch.FloatTensor((*emb.shape[:-1], dim, dim), **kw_autodevice(emb.device)).fill_(0)
             L[..., tidx[0], tidx[1]] = emb
             return torch.matmul(L, L.transpose(-1, -2))
         raise RuntimeError()

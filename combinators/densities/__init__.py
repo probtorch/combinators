@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-#
 import math
 import torch
 import operator
 from functools import partial, reduce
-from torch import Tensor, distributions, Size
+from torch import Tensor, distributions, Size, nn
 from typing import Optional, Dict, Union, Callable
+from combinators.tensor.utils import kw_autodevice, autodevice
 
 from combinators import Program
 from combinators.embeddings import CovarianceEmbedding
@@ -72,13 +72,11 @@ class Distribution(Program):
         return f'[{self.name}]' + super().__repr__()
 
 class Normal(Distribution):
-    def __init__(self, loc, scale, name, reparam=True):
-        as_tensor = lambda x: x if isinstance(x, Tensor) else torch.tensor(x, dtype=torch.float, requires_grad=reparam)
+    def __init__(self, loc, scale, name, reparam=True, device=None):
+        as_tensor = lambda x: x.to(autodevice(device)) if isinstance(x, Tensor) else torch.tensor(x, dtype=torch.float, requires_grad=reparam, **kw_autodevice(device))
 
-        self.loc = as_tensor(loc)
-        self._loc = self.loc.cpu().item()
-        self.scale = as_tensor(scale)
-        self._scale = self.scale.cpu().item()
+        self.loc, self.scale = as_tensor(loc), as_tensor(scale)
+        self._loc, self._scale = self.loc.cpu().item(), self.scale.cpu().item()
 
         self._dist = distributions.Normal(loc=self.loc, scale=self.scale)
         super().__init__(name, self._dist)
@@ -88,12 +86,12 @@ class Normal(Distribution):
 
     def as_dist(self, as_multivariate=False):
         return self._dist if not as_multivariate else \
-            distributions.MultivariateNormal(loc=self._dist.loc.unsqueeze(0), covariance_matrix=torch.eye(1))
+            distributions.MultivariateNormal(loc=self._dist.loc.unsqueeze(0), covariance_matrix=torch.eye(1, device=self._dist.loc.device))
 
 class MultivariateNormal(Distribution):
-    def __init__(self, loc, cov, name, reparam=True):
-        self.loc = loc if isinstance(loc, Tensor) else torch.tensor(loc, dtype=torch.float, requires_grad=reparam)
-        self.cov = cov if isinstance(cov, Tensor) else torch.tensor(cov, dtype=torch.float, requires_grad=reparam)
+    def __init__(self, loc, cov, name, reparam=True, device=None):
+        as_tensor = lambda x: x.to(autodevice(device)) if isinstance(x, Tensor) else torch.tensor(x, dtype=torch.float, requires_grad=reparam, **kw_autodevice(device))
+        self.loc, self.cov = as_tensor(loc), as_tensor(cov)
         dist = distributions.MultivariateNormal(loc=self.loc, covariance_matrix=self.cov)
         super().__init__(name, dist)
 

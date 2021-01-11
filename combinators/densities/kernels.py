@@ -33,7 +33,7 @@ class NormalKernel(Kernel):
         mu = self.net(cond_output.detach()).view(sample_shape)
 
         return trace.normal(loc=mu,
-                            scale=torch.ones_like(mu),
+                            scale=torch.ones_like(mu, device=mu.device),
                             value=cond_trace[self.ext_name].value if self.ext_name in cond_trace else None, # this could _and should_ be automated
                             name=self.ext_name)
 
@@ -89,7 +89,7 @@ class MultivariateNormalKernel(Kernel):
             cov = self.cov_embedding.unembed(getattr(self, self.cov_embedding.embed_name), self.cov_dim)
         else:
             mu = self.net(cond_output.detach())
-            cov = torch.eye(self.cov_dim)
+            cov = torch.eye(self.cov_dim, device=mu.device)
         return trace.multivariate_normal(loc=mu,
                                          covariance_matrix=cov,
                                          value=cond_trace[self.ext_name].value if self.ext_name in cond_trace else None,

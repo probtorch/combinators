@@ -17,7 +17,7 @@ import combinators.trace.utils as trace_utils
 from combinators.metrics import effective_sample_size
 from combinators.debug import propagate
 from combinators.objectives import nvo_avo
-from combinators.tensor.utils import thash, show
+from combinators.tensor.utils import thash, show, autodevice, kw_autodevice
 from combinators.inference import PCache # temporary
 from combinators.stochastic import RandomVariable, Provenance
 from combinators import Program, Kernel, Trace, Forward, Reverse, Propose
@@ -183,8 +183,8 @@ def test_2step_avo(seed):
     With four steps, you'll need to detach whenever you compute a normalizing constant in all the intermediate steps.
     """
     g1, g2, g3 = targets = [Normal(loc=i, scale=1, name=f"z_{i}") for i in range(1,4)]
-    f12, f23 = forwards = [NormalLinearKernel(ext_name=f"z_{i}") for i in range(2,4)]
-    r21, r32 = reverses = [NormalLinearKernel(ext_name=f"z_{i}") for i in range(1,3)]
+    f12, f23 = forwards = [NormalLinearKernel(ext_name=f"z_{i}").to(autodevice()) for i in range(2,4)]
+    r21, r32 = reverses = [NormalLinearKernel(ext_name=f"z_{i}").to(autodevice()) for i in range(1,3)]
 
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses, *targets]], lr=1e-2)
 
@@ -198,7 +198,7 @@ def test_2step_avo(seed):
             q0 = targets[0]
             p_prv_tr, out0 = q0(sample_shape=sample_shape)
 
-            loss = torch.zeros([1])
+            loss = torch.zeros([1], **kw_autodevice())
 
             lvs = []
             for fwd, rev, q, p in zip(forwards, reverses, targets[:-1], targets[1:]):
@@ -244,9 +244,9 @@ def test_2step_avo(seed):
         # plt.savefig("fig.png")
 
         # This is the analytic marginal for the forward kernel
-        out12 = propagate(N=g1.as_dist(as_multivariate=True), F=f12.weight(), t=f12.bias(), B=torch.eye(1), marginalize=True)
+        out12 = propagate(N=g1.as_dist(as_multivariate=True), F=f12.weight(), t=f12.bias(), B=torch.eye(1, **kw_autodevice()), marginalize=True)
         print(out12.loc);
-        out23 = propagate(N=g2.as_dist(as_multivariate=True), F=f23.weight(), t=f23.bias(), B=torch.eye(1), marginalize=True)
+        out23 = propagate(N=g2.as_dist(as_multivariate=True), F=f23.weight(), t=f23.bias(), B=torch.eye(1, **kw_autodevice()), marginalize=True)
         print(out23.loc);
 
         tol = Tolerance(loc=0.15, scale=0.15)

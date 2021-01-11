@@ -243,21 +243,24 @@ def test_disjoint_computation_graphs_if_backprop_on_step2_in_run(scaffolding):
         for i in bar:
             optimizer.zero_grad()
             q0 = targets[0]
-            q_prv_tr, out0 = q0(sample_shape=(num_samples, 1))
+            p_prv_tr, out0 = q0(sample_shape=(num_samples, 1))
 
             lvs = []
             for fwd, rev, q, p in zip(forwards, reverses, targets[:-1], targets[1:]):
-                q.with_observations(trace_utils.copytrace(q_prv_tr, detach=q_prv_tr.keys()))
+                # NVI-specific conditioning step
+                q.with_observations(trace_utils.copytrace(p_prv_tr, detach=p_prv_tr.keys()))
+
                 q_ext = Forward(fwd, q)
                 p_ext = Reverse(p, rev)
                 extend = Propose(target=p_ext, proposal=q_ext)
                 state, lv = extend(sample_shape=(num_samples, 1), sample_dims=0)
-                lvs.append(lv)
 
                 # cleanup
                 q.clear_observations()
+
                 # setup for next step
-                q_prv_tr = state.target.trace
+                p_prv_tr = state.target.trace
+                lvs.append(lv)
                 if p.name == "g3":
                     # only run for step 1
                     # import ipdb; ipdb.set_trace();
