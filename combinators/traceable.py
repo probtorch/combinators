@@ -26,7 +26,8 @@ class Traceable(ABC):
         self._trace: Optional[Trace] = None
 
     def log_probs(self, values:Optional[TraceLike] = None) -> Dict[str, Tensor]:
-        raise RuntimeError("traces are no longer cached for Observable and, therefore, all log_probs are invalid")
+        #raise RuntimeError("traces are no longer cached for Observable and, therefore, all log_probs are invalid")
+        logger.warn("traces are no longer CONSISTENTLY cached for Observable and, therefore, log_probs may be invalid")
         def eval_under(getter, k:str) -> Tensor:
             is_given = values is not None and k in values.keys()
             log_prob = self._trace[k].dist.log_prob(getter(values, k)) if is_given else self._trace[k].log_prob
