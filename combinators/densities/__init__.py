@@ -40,6 +40,9 @@ class Density(Program):
         trace.append(rv, name=self.name)
         return trace[self.name].value
 
+    def __repr__(self):
+        return f'[{self.name}]' + super().__repr__()
+
 class Distribution(Program):
     """ Normalized version of Density but complex class heirarchy is an antipattern, so c/p'd """
 
@@ -63,6 +66,9 @@ class Distribution(Program):
         rv = self.RandomVariable(dist=dist, value=value, provenance=Provenance.SAMPLED)
         trace.append(rv, name=self.name)
         return trace[self.name].value
+
+    def __repr__(self):
+        return f'[{self.name}]' + super().__repr__()
 
 class Normal(Distribution):
     def __init__(self, loc, scale, name, reparam=True):

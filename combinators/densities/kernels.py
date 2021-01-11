@@ -4,10 +4,11 @@ import torch
 from combinators.kernel import Kernel
 from combinators.nnets import LinearMap
 
-class NormalLinearKernel(Kernel):
-    def __init__(self, ext_name):
+
+class NormalKernel(Kernel):
+    def __init__(self, ext_name, net):
         super().__init__()
-        self.net = LinearMap(dim=1)
+        self.net = net
         self.ext_name = ext_name
 
     def apply_kernel(self, trace, cond_trace, cond_output, sample_dims=None):
@@ -41,3 +42,7 @@ class NormalLinearKernel(Kernel):
 
     def bias(self):
         return self.net.bias()
+
+class NormalLinearKernel(NormalKernel):
+    def __init__(self, ext_name):
+        super().__init__(ext_name, LinearMap(dim=1))
