@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import torch
 from torch import Tensor
-from combinators.stochastic import Trace, Provenance, RandomVariable
+from combinators.stochastic import Trace, Provenance, RandomVariable, ImproperRandomVariable
 from combinators.types import TraceLike
 from typing import Callable, Any, Tuple, Optional, Set
 from copy import deepcopy
@@ -130,16 +130,19 @@ def copytrace(tr: Trace, **kwargs)->Trace:
     # sugar
     return copytraces(tr, **kwargs)
 
-def copyrv(tr: Trace, addr: str, requires_grad: bool=True, provenance: Provenance=Provenance.OBSERVED):
-    ''' ImproperRV in the general case (improper if improper, random if normalized) '''
-    RVClass = RandomVariable
-    rv = tr[addr]
+def copyrv(rv:Union[RandomVariable, ImproperRandomVariable], requires_grad: bool=True, provenance:Optional[Provenance]=None):
+    RVClass = type(rv)
     if (requires_grad and not rv.value.requires_grad):
        raise NotImplementedError()
     elif (requires_grad and rv.value.requires_grad) or (not requires_grad and not rv.value.requires_grad):
         value = rv.value
     else: # (not requires_grad and rv.value.requires_grad):
         value = rv.value.detach()
+    _provenance = provenance if provenance is not None else rv.provenance
 
-    # new_val.requires_grad = not detach_base
-    return RVClass(rv.dist, value, provenance=provenance)
+    if RVClass is RandomVariable:
+        return RVClass(dist=rv.dist, value=value, provenance=_provenance, mask=rv.mask, use_pmf=rv._use_pmf)
+    elif RVClass is ImproperRandomVariable:
+        return RVClass(rv._generator, log_density_fn=rv._log_density_fn, value=value, log_prob=rv.log_prob, provenance=_provenance, mask=rv.mask)
+    else:
+        raise NotImplementedError()

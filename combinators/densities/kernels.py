@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 
 import torch
+from torch import nn
+from torch import Tensor
 from combinators.kernel import Kernel
 from combinators.nnets import LinearMap
+from combinators.embeddings import CovarianceEmbedding
 
 
 class NormalKernel(Kernel):
@@ -46,3 +49,42 @@ class NormalKernel(Kernel):
 class NormalLinearKernel(NormalKernel):
     def __init__(self, ext_name):
         super().__init__(ext_name, LinearMap(dim=1))
+
+class MultivariateNormalKernel(Kernel):
+    def __init__(
+            self,
+            ext_name:str,
+            loc:Tensor,
+            cov:Tensor,
+            net:nn.Module,
+            embedding_dim:int=2,
+            cov_embedding:CovarianceEmbedding=CovarianceEmbedding.SoftPlusDiagonal,
+        ):
+        super().__init__()
+        self.ext_name = ext_name
+        self.dim_in = 2
+        self.cov_dim = cov.shape[0]
+        self.cov_embedding = cov_embedding
+
+        self.register_parameter(self.cov_embedding.embed_name, nn.Parameter(self.cov_embedding.embed(cov, embedding_dim)))
+
+        self.net = net
+        try:
+            # FIXME: A bit of a bad, legacy assumption
+            self.net.initialize_(loc, getattr(self, self.cov_embedding.embed_name)) # we don't have cov_embed...
+        except:
+            pass
+
+    def apply_kernel(self, trace, cond_trace, cond_output, sample_dims=None):
+        sample_shape = cond_output.shape
+        if sample_dims is not None and cond_output.shape[0] == 1 and len(cond_output.shape) == 2:
+            cond_output = cond_output.T
+
+        # mu, cov_emb = self.net(cond_output.detach()).view(sample_shape)
+        mu, cov_emb = self.net(cond_output.detach()).view(sample_shape)
+        cov = self.cov_embedding.unembed(getattr(self, self.cov_embedding.embed_name), self.cov_dim)
+        return trace.multivariate_normal(loc=mu,
+                                         covariance_matrix=cov,
+                                         value=cond_trace[self.ext_name].value if self.ext_name in cond_trace else None,
+                                         name=self.ext_name)
+

@@ -76,7 +76,7 @@ class ImproperRandomVariable(GenericRandomVariable):
         observed(bool): Indicates whether the value was sampled or observed.
     """
 
-    def __init__(self, fn, log_density_fn, value, log_weight=None, # log_weight is unused?
+    def __init__(self, fn, log_density_fn, value,
                  log_prob=None, provenance=Provenance.SAMPLED, mask=None):
         super().__init__(value=value, log_prob=log_density_fn(value) if log_prob is None else log_prob, provenance=provenance, mask=mask)
         self._log_density_fn = log_density_fn
@@ -101,6 +101,7 @@ class RandomVariable(GenericRandomVariable):
 
     def __init__(self, dist, value, provenance=Provenance.SAMPLED, mask=None, use_pmf=True):
         self._dist = dist
+        self._use_pmf = use_pmf
         log_prob = dist.log_pmf(value) if use_pmf and hasattr(dist, 'log_pmf') else dist.log_prob(value)
         self._reparameterized = dist.has_rsample
 

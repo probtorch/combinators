@@ -1,6 +1,14 @@
 #!/usr/bin/env python
-#
+import torch
+import math
+
 from torch import Tensor
+from typing import Tuple
+from combinators.trace import utils as trace_utils
+
+def _estimate_mc(values: Tensor, log_weights: Tensor, sample_dims: Tuple[int], reducedims: Tuple[int], keepdims: bool) -> Tensor:
+    nw = torch.nn.functional.softmax(log_weights, dim=sample_dims)
+    return (nw * values).sum(dim=reducedims, keepdim=keepdims)
 
 def nvo_avo(lv: Tensor, sample_dims=0) -> Tensor:
     # values = -lv
@@ -9,4 +17,40 @@ def nvo_avo(lv: Tensor, sample_dims=0) -> Tensor:
     # nw = torch.nn.functional.softmax(log_weights, dim=sample_dims)
     # loss = (nw * values).sum(dim=(sample_dims,), keepdim=False)
     loss = (-lv).sum(dim=(sample_dims,), keepdim=False)
+    return loss
+
+def mb0(e):
+    return e - e.detach()
+
+def mb1(e):
+    return torch.exp(mb0(e))
+
+def eval_nrep(rv):
+    return trace_utils.copyrv(rv, requires_grad=False)
+
+def nvo_rkl(lw: Tensor, lv: Tensor, rv_proposal, rv_target, batch_dim=None, sample_dims=0) -> Tensor:
+    # TODO: move back from the proposal and target RVs to joint logprobs?
+    reducedims = (sample_dims,)
+
+    lw = lw.detach()
+    ldZ = lv.detach().logsumexp(dim=sample_dims) - math.log(lv.shape[sample_dims])
+    f = -lv
+
+    # rv_proposal = next(iter(proposal_trace.values())) # tr[\gamma_{k-1}]
+    # rv_target = next(iter(target_trace.values()))     # tr[\gamma_{k}]
+
+    kwargs = dict(
+        sample_dims=sample_dims,
+        reducedims=reducedims,
+        keepdims=False
+    )
+
+    baseline = _estimate_mc(f.detach(), lw, **kwargs).detach()
+
+    kl_term = _estimate_mc(mb1(rv_proposal._log_prob) * (f - baseline), lw, **kwargs)
+
+    grad_log_Z1 = _estimate_mc(rv_proposal._log_prob, lw, **kwargs)
+    grad_log_Z2 = _estimate_mc(eval_nrep(rv_target)._log_prob, lw+lv.detach(), **kwargs)
+
+    loss = kl_term + mb0(baseline * grad_log_Z1 - grad_log_Z2) + baseline + ldZ
     return loss

@@ -123,32 +123,3 @@ class ResMLPJ(nn.Module):
         else:
             self.mu[0].bias.data.add_(loc_offset)
 
-
-class MultivariateNormalKernel(Kernel):
-    def __init__(
-            self,
-            ext_name:str,
-            loc:Tensor,
-            cov:Tensor,
-            dim_hidden:int=32,
-            embedding_dim:int=2,
-            cov_embedding:CovarianceEmbedding=CovarianceEmbedding.SoftPlusDiagonal,
-        ):
-        super().__init__()
-        self.ext_name = ext_name
-        self.dim_in = 2
-        self.cov_dim = cov.shape[0]
-        self.cov_embedding = cov_embedding
-
-        self.register_parameter(self.cov_embedding.embed_name, nn.Parameter(self.cov_embedding.embed(cov, embedding_dim)))
-
-        self.net = ResMLPJ(dim_in=self.dim_in, dim_hidden=dim_hidden, dim_out=embedding_dim, with_cov_embedding=False)
-        self.net.initialize_(loc, getattr(self, self.cov_embedding.embed_name)) # we don't have cov_embed...
-
-    def apply_kernel(self, trace, cond_trace, cond_output):
-        mu, cov_emb = self.net(cond_output.detach())
-        cov = self.cov_embedding.unembed(getattr(self, self.cov_embedding.embed_name), self.cov_dim)
-        return trace.multivariate_normal(loc=mu,
-                                         covariance_matrix=cov,
-                                         value=cond_trace[self.ext_name].value if self.ext_name in cond_trace else None,
-                                         name=self.ext_name)

@@ -188,7 +188,7 @@ class Propose(nn.Module, Inf):
             target_keys = set(self.target._cache.kernel.trace.keys()) - proposal_keys
             state = PCache(
                 proposal=State(trace=trace_utils.copysubtrace(proposal_state.trace, proposal_keys), output=proposal_state.output),
-                target  =State(trace=trace_utils.copysubtrace(target_state.trace,   target_keys), output=target_state.output),
+                target=State(trace=trace_utils.copysubtrace(target_state.trace, target_keys), output=target_state.output),
             )
 
         return state, Propose.log_weights(joint_target_trace, joint_proposal_trace, validate=self.validate, sample_dims=sample_dims)
