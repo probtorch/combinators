@@ -12,35 +12,7 @@ import combinators.trace.utils as trace_utils
 from combinators import Forward, Reverse, Propose, Kernel
 from combinators.nnets import LinearMap
 from combinators.objectives import nvo_rkl
-from combinators.densities import MultivariateNormal, Tempered
-# from combinators.densities.kernels import MultivariateNormalLinearKernel
-
-class MultivariateNormalKernel(Kernel):
-    def __init__(
-            self,
-            ext_name:str,
-            loc:Tensor,
-            cov:Tensor,
-            net:nn.Module,
-        ):
-        super().__init__()
-        self.ext_name = ext_name
-        self.dim_in = 2
-        self.net = net
-
-    def apply_kernel(self, trace, cond_trace, cond_output, sample_dims=None):
-        sample_shape = cond_output.shape
-        if sample_dims is not None and cond_output.shape[0] == 1 and len(cond_output.shape) == 2:
-            cond_output = cond_output.T
-        mu = self.net(cond_output.detach()).view(sample_shape)
-        return trace.multivariate_normal(loc=mu,
-                                         covariance_matrix=torch.eye(2),
-                                         value=cond_trace[self.ext_name].value if self.ext_name in cond_trace else None,
-                                         name=self.ext_name)
-
-class MultivariateNormalLinearKernel(MultivariateNormalKernel):
-    def __init__(self, ext_name:str, loc:Tensor, cov:Tensor):
-        super().__init__(ext_name, loc, cov, LinearMap(dim=2))
+from combinators.densities import MultivariateNormal, Tempered, RingGMM
 
 def mk_model(num_targets:int):
     proposal_std = 1.0

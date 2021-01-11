@@ -59,14 +59,17 @@ class MultivariateNormalKernel(Kernel):
             net:nn.Module,
             embedding_dim:int=2,
             cov_embedding:CovarianceEmbedding=CovarianceEmbedding.SoftPlusDiagonal,
+            learn_cov:bool=True
         ):
         super().__init__()
         self.ext_name = ext_name
         self.dim_in = 2
         self.cov_dim = cov.shape[0]
         self.cov_embedding = cov_embedding
+        self.learn_cov = learn_cov
 
-        self.register_parameter(self.cov_embedding.embed_name, nn.Parameter(self.cov_embedding.embed(cov, embedding_dim)))
+        if learn_cov:
+            self.register_parameter(self.cov_embedding.embed_name, nn.Parameter(self.cov_embedding.embed(cov, embedding_dim)))
 
         self.net = net
         try:
@@ -81,10 +84,17 @@ class MultivariateNormalKernel(Kernel):
         #     cond_output = cond_output.T
 
         # mu, cov_emb = self.net(cond_output.detach()).view(sample_shape)
-        mu, cov_emb = self.net(cond_output.detach())
-        cov = self.cov_embedding.unembed(getattr(self, self.cov_embedding.embed_name), self.cov_dim)
+        if self.learn_cov:
+            mu, cov_emb = self.net(cond_output.detach())
+            cov = self.cov_embedding.unembed(getattr(self, self.cov_embedding.embed_name), self.cov_dim)
+        else:
+            mu = self.net(cond_output.detach())
+            cov = torch.eye(self.cov_dim)
         return trace.multivariate_normal(loc=mu,
                                          covariance_matrix=cov,
                                          value=cond_trace[self.ext_name].value if self.ext_name in cond_trace else None,
                                          name=self.ext_name)
 
+class MultivariateNormalLinearKernel(MultivariateNormalKernel):
+    def __init__(self, ext_name:str, loc:Tensor, cov:Tensor):
+        super().__init__(ext_name, loc, cov, LinearMap(dim=2), learn_cov=False)
