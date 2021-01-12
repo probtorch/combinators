@@ -111,8 +111,7 @@ class Tempered(Density):
                    log_prob(self.density1, value)*t
 
     def __repr__(self):
-        num_betas = int((1/self.beta.item())+0.0001)
-        return f"[β=1/{num_betas}]" + super().__repr__()
+        return "[β={:.4f}]".format(self.beta.item()) + super().__repr__()
 
 
 class GMM(Density):
@@ -150,9 +149,9 @@ class GMM(Density):
         return reduce(operator.add, map(lambda k: self.components[k].log_prob(values), range(self.K)))
 
 class RingGMM(GMM):
-    def __init__(self, name="RingGMM", scale=10, count=8):
+    def __init__(self, name="RingGMM", scale=10, count=8, device=None):
         angles = list(range(0, 360, 360//count))[:count] # integer division may give +1
         position = lambda radians: [math.cos(radians), math.sin(radians)]
-        locs = torch.tensor([position(a*math.pi/180) for a in angles]) * scale
-        covs = [torch.eye(2) for _ in range(count)]
+        locs = torch.tensor([position(a*math.pi/180) for a in angles], **kw_autodevice(device)) * scale
+        covs = [torch.eye(2, **kw_autodevice(device)) for _ in range(count)]
         super().__init__(name=name, locs=locs, covs=covs)
