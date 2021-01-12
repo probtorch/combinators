@@ -30,6 +30,7 @@ mach-nix.mkPython {
     ./probtorch # local branch starting from nvi-dev on probtorch
     # "https://github.com/probtorch/probtorch/tarball/1a9af26"
     hydra-core
+    mach-nix.nixpkgs.qt512.full
   ];
   providers = let fast = false; in {
     # disallow wheels by default
