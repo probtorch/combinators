@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-#
+
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -12,6 +12,7 @@ import ast
 import weakref
 from typing import Iterable
 
+from combinators.types import check_passable_arg, check_passable_kwarg, get_shape_kwargs
 import combinators.trace.utils as trace_utils
 import combinators.tensor.utils as tensor_utils
 from combinators.stochastic import Trace, Factor
@@ -21,23 +22,6 @@ from combinators.kernel import Kernel
 from combinators.traceable import Observable
 from inspect import signature
 import inspect
-
-def check_passable_kwarg(name, fn):
-    fullspec = inspect.getfullargspec(fn)
-    return fullspec.varkw is not None or name in fullspec.kwonlyargs
-
-def get_shape_kwargs(fn, sample_dims=None, batch_dim=None):
-    fullspec = inspect.getfullargspec(fn)
-    kwargs = dict()
-    if check_passable_kwarg('sample_dims', fn):
-        kwargs['sample_dims'] = sample_dims
-    if check_passable_kwarg('batch_dim', fn):
-        kwargs['batch_dim'] = batch_dim
-    return kwargs
-
-State = namedtuple("State", ['trace', 'output'])
-
-optional = lambda x, get: getattr(x, get) if x is not None else None
 
 @typechecked
 class State(Iterable):
@@ -78,10 +62,12 @@ class Inf:
     pass
 
 class KernelInf(nn.Module): # , Observable):
-    def __init__(self):
+    def __init__(self, _step:Optional[int]=None, _permissive_arguments:bool=True):
         nn.Module.__init__(self)
         # Observable.__init__(self)
         self._cache = KCache(None, None)
+        self._step = _step
+        self._permissive_arguments = _permissive_arguments
 
     def _show_traces(self):
         if all(map(lambda x: x is None, self._cache)):
@@ -90,22 +76,38 @@ class KernelInf(nn.Module): # , Observable):
             print("program: {}".format(self._cache.program.trace))
             print("kernel : {}".format(self._cache.kernel.trace))
 
+    def _program_args(self, fn, *args):
+        if self._permissive_arguments:
+            assert args is None or len(args) == 0, "need to filter this list, but currently don't have an example"
+            # return [v for k,v in args.items() if check_passable_arg(k, fn)]
+            return args
+        else:
+            return args
+
+    def _program_kwargs(self, fn, **kwargs):
+        if self._permissive_arguments:
+            return {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn)}
+        else:
+            return kwargs
+
 
 class Reverse(KernelInf, Inf):
-    def __init__(self, program: Union[Program, KernelInf], kernel: Kernel, _step=None) -> None:
-        super().__init__()
+    def __init__(self, program: Union[Program, KernelInf], kernel: Kernel, _step=None, _permissive=True) -> None:
+        super().__init__(_step, _permissive)
         self.program = program
         self.kernel = kernel
-        self._step = _step # used for debugging
 
     def forward(self, *program_args:Any, cond_trace:Optional[Trace]=None, sample_dims=None, **program_kwargs:Any) -> Tuple[Trace, Output]:
         if cond_trace is not None:
             if isinstance(self.program, Program):
                 self.program.with_observations(trace_utils.copytrace(cond_trace, detach=set()))# cond_trace.keys()))
             else:
-                raise NotImplementedError("propation is not defined... handled in the greenfield-lazy branch")
+                raise NotImplementedError("propagation of observes is not defined, but this is handled in the greenfield-lazy branch")
 
-        program_state = State(*self.program(*program_args, sample_dims=sample_dims, **program_kwargs))
+        program_state = State(*self.program(
+            *self._program_args(self.program.model, *program_args),
+            sample_dims=sample_dims,
+            **self._program_kwargs(self.program.model, **program_kwargs)))
 
         if cond_trace is not None and isinstance(self.program, Program):
             self.program.clear_observations()
@@ -132,14 +134,17 @@ class Reverse(KernelInf, Inf):
 
 
 class Forward(KernelInf, Inf):
-    def __init__(self, kernel: Kernel, program: Union[Program, KernelInf], _step=None) -> None:
-        super().__init__()
+    def __init__(self, kernel: Kernel, program: Union[Program, KernelInf], _step=None, _permissive=True) -> None:
+        super().__init__(_step, _permissive)
         self.program = program
         self.kernel = kernel
-        self._step = _step # used for debugging
 
     def forward(self, *program_args:Any, sample_dims=None, **program_kwargs) -> Tuple[Trace, Output]:
-        program_state = State(*self.program(*program_args, sample_dims=sample_dims, **program_kwargs))
+        program_state = State(*self.program(
+            *self._program_args(self.program.model, *program_args),
+            sample_dims=sample_dims,
+            **self._program_kwargs(self.program.model, **program_kwargs)))
+
         # stop gradients for nesting. FIXME: is this the correct location? if so, then traces conditioned on this fail to have a gradient
         # for k, v in program_state.trace.items():
         #     program_state.trace[k]._value = program_state.trace[k].value.detach()

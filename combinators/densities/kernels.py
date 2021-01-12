@@ -1,11 +1,26 @@
 #!/usr/bin/env python3
 
 import torch
+import combinators.trace.utils as trace_utils
 from torch import nn
 from torch import Tensor
 from combinators.kernel import Kernel
 from combinators.nnets import LinearMap
 from combinators.embeddings import CovarianceEmbedding
+
+
+class IdentityKernel(Kernel):
+    def __init__(self, name, extends:bool=True):
+        super().__init__()
+        assert extends, "TODO: a true identity kernel -- maybe after NVI"
+        self.ext_name = name
+
+    def apply_kernel(self, trace, cond_trace, cond_output, sample_dims=None):
+        assert len(cond_trace) == 1
+        cond_addr = list(cond_trace.keys())[0]
+        newrv = trace_utils.copyrv(cond_trace[cond_addr], requires_grad=True)
+        trace.append(newrv, name=self.ext_name)
+        return cond_output
 
 
 class NormalKernel(Kernel):
@@ -53,7 +68,8 @@ class NormalLinearKernel(NormalKernel):
 class MultivariateNormalKernel(Kernel):
     def __init__(
             self,
-            ext_name:str,
+            ext_from:str,
+            ext_to:str,
             loc:Tensor,
             cov:Tensor,
             net:nn.Module,
@@ -62,7 +78,8 @@ class MultivariateNormalKernel(Kernel):
             learn_cov:bool=True
         ):
         super().__init__()
-        self.ext_name = ext_name
+        self.ext_from = ext_from
+        self.ext_to = ext_to
         self.dim_in = 2
         self.cov_dim = cov.shape[0]
         self.cov_embedding = cov_embedding
@@ -85,16 +102,22 @@ class MultivariateNormalKernel(Kernel):
 
         # mu, cov_emb = self.net(cond_output.detach()).view(sample_shape)
         if self.learn_cov:
-            mu, cov_emb = self.net(cond_output.detach())
+            mu, cov_emb = self.net(cond_trace[self.ext_from].value.detach())
             cov = self.cov_embedding.unembed(getattr(self, self.cov_embedding.embed_name), self.cov_dim)
         else:
-            mu = self.net(cond_output.detach())
+            mu = self.net(cond_trace[self.ext_from].value.detach())
             cov = torch.eye(self.cov_dim, device=mu.device)
         return trace.multivariate_normal(loc=mu,
                                          covariance_matrix=cov,
-                                         value=cond_trace[self.ext_name].value if self.ext_name in cond_trace else None,
-                                         name=self.ext_name)
+                                         value=cond_trace[self.ext_to].value if self.ext_to in cond_trace else None,
+                                         name=self.ext_to)
 
 class MultivariateNormalLinearKernel(MultivariateNormalKernel):
-    def __init__(self, ext_name:str, loc:Tensor, cov:Tensor):
-        super().__init__(ext_name, loc, cov, LinearMap(dim=2), learn_cov=False)
+    def __init__(self, ext_from:str, ext_to:str, loc:Tensor, cov:Tensor):
+        super().__init__(ext_from, ext_to, loc, cov, LinearMap(dim=2), learn_cov=False)
+
+    def weight(self):
+        return self.net.weight()
+
+    def bias(self):
+        return self.net.bias()

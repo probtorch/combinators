@@ -116,12 +116,7 @@ def copytraces(*traces: Trace, detach:Set[str]=set(), overwrite=False)->Trace:
                     raise NotImplementedError("")
                 else:
                     pass
-            RVClass = type(rv)
-            newval = rv.value.detach() if k in detach else rv.value
-            if isinstance(rv, RandomVariable):
-                newrv = RVClass(rv.dist, newval, provenance=rv.provenance, mask=rv.mask)
-            else:
-                newrv = RVClass(rv._generator, rv._log_density_fn, newval, log_prob=rv.log_prob, provenance=rv.provenance, mask=rv.mask)
+            newrv = copyrv(rv, requires_grad=not (k in detach))
             newtr.append(newrv, name=k)
     return newtr
 
@@ -130,10 +125,11 @@ def copytrace(tr: Trace, **kwargs)->Trace:
     # sugar
     return copytraces(tr, **kwargs)
 
+@typechecked
 def copyrv(rv:Union[RandomVariable, ImproperRandomVariable], requires_grad: bool=True, provenance:Optional[Provenance]=None):
     RVClass = type(rv)
     if (requires_grad and not rv.value.requires_grad):
-       raise NotImplementedError()
+        value = rv.value
     elif (requires_grad and rv.value.requires_grad) or (not requires_grad and not rv.value.requires_grad):
         value = rv.value
     else: # (not requires_grad and rv.value.requires_grad):
@@ -143,6 +139,6 @@ def copyrv(rv:Union[RandomVariable, ImproperRandomVariable], requires_grad: bool
     if RVClass is RandomVariable:
         return RVClass(dist=rv.dist, value=value, provenance=_provenance, mask=rv.mask, use_pmf=rv._use_pmf)
     elif RVClass is ImproperRandomVariable:
-        return RVClass(rv._generator, log_density_fn=rv._log_density_fn, value=value, log_prob=rv.log_prob, provenance=_provenance, mask=rv.mask)
+        return RVClass(log_density_fn=rv._log_density_fn, value=value, provenance=_provenance, mask=rv.mask)
     else:
         raise NotImplementedError()

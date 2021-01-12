@@ -5,6 +5,8 @@ import abc
 from enum import Enum
 import re
 import math
+from typing import Callable
+from torch import Tensor
 
 import combinators.tensor.utils as tensor_utils
 __all__ = ["Stochastic", "Factor", "RandomVariable", "Trace"]
@@ -68,26 +70,21 @@ class GenericRandomVariable(Stochastic):
 
 
 class ImproperRandomVariable(GenericRandomVariable):
-    """Improper random variables wrap a PyTorch Variable to associate a log density.
+    """Improper random variables wrap a PyTorch tensor with an associated log density.
 
     Parameters:
-        fn(:obj:`Distribution`): The density function of the variable.
-        value(:obj:`Variable`): The value of the variable.
-        observed(bool): Indicates whether the value was sampled or observed.
+        log_density_fn(:obj:`Callable[[Tensor], Tensor]`): The density function of the variable.
+        value(:obj:`Tensor`): The value of the variable.
+        provenance(:obj:`Provenance`): Indicates whether the value was sampled or observed.
     """
 
-    def __init__(self, fn, log_density_fn, value,
-                 log_prob=None, provenance=Provenance.SAMPLED, mask=None):
-        super().__init__(value=value, log_prob=log_density_fn(value) if log_prob is None else log_prob, provenance=provenance, mask=mask)
+    def __init__(self, log_density_fn:Callable[[Tensor], Tensor], value:Tensor, provenance:Provenance=Provenance.OBSERVED, mask=None):
+        log_prob = log_density_fn(value)
+        super().__init__(value=value, log_prob=log_prob, provenance=provenance, mask=mask)
         self._log_density_fn = log_density_fn
-        self._generator = fn
-
-    def log_density(self, value):
-        return self._log_density_fn(value)
 
     def __repr__(self):
-        return "%s InproperRandomVariable containing: %s" % (type(self._dist).__name__,
-                                                             repr(self._value))
+        return f"ImproperRandomVariable containing: {repr(self._value)}"
 
 class RandomVariable(GenericRandomVariable):
     """Random variables wrap a PyTorch Variable to associate a distribution

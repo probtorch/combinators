@@ -15,8 +15,11 @@ def get_value(t:TraceLike, k:str):
 
 def check_passable_kwarg(name, fn):
     fullspec = inspect.getfullargspec(fn)
-
     return fullspec.varkw is not None or name in fullspec.kwonlyargs or name in fullspec.args
+
+def check_passable_arg(name, fn):
+    fullspec = inspect.getfullargspec(fn)
+    return fullspec.varargs is not None or name in fullspec.args
 
 def get_shape_kwargs(fn, sample_dims=None, batch_dim=None):
     kwargs = dict()

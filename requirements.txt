@@ -7,6 +7,7 @@ tqdm
 # testing
 pytest
 pytest-mock
+pytest-cov
 hypothesis
 typeguard
 # mypy # : ( mypy, why do fail me so often?
@@ -33,5 +34,5 @@ matplotlib
 seaborn
 
 # currently having some trouble with mach-nix
-hydra-core>=1.0.4
+hydra-core>=1.0.0
 hydra_colorlog

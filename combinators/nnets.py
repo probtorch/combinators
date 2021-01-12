@@ -19,6 +19,9 @@ class LinearMap(nn.Module):
         return self.net.bias
 
 class ResMLPJ(nn.Module):
+    """
+    residual connection + MLP + joint layer
+    """
     def __init__(self, dim_in, dim_hidden, dim_out, with_cov_embedding=False, initialize=None):
         assert initialize is None or initialize in ['truncated_normal']
         self._initialize_type = initialize

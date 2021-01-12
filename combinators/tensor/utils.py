@@ -34,3 +34,11 @@ def show(aten:Tensor, fix_width:bool=True)->str:
     t = str(aten.dtype).split(".")[-1]
     s = "×".join(map(str, aten.shape))
     return f"{t}[{s}]{thash(aten)}"
+
+
+def dim_contract(fn, expected_dims):
+    def wrapper(*args, **kwargs):
+        tr, out = fn(*args, **kwargs)
+        assert len(out.shape) == expected_dims, f"expected shape should be of length {expected_dims}"
+        return tr, out
+    return wrapper
