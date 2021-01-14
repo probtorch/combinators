@@ -13,6 +13,7 @@ import weakref
 from typing import Iterable
 
 from combinators.types import check_passable_arg, check_passable_kwarg, get_shape_kwargs
+from combinators.trace.utils import RequiresGrad, copytrace
 import combinators.trace.utils as trace_utils
 import combinators.tensor.utils as tensor_utils
 from combinators.stochastic import Trace, Factor
@@ -22,6 +23,7 @@ from combinators.kernel import Kernel
 from combinators.traceable import Observable
 from inspect import signature
 import inspect
+from combinators.objectives import nvo_avo
 
 @typechecked
 class State(Iterable):
@@ -85,8 +87,8 @@ class KernelInf(nn.Module): # , Observable):
             return args
 
     def _program_kwargs(self, fn, **kwargs):
-        if self._permissive_arguments:
-            return {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn)}
+        if self._permissive_arguments and isinstance(fn, Program):
+            return {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn.model)}
         else:
             return kwargs
 
@@ -100,14 +102,14 @@ class Reverse(KernelInf, Inf):
     def forward(self, *program_args:Any, cond_trace:Optional[Trace]=None, sample_dims=None, **program_kwargs:Any) -> Tuple[Trace, Output]:
         if cond_trace is not None:
             if isinstance(self.program, Program):
-                self.program.with_observations(trace_utils.copytrace(cond_trace, detach=set()))# cond_trace.keys()))
+                self.program.with_observations(trace_utils.copytrace(cond_trace))# cond_trace.keys()))
             else:
                 raise NotImplementedError("propagation of observes is not defined, but this is handled in the greenfield-lazy branch")
 
         program_state = State(*self.program(
-            *self._program_args(self.program.model, *program_args),
+            *self._program_args(self.program, *program_args),
             sample_dims=sample_dims,
-            **self._program_kwargs(self.program.model, **program_kwargs)))
+            **self._program_kwargs(self.program, **program_kwargs)))
 
         if cond_trace is not None and isinstance(self.program, Program):
             self.program.clear_observations()
@@ -141,9 +143,9 @@ class Forward(KernelInf, Inf):
 
     def forward(self, *program_args:Any, sample_dims=None, **program_kwargs) -> Tuple[Trace, Output]:
         program_state = State(*self.program(
-            *self._program_args(self.program.model, *program_args),
+            *self._program_args(self.program, *program_args),
             sample_dims=sample_dims,
-            **self._program_kwargs(self.program.model, **program_kwargs)))
+            **self._program_kwargs(self.program, **program_kwargs)))
 
         # stop gradients for nesting. FIXME: is this the correct location? if so, then traces conditioned on this fail to have a gradient
         # for k, v in program_state.trace.items():
@@ -173,7 +175,8 @@ class Propose(nn.Module, Inf):
         # target_state = State(*self.target(*shared_args, **shared_kwargs))
         # self.target.clear_conditions()
 
-        conditions = dict(cond_trace=proposal_state.trace) if isinstance(self.target, (Reverse, Kernel)) else dict()
+
+        conditions = dict(cond_trace=copytrace(proposal_state.trace, requires_grad=RequiresGrad.YES)) if isinstance(self.target, (Reverse, Kernel)) else dict()
 
         target_state = State(*self.target(*shared_args, sample_dims=sample_dims, **shared_kwargs, **conditions))
 
@@ -181,6 +184,9 @@ class Propose(nn.Module, Inf):
         joint_target_trace = target_state.trace
         self._cache = PCache(target_state, proposal_state)
         state = self._cache
+
+        lv = Propose.log_weights(joint_target_trace, joint_proposal_trace, validate=self.validate, sample_dims=sample_dims)
+        # print(self._cache)
 
         if self.proposal._cache is not None:
             # FIXME: this is a hack for the moment and should be removed somehow.
@@ -199,7 +205,7 @@ class Propose(nn.Module, Inf):
                 target=State(trace=trace_utils.copysubtrace(target_state.trace, target_keys), output=target_state.output),
             )
 
-        return state, Propose.log_weights(joint_target_trace, joint_proposal_trace, validate=self.validate, sample_dims=sample_dims)
+        return state, lv
 
     @classmethod
     def log_weights(cls, target_trace, proposal_trace, sample_dims=None, validate=True):

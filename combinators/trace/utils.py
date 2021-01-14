@@ -9,6 +9,7 @@ from typeguard import typechecked
 from itertools import chain
 from typing import *
 import combinators.tensor.utils as tensor_utils
+from enum import Enum, auto
 
 @typechecked
 def is_valid_subtype(_subtr: Trace, _super: Trace)->bool:
@@ -25,7 +26,6 @@ def is_valid_subtype(_subtr: Trace, _super: Trace)->bool:
 
     # FIXME: add better error message about dimension checks
     return len(super_keys - subtr_keys) == 0 and all([check(key) for key in super_keys])
-
 
 @typechecked
 def assert_valid_subtrace(tr1:Trace, tr2:Trace) -> None:
@@ -102,8 +102,20 @@ def copysubtrace(tr: Trace, subset: Optional[Set[str]]):
             out[key] = node
     return out
 
+
+class RequiresGrad(Enum):
+    YES=auto()
+    NO=auto()
+    DEFAULT=auto()
+
+def get_requires_grad(ten, is_detach_set, global_requires_grad:RequiresGrad=RequiresGrad.DEFAULT):
+    if is_detach_set:
+        return False
+    else:
+        return ten.requires_grad if global_requires_grad==RequiresGrad.DEFAULT else global_requires_grad == RequiresGrad.YES
+
 @typechecked
-def copytraces(*traces: Trace, detach:Set[str]=set(), overwrite=False)->Trace:
+def copytraces(*traces: Trace, requires_grad:RequiresGrad=RequiresGrad.DEFAULT, detach:Set[str]=set(), overwrite=False)->Trace:
     """
     shallow-copies nodes from many traces into a new trace.
     unless overwrite is set, there is a first-write presidence.
@@ -116,7 +128,8 @@ def copytraces(*traces: Trace, detach:Set[str]=set(), overwrite=False)->Trace:
                     raise NotImplementedError("")
                 else:
                     pass
-            newrv = copyrv(rv, requires_grad=not (k in detach))
+
+            newrv = copyrv(rv, requires_grad=get_requires_grad(rv.value, k in detach, requires_grad))
             newtr.append(newrv, name=k)
     return newtr
 
@@ -126,19 +139,15 @@ def copytrace(tr: Trace, **kwargs)->Trace:
     return copytraces(tr, **kwargs)
 
 @typechecked
-def copyrv(rv:Union[RandomVariable, ImproperRandomVariable], requires_grad: bool=True, provenance:Optional[Provenance]=None):
+def copyrv(rv:Union[RandomVariable, ImproperRandomVariable], requires_grad: bool=True, provenance:Optional[Provenance]=None, deepcopy_value=False):
     RVClass = type(rv)
-    if (requires_grad and not rv.value.requires_grad):
-        value = rv.value
-    elif (requires_grad and rv.value.requires_grad) or (not requires_grad and not rv.value.requires_grad):
-        value = rv.value
-    else: # (not requires_grad and rv.value.requires_grad):
-        value = rv.value.detach()
-    _provenance = provenance if provenance is not None else rv.provenance
+    value = tensor_utils.copy(rv.value, requires_grad=requires_grad, deepcopy=deepcopy_value)
+    provenance = provenance if provenance is not None else rv.provenance
 
     if RVClass is RandomVariable:
-        return RVClass(dist=rv.dist, value=value, provenance=_provenance, mask=rv.mask, use_pmf=rv._use_pmf)
+        # TODO: what about copying the dist?
+        return RVClass(dist=rv.dist, value=value, provenance=provenance, mask=rv.mask, use_pmf=rv._use_pmf)
     elif RVClass is ImproperRandomVariable:
-        return RVClass(log_density_fn=rv._log_density_fn, value=value, provenance=_provenance, mask=rv.mask)
+        return RVClass(log_density_fn=rv._log_density_fn, value=value, provenance=provenance, mask=rv.mask)
     else:
         raise NotImplementedError()

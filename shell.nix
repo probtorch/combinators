@@ -1,14 +1,16 @@
-{ use_jupyter ? false }:
 let
-  mypython = import ./.;
+  pyEnv = import ./. {};
   sources = import ./nix/sources.nix;
-  host_pkgs = (import sources.nixpkgs {});
+  inherit (import sources.nixpkgs {}) mkShell gnused;
 in
-with host_pkgs;
-mkShell {
+mkShell rec {
   buildInputs = [
-    mypython
-    python-language-server
-    black
+    pyEnv
+    gnused
   ];
+  shellHook = ''
+    cp pyrightconfig.json{,.bk}
+    VENV_NAME="$(echo ${pyEnv} | sed -E 's/\/nix\/store\/(.*)-env/\1/')"
+    sed -E -i "s/(\"venv\": \")\w+-python3-[23].[0-9].[0-9]-env/\1$VENV_NAME/" pyrightconfig.json
+  '';
 }

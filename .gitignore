@@ -141,3 +141,4 @@ result*
 nix/antlr4.nix
 nix/hydra.nix
 runs/
+*.bk

@@ -7,8 +7,11 @@ from typing import Tuple
 from combinators.trace import utils as trace_utils
 
 def _estimate_mc(values: Tensor, log_weights: Tensor, sample_dims: Tuple[int], reducedims: Tuple[int], keepdims: bool) -> Tensor:
-    nw = torch.nn.functional.softmax(log_weights, dim=sample_dims)
-    return (nw * values).sum(dim=reducedims, keepdim=keepdims)
+    if len(log_weights.shape) == 1:
+        return values.sum(dim=reducedims, keepdim=keepdims)
+    else:
+        nw = torch.nn.functional.softmax(log_weights, dim=sample_dims)
+        return (nw * values).sum(dim=reducedims, keepdim=keepdims)
 
 def nvo_avo(lv: Tensor, sample_dims=0) -> Tensor:
     # values = -lv

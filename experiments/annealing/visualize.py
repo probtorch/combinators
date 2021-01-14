@@ -4,21 +4,34 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 from scipy.interpolate import interpn
 from matplotlib import cm
+import matplotlib.gridspec as gridspec
 
 
-def scatter(xs, lws=None, c='C0', ax=None):
-    xs = xs.squeeze()
+
+def scatter(xs, lws=None, c='C0', ax=None, show=False):
+    xs = xs.squeeze().detach().cpu().numpy()
     assert len(xs.shape) == 2
     inplace = ax is not None
     cm_endpoints = [(i, (*colors.to_rgb(c), i)) for i in [0.0, 1.0]]
     lin_alpha = colors.LinearSegmentedColormap.from_list('incr_alpha', cm_endpoints)
+    fig = None
     if ax is None:
         fig, ax = plt.subplots()
 
-    ax.scatter(*xs.t(), c=None if lws is None else lws.softmax(dim=0), cmap=lin_alpha)
+    ax.scatter(*xs.T, c=None if lws is None else lws.softmax(dim=0), cmap=lin_alpha)
 
-    if not inplace:
+    if show:
         plt.show()
+    return fig if fig is not None else ax
+
+def scatter_along(samples):
+    fig = plt.figure(figsize=(5*len(samples), 5))
+    gspec = gridspec.GridSpec(ncols=len(samples), nrows=1, figure=fig)
+
+    for i, xs in enumerate(samples):
+        ax = fig.add_subplot(gspec[0, i])
+        scatter(xs, ax=ax)
+    return fig
 
 # NVI PLOTTING ============================================================
 

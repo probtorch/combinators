@@ -2,6 +2,7 @@
 
 import torch
 import combinators.trace.utils as trace_utils
+from combinators.tensor.utils import autodevice
 from torch import nn
 from torch import Tensor
 from combinators.kernel import Kernel
@@ -24,10 +25,11 @@ class IdentityKernel(Kernel):
 
 
 class NormalKernel(Kernel):
-    def __init__(self, ext_name, net):
+    def __init__(self, ext_from:str, ext_to:str, net):
         super().__init__()
         self.net = net
-        self.ext_name = ext_name
+        self.ext_from = ext_from
+        self.ext_to = ext_to
 
     def apply_kernel(self, trace, cond_trace, cond_output, sample_dims=None):
         # TODO: super annoying... I will just assume there is always a sample dimension and will need to add some more guardrails
@@ -41,19 +43,20 @@ class NormalKernel(Kernel):
         #         cond_output = cond_output.T
         #     else:
         #         pass
-        sample_shape = cond_output.shape
-        if sample_dims is not None and cond_output.shape[0] == 1 and len(cond_output.shape) == 2:
-            cond_output = cond_output.T
+        # sample_shape = cond_trac[self.ext_from].value.shape
+        # if sample_dims is not None and cond_output.shape[0] == 1 and len(cond_output.shape) == 2:
+        #     cond_output = cond_output.T
 
-        mu = self.net(cond_output.detach()).view(sample_shape)
+        sample_shape = cond_trace[self.ext_from].value.shape
+        mu = self.net(cond_trace[self.ext_from].value.detach()) # .view(sample_shape)
 
         return trace.normal(loc=mu,
                             scale=torch.ones_like(mu, device=mu.device),
-                            value=cond_trace[self.ext_name].value if self.ext_name in cond_trace else None, # this could _and should_ be automated
-                            name=self.ext_name)
+                            value=cond_trace[self.ext_to].value if self.ext_to in cond_trace else None, # this could _and should_ be automated
+                            name=self.ext_to)
 
     def __repr__(self):
-        return f'ext={self.ext_name}:' + super().__repr__()
+        return f'ext_to={self.ext_to}:' + super().__repr__()
 
     def weight(self):
         return self.net.weight()
@@ -62,8 +65,8 @@ class NormalKernel(Kernel):
         return self.net.bias()
 
 class NormalLinearKernel(NormalKernel):
-    def __init__(self, ext_name):
-        super().__init__(ext_name, LinearMap(dim=1))
+    def __init__(self, ext_from, ext_to, device=None):
+        super().__init__(ext_from, ext_to, LinearMap(dim=1).to(autodevice(device)))
 
 class MultivariateNormalKernel(Kernel):
     def __init__(

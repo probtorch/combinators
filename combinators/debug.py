@@ -34,6 +34,10 @@ def excise_state(state:State) -> State:
     o = excise(state.output) if isinstance(state.output, Tensor) else state.output
     return State(tr, o)
 
+def print_grads(learnables, bools_only=True):
+    for i, k in enumerate(learnables):
+        for j, p in enumerate(k.parameters()):
+            print(i, j, "none" if p is None or torch.all(p == 0) else ('exists' if bools_only else p))
 
 def propagate(N:dist.MultivariateNormal, F:Tensor, t:Tensor, B:Tensor, marginalize:bool=False, reverse_order:bool=False)-> dist.MultivariateNormal:
     # N is normal starting from

@@ -5,13 +5,14 @@ from typing import Optional, Union, Dict
 from typeguard import typechecked
 import base64
 import hashlib
+import os
 
 @typechecked
 def autodevice(preference:Union[int, str, None]=None)->str:
     if isinstance(preference, str):
         return preference
     else:
-        if not torch.cuda.is_available():
+        if not torch.cuda.is_available() or os.getenv('CUDA_VISIBLE_DEVICES') == '':
             return "cpu"
         elif isinstance(preference, int):
             return f"cuda:{preference}"
@@ -22,12 +23,17 @@ def autodevice(preference:Union[int, str, None]=None)->str:
 def kw_autodevice(preference:Union[int, str, None]=None)->Dict[str, Optional[str]]:
     return dict(device=autodevice(preference))
 
+def _hash(t:Tensor, length:int):
+    hasher = hashlib.sha1(pickle.dumps(t))
+    return base64.urlsafe_b64encode(hasher.digest()[:length]).decode('ascii')
+
 @typechecked
-def thash(aten:Tensor, length:int=6, no_grad_char:str=" ")->str:
+def thash(aten:Tensor, length:int=8, no_grad_char:str=" ")->str:
     g = "∇" if aten.requires_grad else no_grad_char
-    hasher = hashlib.sha1(pickle.dumps(aten.detach()))
-    h = base64.urlsafe_b64encode(hasher.digest()[:length]).decode('ascii')
-    return f'#{g}{h}'
+    save_ref = aten.detach()
+    r = _hash(save_ref, length)
+    # v = _hash(save_ref.clone(), 3*(length // 4))
+    return f'#{g}{r}'
 
 @typechecked
 def show(aten:Tensor, fix_width:bool=True)->str:
@@ -35,6 +41,22 @@ def show(aten:Tensor, fix_width:bool=True)->str:
     s = "×".join(map(str, aten.shape))
     return f"{t}[{s}]{thash(aten)}"
 
+@typechecked
+def copy(aten:Tensor, requires_grad=False, deepcopy=False)->Tensor:
+    """
+    A copy that will deep- or shallow- copy depending on if you want the output tensor on the computation
+    graph.
+
+    Ref: https://stackoverflow.com/questions/55266154/pytorch-preferred-way-to-copy-a-tensor
+    """
+    if (requires_grad and not aten.requires_grad):
+        ret = aten.clone().detach()
+        ret.requires_grad_(True)
+        return ret
+    elif (requires_grad and aten.requires_grad) or (not requires_grad and not aten.requires_grad):
+        return aten.clone() if deepcopy else aten
+    else: # (not requires_grad and rv.value.requires_grad):
+        return aten.detach().clone() if deepcopy else aten.detach()
 
 def dim_contract(fn, expected_dims):
     def wrapper(*args, **kwargs):

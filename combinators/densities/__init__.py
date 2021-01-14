@@ -4,6 +4,7 @@ import torch
 import operator
 from functools import partial, reduce
 from torch import Tensor, distributions, Size, nn
+import torch.distributions as D
 from typing import Optional, Dict, Union, Callable
 from combinators.tensor.utils import kw_autodevice, autodevice
 
@@ -89,15 +90,15 @@ class Density(Program):
         return f'[{self.name}]' + super().__repr__()
 
 class Tempered(Density):
-    def __init__(self, name, d1:Union[Distribution, Density], d2:Union[Distribution, Density], beta:Tensor, reparameterized=False):
+    def __init__(self, name, d1:Union[Distribution, Density], d2:Union[Distribution, Density], beta:Tensor, optimize=False):
         assert torch.all(beta > 0.) and torch.all(beta < 1.), \
             "tempered densities are β=(0, 1) for clarity. Use model directly for β=0 or β=1"
         super().__init__(name, self.log_density_fn)
         self.beta = beta
         self.density1 = d1
         self.density2 = d2
-        # FIXME: needed for NVIR*
-        if reparameterized:
+        # FIXME: needed for NVI*/NVIR*
+        if optimize:
             raise NotImplementedError("Also need to torch.sigmoid to get beta back")
             self.logit = nn.Parameter(torch.logit(beta))
 
@@ -105,10 +106,10 @@ class Tempered(Density):
         def log_prob(g, value):
             return g.log_density_fn(value) if isinstance(g, Density) else g.dist.log_prob(value)
 
-        with torch.no_grad(): # you can't learn anything about this density
-            t = self.beta
-            return log_prob(self.density1, value)*(1-t) + \
-                   log_prob(self.density1, value)*t
+        # with torch.no_grad(): # you can't learn anything about this density for the moment
+        t = self.beta
+        return log_prob(self.density1, value)*(1-t) + \
+               log_prob(self.density2, value)*t
 
     def __repr__(self):
         return "[β={:.4f}]".format(self.beta.item()) + super().__repr__()
@@ -119,6 +120,7 @@ class GMM(Density):
         assert len(locs) == len(covs)
         self.K = K = len(locs)
         super().__init__(name, self.log_density_fn)
+        # FIXME: self.components = nn.ParameterList([distributions.MultivariateNormal(loc=locs[k], covariance_matrix=covs[k]) for k in range(K)])
         self.components = [distributions.MultivariateNormal(loc=locs[k], covariance_matrix=covs[k]) for k in range(K)]
         self.assignments = distributions.Categorical(torch.ones(K)) # take this off the trace
         # self.assignments = Categorical("assignments", probs=torch.ones(K))
@@ -145,13 +147,20 @@ class GMM(Density):
         trace.append(rv, name=self.name)
         return trace, xs
 
-    def log_density_fn(self, values):
-        return reduce(operator.add, map(lambda k: self.components[k].log_prob(values), range(self.K)))
+    def log_density_fn(self, value): # , log_weights, cond_set, param_set):
+        lds = []
+        for i, comp in enumerate(self.components):
+            ld_i = comp.log_prob(value) # + log_weights[i]
+            lds.append(ld_i)
+        lds_ = torch.stack(lds, dim=0)
+        ld = torch.logsumexp(lds_, dim=0)
+        # breakpoint()
+        return ld
 
 class RingGMM(GMM):
-    def __init__(self, name="RingGMM", scale=10, count=8, device=None):
+    def __init__(self, name="RingGMM", loc_scale=5, scale=1, count=8, device=None):
         angles = list(range(0, 360, 360//count))[:count] # integer division may give +1
         position = lambda radians: [math.cos(radians), math.sin(radians)]
-        locs = torch.tensor([position(a*math.pi/180) for a in angles], **kw_autodevice(device)) * scale
-        covs = [torch.eye(2, **kw_autodevice(device)) for _ in range(count)]
+        locs = torch.tensor([position(a*math.pi/180) for a in angles], **kw_autodevice(device)) * loc_scale
+        covs = [torch.eye(2, **kw_autodevice(device)) * scale for _ in range(count)]
         super().__init__(name=name, locs=locs, covs=covs)
