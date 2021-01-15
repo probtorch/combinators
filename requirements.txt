@@ -32,6 +32,7 @@ tensorboard
 # visualization / notebooks
 matplotlib
 seaborn
+ipywidgets
 
 # currently having some trouble with mach-nix
 hydra-core>=1.0.0
