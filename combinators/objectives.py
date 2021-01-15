@@ -57,3 +57,30 @@ def nvo_rkl(lw: Tensor, lv: Tensor, rv_proposal, rv_target, batch_dim=None, samp
 
     loss = kl_term + mb0(baseline * grad_log_Z1 - grad_log_Z2) + baseline + ldZ
     return loss
+
+def nvo_rkl_1d(lw: Tensor, lv: Tensor, rv_proposal, rv_target, batch_dim=None, sample_dims=0) -> Tensor:
+    # TODO: move back from the proposal and target RVs to joint logprobs?
+    reducedims = (sample_dims,)
+
+    lw = lw.detach()
+    ldZ = lv.detach().logsumexp(dim=sample_dims) - math.log(lv.shape[sample_dims])
+    f = -lv
+
+    # rv_proposal = next(iter(proposal_trace.values())) # tr[\gamma_{k-1}]
+    # rv_target = next(iter(target_trace.values()))     # tr[\gamma_{k}]
+
+    kwargs = dict(
+        sample_dims=sample_dims,
+        reducedims=reducedims,
+        keepdims=False
+    )
+
+    baseline = _estimate_mc(f.detach(), lw, **kwargs).detach()
+
+    kl_term = _estimate_mc(mb1(rv_proposal.log_prob.squeeze()) * (f - baseline), lw, **kwargs)
+
+    grad_log_Z1 = _estimate_mc(rv_proposal.log_prob.squeeze(), lw, **kwargs)
+    grad_log_Z2 = _estimate_mc(eval_nrep(rv_target).log_prob.squeeze(), lw+lv.detach(), **kwargs)
+
+    loss = kl_term + mb0(baseline * grad_log_Z1 - grad_log_Z2) + baseline + ldZ
+    return loss

@@ -22,15 +22,15 @@ class ResMLPJ(nn.Module):
     """
     residual connection + MLP + joint layer
     """
-    def __init__(self, dim_in, dim_hidden, dim_out, with_cov_embedding=False, initialize=None):
+    def __init__(self, dim_in, dim_hidden, dim_out, with_cov_embedding=False, initialize=None, activation=nn.ReLU):
         assert initialize is None or initialize in ['truncated_normal']
         self._initialize_type = initialize
         super().__init__()
         self.with_cov_embedding = with_cov_embedding # TODO: ask heiko why this is ignored
         self.initialize = initialize
-        self.joint = nn.Sequential(torch.nn.Linear(dim_in, dim_hidden), nn.ReLU())
-        self.mu = nn.Sequential(torch.nn.Linear(dim_hidden, dim_out))
-        self.cov = nn.Sequential(torch.nn.Linear(dim_hidden, dim_out))
+        self.joint = nn.Sequential(nn.Linear(dim_in, dim_hidden), activation())
+        self.mu = nn.Sequential(nn.Linear(dim_hidden, dim_out))
+        self.cov = nn.Sequential(nn.Linear(dim_hidden, dim_out))
 
     def forward(self, x):
         y = self.joint(x)

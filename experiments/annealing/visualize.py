@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
+try:
+    # The default backend; one of GTK GTKAgg GTKCairo GTK3Agg GTK3Cairo
+    # CocoaAgg MacOSX Qt4Agg Qt5Agg TkAgg WX WXAgg Agg Cairo GDK PS PDF SVG
+    import matplotlib
+    matplotlib.use('TKAgg')
+except:
+    pass
+
 import torch
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+
 from matplotlib import colors
 from scipy.interpolate import interpn
 from matplotlib import cm
-import matplotlib.gridspec as gridspec
-
 
 
 def scatter(xs, lws=None, c='C0', ax=None, show=False):
