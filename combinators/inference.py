@@ -18,7 +18,7 @@ import combinators.trace.utils as trace_utils
 import combinators.tensor.utils as tensor_utils
 from combinators.stochastic import Trace, Factor
 from combinators.types import Output, State, TraceLike
-from combinators.program import Program, Cond2
+from combinators.program import Program, Cond
 from combinators.kernel import Kernel
 from combinators.traceable import Conditionable
 from inspect import signature
@@ -109,13 +109,31 @@ class Reverse(KernelInf, Inf):
         self.program = program
         self.kernel = kernel
 
+    def forward(self, *program_args:Any, sample_dims=None, **program_kwargs:Any) -> Tuple[Trace, Output]:
+        program = Cond(self.program, self._cond_trace) if self._cond_trace is not None else self.program
+        program_state = State(*self._run_program(program, *program_args, sample_dims=sample_dims, **program_kwargs))
+
+        kernel_state = State(*self._run_kernel(self.kernel, *program_state, sample_dims=sample_dims))
+
+        log_aux = kernel_state.trace.log_joint(batch_dim=None, sample_dims=sample_dims)
+
+        self._cache = KCache(program_state, kernel_state)
+
+        return kernel_state.trace, log_aux, None
+
+class ReverseOld(KernelInf, Inf):
+    def __init__(self, program: Union[Program, KernelInf], kernel: Kernel, _step=None, _permissive=True) -> None:
+        super().__init__(_step, _permissive)
+        self.program = program
+        self.kernel = kernel
+
     def forward(self, *program_args:Any, cond_trace:Optional[Trace]=None, sample_dims=None, **program_kwargs:Any) -> Tuple[Trace, Output]:
-        program = self.program
-        if cond_trace is not None:
-            if isinstance(self.program, Program):
-                program = Cond2(self.program, cond_trace)
-            else:
-                raise NotImplementedError("propagation of observes is not defined, but this is handled in the greenfield-lazy branch")
+        program = Cond(self.program, cond_trace)
+        # if cond_trace is not None:
+        #     if isinstance(self.program, Program):
+        #         program = Cond(self.program, cond_trace)
+        #     else:
+        #         raise NotImplementedError("propagation of observes is not defined, but this is handled in the greenfield-lazy branch")
 
         program_state = State(*self._run_program(program, *program_args, sample_dims=sample_dims, **program_kwargs))
 
@@ -207,10 +225,10 @@ class Propose(nn.Module, Inf):
         # target_state = State(*self.target(*shared_args, **shared_kwargs))
         # self.target.clear_conditions()
 
-        conditions = dict(cond_trace=copytrace(proposal_state.trace, requires_grad=RequiresGrad.YES)) if isinstance(self.target, (Reverse, Kernel)) else dict()
-        ptr, plv, pout = self.target(*shared_args, sample_dims=sample_dims, **shared_kwargs, **conditions)
-        # conditioned_target = Condition(self.target, proposal_state.trace)
-        # ptr, plv, pout = conditioned_target(*shared_args, sample_dims=sample_dims, **shared_kwargs)
+        # conditions = dict(cond_trace=copytrace(proposal_state.trace, requires_grad=RequiresGrad.YES)) if isinstance(self.target, (Reverse, Kernel)) else dict()
+        # ptr, plv, pout = self.target(*shared_args, sample_dims=sample_dims, **shared_kwargs, **conditions)
+        conditioned_target = Cond(self.target, proposal_state.trace)
+        ptr, plv, pout = conditioned_target(*shared_args, sample_dims=sample_dims, **shared_kwargs)
         target_state = State(ptr, pout)
 
         joint_target_trace = ptr
