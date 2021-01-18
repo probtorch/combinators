@@ -18,33 +18,47 @@ import combinators.trace.utils as trace_utils
 
 from combinators.traceable import TraceModule
 
-class Program(TraceModule):
+class Cond:
+    def __init__(self) -> None:
+        super().__init__()
+        self._conditioning_trace: Trace = Trace()
+
+    def with_observations(self, trace:Trace) -> None:
+        self._conditioning_trace = trace_utils.copytrace(trace)
+
+
+class Cond2:
+    def __init__(self, program:Cond, trace:Trace = Trace()) -> None:
+        super().__init__()
+        self._conditioning_trace: Trace =  trace_utils.copytrace(trace)
+        self.program = program
+
+    def __call__(self, *args, **kwargs):
+        self.program._conditioning_trace = self._conditioning_trace
+        out = self.program(*args, **kwargs)
+        self.program._conditioning_trace = Trace()
+        return out
+
+class Program(TraceModule, Cond):
     """ superclass of a program? """
     def __init__(self):
         super().__init__()
-        self._conditioning_trace = Trace()
+        Cond.__init__(self)
 
     @abstractmethod
     def model(self, trace: Trace, *args:Any, **kwargs:Any) -> Output:
         raise NotImplementedError()
 
     def forward(self, *args:Any, sample_dims=None, **kwargs:Any) -> Tuple[Trace, Output]:
+        # trace = self.get_trace()
         trace = self._conditioning_trace
 
         out = self.model(trace, *args, **get_shape_kwargs(self.model, sample_dims=sample_dims), **kwargs)
 
         # TODO: enforce purity?
-        self.clear_observations()
         self._trace = trace
 
         return trace, out
-
-    def with_observations(self, trace:Trace) -> None:
-        self._conditioning_trace = trace_utils.copytrace(trace)
-
-    def clear_observations(self) -> None:
-        # NOTE: the user has to run this! it _should_ be automated
-        self._conditioning_trace = Trace()
 
     @classmethod
     def factory(cls, fn, name:str = ""):

@@ -32,8 +32,8 @@ class MLPKernel(Kernel):
         super().__init__()
         self.ext_name = ext_name
         self.net = nn.Sequential(
-            nn.Linear(1, dim_hidden), nn.ReLU(),
-            nn.Linear(dim_hidden, dim_hidden), nn.ReLU(),
+            nn.Linear(1, dim_hidden), nn.Sigmoid(),
+            nn.Linear(dim_hidden, dim_hidden), nn.Sigmoid(),
             nn.Linear(dim_hidden, 1))
 
     def apply_kernel(self, trace, cond_trace, obs):
