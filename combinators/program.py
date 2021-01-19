@@ -17,37 +17,7 @@ from combinators.types import Output, State, TraceLike, get_shape_kwargs
 import combinators.trace.utils as trace_utils
 from combinators.trace.utils import RequiresGrad
 
-from combinators.traceable import TraceModule, Conditionable
-
-class Cond:
-    """
-    Run a program's model with a conditioned trace
-    TOOO: should also be able to Condition any combinator.
-    FIXME: can't condition a conditioned model at the moment
-    """
-    def __init__(self, process: Conditionable, trace: Optional[Trace], requires_grad:RequiresGrad=RequiresGrad.DEFAULT, detach:Set[str]=set(), _step=None) -> None:
-        self.process = process
-        self.conditioning_trace = trace_utils.copytrace(trace, requires_grad=requires_grad, detach=detach) if trace is not None else Trace()
-        self._requires_grad = requires_grad
-        self._detach = detach
-
-    def __call__(self, *args:Any, **kwargs:Any) -> Tuple[Trace, Optional[Trace], Output]:
-        self.process._cond_trace = self.conditioning_trace
-        out = self.process(*args, **kwargs)
-        self.process._cond_trace = Trace()
-        return out
-
-# class Cond2:
-#     def __init__(self, program:Cond, trace:Trace = Trace()) -> None:
-#         super().__init__()
-#         self._conditioning_trace: Trace = trace_utils.copytrace(trace)
-#         self.program = program
-#
-#     def __call__(self, *args, **kwargs):
-#         self.program._cond_trace = self._conditioning_trace
-#         out = self.program(*args, **kwargs)
-#         self.program._cond_trace = Trace()
-#         return out
+from combinators.traceable import TraceModule
 
 class Program(TraceModule):
     """ superclass of a program? """

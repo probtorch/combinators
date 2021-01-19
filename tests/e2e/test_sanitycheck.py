@@ -17,7 +17,7 @@ from combinators.tensor.utils import thash, show
 from typing import Optional
 from combinators.densities.kernels import NormalLinearKernel
 from torch import distributions
-
+from combinators.inference import Condition
 
 class _Gaussian1d(nn.Module):
     def __init__(self, loc:int, std:int, name:str, num_samples:int):
@@ -381,6 +381,7 @@ def test_Gaussian_sanitycheck():
         assert (target_stdv - stdv_tol) < eval_stdv and  eval_stdv < (target_stdv + stdv_tol)
 
 
+# @mark.skip("use Condition combinator when this is all done")
 def test_2step_sanitycheck():
     g = lambda i: f'g{i}'
     torch.manual_seed(1)
@@ -388,8 +389,8 @@ def test_2step_sanitycheck():
     sample_shape = (num_samples,1)
     lr = 1e-2
     g1, g2, g3 = targets  = [Normal(loc=i, scale=1, name=g(i)) for i in range(1,4) ]
-    f12, f23 = forwards = [NormalLinearKernel(ext_name=g(i)) for i in range(2,4) ]
-    r21, r32 = reverses = [NormalLinearKernel(ext_name=g(i)) for i in range(1,3) ]
+    f12, f23 = forwards = [NormalLinearKernel(ext_from=g(i), ext_to=g(i+1)) for i in range(1,3) ]
+    r21, r32 = reverses = [NormalLinearKernel(ext_from=g(i+1), ext_to=g(i)) for i in range(1,3) ]
 
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses]], lr=lr)
 
@@ -406,7 +407,7 @@ def test_2step_sanitycheck():
     with trange(num_steps) as bar:
         for i in bar:
             # Initial
-            p_prv_tr, _ = g1(sample_shape=sample_shape)
+            p_prv_tr, _, _ = g1(sample_shape=sample_shape)
             # sampling reparameterized will have a gradient
             # NOTE: probtorch will default to running rsample
             lw = torch.zeros([1])
@@ -415,27 +416,23 @@ def test_2step_sanitycheck():
             # Nestable           #
             # ================== #
             # TODO: reduce number of samples, and just fix the samples to something simple
-            g1.with_observations(p_prv_tr)
-            q_prp_tr, o = g1(sample_shape=sample_shape) # q_prp: {z_0: normal(1,6).detach()}
-            g1.clear_observations()
+            q_prp_tr, _, o = Condition(g1, p_prv_tr)(sample_shape=sample_shape) # q_prp: {z_0: normal(1,6).detach()}
             # NOTE: ALL OF p_prv is detached
 
             # TODO: Remove joint nn. Fix weights of NN to [xavier?]
-            q_ext_tr, o = f12(q_prp_tr, o)                    # q_ext: {z_0: normal(1,6).detach(), z_1: normal(nnet(q_prp['z_0'].value.detach()),1).detach()}
+            q_ext_tr, _, o = f12(q_prp_tr, o)                    # q_ext: {z_0: normal(1,6).detach(), z_1: normal(nnet(q_prp['z_0'].value.detach()),1).detach()}
 
             # NOTE: z_0 must _not_ have grad
             # NOTE: z_1 must have grad
             # NOTE: AVO ONLY WORKS FOR REPARAMETERIZED <<< maybe probtorch does this already. doublecheck
             #  - check if samples have grad
 
-            g2.with_observations(q_ext_tr)
             # TODO: same as with proposal above
-            p_tar_tr, o = g2(sample_shape=sample_shape) # p_tar: {z_1: normal(4,1).detach()}
+            p_tar_tr, _, o = Condition(g2, q_ext_tr)(sample_shape=sample_shape) # p_tar: {z_1: normal(4,1).detach()}
             # NOTE: z_1 must have grad
-            g2.clear_observations()
 
             # TODO: same as with fwd above
-            p_ext_tr, o = r21(p_tar_tr, o) # q_ext: {z_0: normal(nnet(p_tar['z_1'].value.detach()), 6).detach(), z_1: normal(4,1).detach()}
+            p_ext_tr, _, o = r21(p_tar_tr, o) # q_ext: {z_0: normal(nnet(p_tar['z_1'].value.detach()), 6).detach(), z_1: normal(4,1).detach()}
             # NOTE: z_1 must have grad <<< note!!! important for connecting the gradients
             # NOTE: z_0 must have grad
             # q_ext['z_0'].value.requires_grad = False
@@ -473,27 +470,23 @@ def test_2step_sanitycheck():
             # ================================================================== #
             # TODO: reduce number of samples, and just fix the samples to something simple
 
-            g2.with_observations(p_prv_tr)
-            q_prp_tr, o = g2(sample_shape=sample_shape) # q_prp: {z_0: normal(1,6).detach()}
-            g2.clear_observations()
+            q_prp_tr, _, o = Condition(g2, p_prv_tr)(sample_shape=sample_shape) # q_prp: {z_0: normal(1,6).detach()}
             # NOTE: ALL OF p_prv is detached
 
             # TODO: Remove joint nn. Fix weights of NN to [xavier?]
-            q_ext_tr, o = f23(q_prp_tr, o)                    # q_ext: {z_0: normal(1,6).detach(), z_1: normal(nnet(q_prp['z_0'].value.detach()),1).detach()}
+            q_ext_tr, _, o = f23(q_prp_tr, o)                    # q_ext: {z_0: normal(1,6).detach(), z_1: normal(nnet(q_prp['z_0'].value.detach()),1).detach()}
 
             # NOTE: z_0 must _not_ have grad
             # NOTE: z_1 must have grad
             # NOTE: AVO ONLY WORKS FOR REPARAMETERIZED <<< maybe probtorch does this already. doublecheck
             #  - check if samples have grad
 
-            g3.with_observations(q_ext_tr)
             # TODO: same as with proposal above
-            p_tar_tr, o = g3(sample_shape=sample_shape) # p_tar: {z_1: normal(4,1).detach()}
+            p_tar_tr, _, o = Condition(g3, q_ext_tr)(sample_shape=sample_shape) # p_tar: {z_1: normal(4,1).detach()}
             # NOTE: z_1 must have grad
-            g3.clear_observations()
 
             # TODO: same as with fwd above
-            p_ext_tr, o = r32(p_tar_tr, o) # q_ext: {z_0: normal(nnet(p_tar['z_1'].value.detach()), 6).detach(), z_1: normal(4,1).detach()}
+            p_ext_tr, _, o = r32(p_tar_tr, o) # q_ext: {z_0: normal(nnet(p_tar['z_1'].value.detach()), 6).detach(), z_1: normal(4,1).detach()}
             # NOTE: z_1 must have grad <<< note!!! important for connecting the gradients
             # NOTE: z_0 must have grad
             # q_ext['z_0'].value.requires_grad = False
@@ -552,8 +545,8 @@ def test_2step_sanitycheck():
 
         samples = []
         for _ in range(num_validate_samples):
-            q_prp_tr, o = g1()
-            q_ext_tr, o = f12(q_prp_tr, o)
+            q_prp_tr, _, o = g1()
+            q_ext_tr, _, o = f12(q_prp_tr, o)
             samples.append(o)
         evaluation = torch.cat(samples)
         eval_mean, eval_stdv = evaluation.mean().item(), evaluation.std().item()
@@ -562,11 +555,10 @@ def test_2step_sanitycheck():
 
         samples = []
         for _ in range(num_validate_samples):
-            q1_prp_tr, o = g1()
-            q1_ext_tr, o = f12(q1_prp_tr, o)
-            g2.with_observations(q_ext_tr)
-            q2_prp_tr, o = g2()
-            q2_ext_tr, o = f23(q2_prp_tr, o)
+            q1_prp_tr, _, o = g1()
+            q1_ext_tr, _, o = f12(q1_prp_tr, o)
+            q2_prp_tr, _, o = Condition(g2, q_ext_tr)()
+            q2_ext_tr, _, o = f23(q2_prp_tr, o)
             # out, _ = proposal()
             samples.append(o)
         evaluation = torch.cat(samples)
