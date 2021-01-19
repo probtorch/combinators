@@ -151,7 +151,7 @@ def test_1step_avo(seed):
 
             _, log_weights = extend(sample_shape=(200,1), sample_dims=0)
 
-            proposal.clear_observations() # FIXME: this can be automated, but it would be nice to have more infrastructure around observations
+            # proposal.clear_observations() # FIXME: this can be automated, but it would be nice to have more infrastructure around observations
             loss = nvo_avo(log_weights).mean()
 
             loss.backward()
@@ -173,7 +173,7 @@ def test_1step_avo(seed):
                if num_steps > 100:
                    loss_avgs.append(loss_avg)
     with torch.no_grad():
-        assert_empirical_marginal_mean_std(lambda: Forward(fwd, proposal)()[1], target_params, Tolerance(loc=0.15, scale=0.15))
+        assert_empirical_marginal_mean_std(lambda: Forward(fwd, proposal)()[-1], target_params, Tolerance(loc=0.15, scale=0.15))
 
 
 def test_2step_avo(seed):

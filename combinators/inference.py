@@ -27,17 +27,18 @@ from combinators.objectives import nvo_avo
 
 @typechecked
 class State(Iterable):
-    def __init__(self, trace:Optional[Trace], output:Optional[Output]):
+    def __init__(self, trace:Optional[Trace], weights:Optional[Output], output:Optional[Output]):
         self.trace = trace
+        self.weights = weights
         self.output = output
     def __repr__(self):
         if self.trace is None:
             return "None"
         else:
             out_str = tensor_utils.show(self.output) if isinstance(self.output, Tensor) else self.output
-            return "tr: {}; out: {}".format(trace_utils.show(self.trace), out_str)
+            return "tr={}; lv={}; out={}".format(trace_utils.show(self.trace), tensor_utils.show(self.weights), out_str)
     def __iter__(self):
-        for x in [self.trace, self.output]:
+        for x in [self.trace, self.weights, self.output]:
             yield x
 
 @typechecked
@@ -92,11 +93,10 @@ class KernelInf(nn.Module): # , Observable):
         else:
             return kwargs
 
-    def _run_program(self, program, *program_args:Any, sample_dims=None, **program_kwargs:Any):
+    def _run_program(self, program, *program_args:Any, **program_kwargs:Any):
         # runnable = Condition(self.program, self._cond_trace) if self._cond_trace is not None else self.program
         return program(
             *self._program_args(program, *program_args),
-            sample_dims=sample_dims,
             **self._program_kwargs(program, **program_kwargs))
 
     def _run_kernel(self, kernel, program_trace: Trace, program_output:Output, sample_dims=None):
@@ -108,12 +108,12 @@ class Reverse(KernelInf, Inf):
         super().__init__(_step, _permissive)
         self.program = program
         self.kernel = kernel
+        self._cond_trace = None
 
     def forward(self, *program_args:Any, sample_dims=None, **program_kwargs:Any) -> Tuple[Trace, Output]:
         program = Cond(self.program, self._cond_trace) if self._cond_trace is not None else self.program
         program_state = State(*self._run_program(program, *program_args, sample_dims=sample_dims, **program_kwargs))
-
-        kernel_state = State(*self._run_kernel(self.kernel, *program_state, sample_dims=sample_dims))
+        kernel_state = State(*self._run_kernel(self.kernel, program_state.trace, program_state.output, sample_dims=sample_dims))
 
         log_aux = kernel_state.trace.log_joint(batch_dim=None, sample_dims=sample_dims)
 
@@ -127,7 +127,7 @@ class ReverseOld(KernelInf, Inf):
         self.program = program
         self.kernel = kernel
 
-    def forward(self, *program_args:Any, cond_trace:Optional[Trace]=None, sample_dims=None, **program_kwargs:Any) -> Tuple[Trace, Output]:
+    def forward(self, *program_args:Any, cond_trace:Optional[Trace]=None, sample_dims=None, **program_kwargs:Any) -> Tuple[Trace, Optional[Tensor], Output]:
         program = Cond(self.program, cond_trace)
         # if cond_trace is not None:
         #     if isinstance(self.program, Program):
@@ -154,7 +154,7 @@ class ReverseOld(KernelInf, Inf):
 
         self._cache = KCache(program_state, kernel_state)
 
-        return kernel_state.trace, log_aux, None
+        return program_state.trace, log_aux, program_state.output
 
 
 class Forward(KernelInf, Inf):
@@ -163,7 +163,7 @@ class Forward(KernelInf, Inf):
         self.program = program
         self.kernel = kernel
 
-    def forward(self, *program_args:Any, sample_dims=None, **program_kwargs) -> Tuple[Trace, Output]:
+    def forward(self, *program_args:Any, sample_dims=None, **program_kwargs) -> Tuple[Trace, Optional[Tensor], Output]:
         # program_state = State(*self.program(
         #     *self._program_args(self.program, *program_args),
         #     sample_dims=sample_dims,
@@ -179,7 +179,7 @@ class Forward(KernelInf, Inf):
 
         # self.kernel.update_conditions(self.observations)
         # kernel_state = State(*self.kernel(*program_state, sample_dims=sample_dims))
-        kernel_state = State(*self._run_kernel(self.kernel, *program_state, sample_dims=sample_dims))
+        kernel_state = State(*self._run_kernel(self.kernel, program_state.trace, program_state.output, sample_dims=sample_dims))
         # self.kernel.clear_conditions()
         self._cache = KCache(program_state, kernel_state)
         # kernel_state.trace['z_1'].value.backward(retain_graph=True)
@@ -194,8 +194,8 @@ class Forward(KernelInf, Inf):
         # print([t.grad for t in self.kernel.parameters()])
         # breakpoint();
 
-        plv = kernel_state.trace.log_joint(batch_dim=None, sample_dims=sample_dims)
-        return kernel_state.trace, plv, kernel_state.output
+        log_joint = kernel_state.trace.log_joint(batch_dim=None, sample_dims=sample_dims)
+        return kernel_state.trace, log_joint, kernel_state.output
 
 
 class Propose(nn.Module, Inf):
@@ -209,17 +209,10 @@ class Propose(nn.Module, Inf):
 
     def forward(self, *shared_args, sample_dims=None, **shared_kwargs):
         # FIXME: target and proposal args can / should be separated
-        qtr, qlv, qout = self.proposal(*shared_args, sample_dims=sample_dims, **shared_kwargs)
-        proposal_state = State(qtr, qout)
-        joint_proposal_trace = qtr
-        print()
+        proposal_state = State(*self.proposal(*shared_args, sample_dims=sample_dims, **shared_kwargs))
+        joint_proposal_trace = self.proposal._cache.kernel.trace
 
-        print(qlv)
-        q_tar = qtr.log_joint(batch_dim=None, sample_dims=sample_dims, nodes=qtr._nodes)
-        print(q_tar)
-        q_tar = qtr.log_joint(batch_dim=None, sample_dims=sample_dims)
-        print(q_tar)
-        print("=============================")
+        # q_tar = qtr.log_joint(batch_dim=None, sample_dims=sample_dims)
 
         # self.target.condition_on(proposal_state.trace)
         # target_state = State(*self.target(*shared_args, **shared_kwargs))
@@ -227,29 +220,19 @@ class Propose(nn.Module, Inf):
 
         # conditions = dict(cond_trace=copytrace(proposal_state.trace, requires_grad=RequiresGrad.YES)) if isinstance(self.target, (Reverse, Kernel)) else dict()
         # ptr, plv, pout = self.target(*shared_args, sample_dims=sample_dims, **shared_kwargs, **conditions)
-        conditioned_target = Cond(self.target, proposal_state.trace)
-        ptr, plv, pout = conditioned_target(*shared_args, sample_dims=sample_dims, **shared_kwargs)
-        target_state = State(ptr, pout)
+        #
+        # conditioned_target = Cond(self.target, proposal_state.trace) # NOTE: might be a bug and needs whole trace?
+        conditioned_target = Cond(self.target, joint_proposal_trace) # NOTE: might be a bug and needs whole trace?
+        target_state = State(*conditioned_target(*shared_args, sample_dims=sample_dims, **shared_kwargs))
 
-        joint_target_trace = ptr
+        joint_target_trace = self.target._cache.kernel.trace
         self._cache = PCache(target_state, proposal_state)
         state = self._cache
 
 
-        print(plv)
-        p_tar = ptr.log_joint(batch_dim=None, sample_dims=sample_dims, nodes=ptr._nodes)
-        print(p_tar)
-        p_tar = ptr.log_joint(batch_dim=None, sample_dims=sample_dims)
-        print(p_tar)
+        # p_tar = ptr.log_joint(batch_dim=None, sample_dims=sample_dims)
         # lv = q_tar - p_tar
-        lv = qlv - plv
-
-        # print(self._cache)
-        nvo_avo(lv).mean().backward()
-        print([t.grad for t in self.proposal.kernel.parameters()])
-        print([t.grad for t in self.target.kernel.parameters()])
-        breakpoint();
-
+        lv = proposal_state.weights - target_state.weights
 
         if self.proposal._cache is not None:
             # FIXME: this is a hack for the moment and should be removed somehow.
@@ -264,8 +247,8 @@ class Propose(nn.Module, Inf):
             proposal_keys = set(self.proposal._cache.program.trace.keys())
             target_keys = set(self.target._cache.kernel.trace.keys()) - proposal_keys
             state = PCache(
-                proposal=State(trace=trace_utils.copysubtrace(proposal_state.trace, proposal_keys), output=proposal_state.output),
-                target=State(trace=trace_utils.copysubtrace(target_state.trace, target_keys), output=target_state.output),
+                proposal=State(trace=trace_utils.copysubtrace(proposal_state.trace, proposal_keys), weights=proposal_state.weights, output=proposal_state.output),
+                target=State(trace=trace_utils.copysubtrace(target_state.trace, target_keys), weights=target_state.weights, output=target_state.output),
             )
 
         return state, lv

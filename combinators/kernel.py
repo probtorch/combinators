@@ -28,7 +28,7 @@ class Kernel(TraceModule):
     def apply_kernel(self, trace: Trace, cond_trace: Trace, outs: Output, sample_dims:Optional[int]=None): #, batch_dim:Optional[int]=None) -> Output:
         raise NotImplementedError()
 
-    def forward(self, cond_trace: Trace, cond_outs: Output, sample_dims=None, validate=True) -> Tuple[Trace, Output]:
+    def forward(self, cond_trace: Trace, cond_outs: Output, sample_dims=None, validate=True) -> Tuple[Trace, Optional[Tensor],  Output]:
         # get a fresh trace to make sure we don't have inplace mutation
         trace = Trace()
 
@@ -41,4 +41,4 @@ class Kernel(TraceModule):
         # grab anything that is missing from the cond_trace
         full_trace = trace_utils.copytraces(cond_trace, trace)
 
-        return full_trace, out
+        return full_trace, None, out

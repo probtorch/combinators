@@ -58,7 +58,7 @@ class Program(TraceModule):
     def model(self, trace: Trace, *args:Any, **kwargs:Any) -> Output:
         raise NotImplementedError()
 
-    def forward(self, *args:Any, sample_dims=None, **kwargs:Any) -> Tuple[Trace, Output]:
+    def forward(self, *args:Any, sample_dims=None, **kwargs:Any) -> Tuple[Trace, Optional[Tensor],  Output]:
         trace = self.get_trace()
 
         out = self.model(trace, *args, **get_shape_kwargs(self.model, sample_dims=sample_dims), **kwargs)
@@ -66,7 +66,7 @@ class Program(TraceModule):
         # TODO: enforce purity?
         self._trace = trace
 
-        return trace, out
+        return trace, None, out
 
     @classmethod
     def factory(cls, fn, name:str = ""):
