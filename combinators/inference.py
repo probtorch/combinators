@@ -16,7 +16,7 @@ from combinators.types import check_passable_arg, check_passable_kwarg, get_shap
 from combinators.trace.utils import RequiresGrad, copytrace
 import combinators.trace.utils as trace_utils
 import combinators.tensor.utils as tensor_utils
-from combinators.stochastic import Trace, Factor
+from combinators.stochastic import Trace, ConditioningTrace
 from combinators.types import Output, State, TraceLike
 from combinators.program import Program
 from combinators.kernel import Kernel
@@ -88,18 +88,23 @@ class Condition(Inf):
     TOOO: should also be able to Condition any combinator.
     FIXME: can't condition a conditioned model at the moment
     """
-    def __init__(self, process: Conditionable, trace: Optional[Trace], requires_grad:RequiresGrad=RequiresGrad.DEFAULT, detach:Set[str]=set(), _step=None) -> None:
+    def __init__(self, process: Conditionable, trace: Optional[Trace], requires_grad:RequiresGrad=RequiresGrad.DEFAULT, detach:Set[str]=set(), _step=None, _debug=False) -> None:
         self.process = process
         self.conditioning_trace = trace_utils.copytrace(trace, requires_grad=requires_grad, detach=detach) if trace is not None else Trace()
         self._requires_grad = requires_grad
         self._detach = detach
+        self._debug = _debug
 
     def __call__(self, *args:Any, **kwargs:Any) -> Tuple[Trace, Optional[Trace], Output]:
-        self.process._cond_trace = self.conditioning_trace
+        self.process._cond_trace = ConditioningTrace(self.conditioning_trace)
 
         out = _dispatch(permissive=True)(self.process, *args, **kwargs)
         self.process._cond_trace = Trace()
-        return out
+        trace = out[0]
+        if isinstance(trace, ConditioningTrace):
+            return out[0].as_trace(access_only=True), *out[1:]
+        else:
+            return out
 
 class KernelInf(nn.Module, Conditionable):
     def __init__(self, _step:Optional[int]=None, _permissive_arguments:bool=True):
@@ -125,8 +130,8 @@ class Reverse(KernelInf, Inf):
         self.program = program
         self.kernel = kernel
 
-    def forward(self, *program_args:Any, sample_dims=None, **program_kwargs:Any) -> Tuple[Trace, Output]:
-        program = Condition(self.program, self._cond_trace) if self._cond_trace is not None else self.program
+    def forward(self, *program_args:Any, sample_dims=None, **program_kwargs:Any) -> Tuple[Trace, Optional[Tensor], Output]:
+        program = Condition(self.program, self._cond_trace, _debug=True) if self._cond_trace is not None else self.program
 
         program_state = State(*self._run_program(program, *program_args, sample_dims=sample_dims, **program_kwargs))
         kernel_state = State(*self._run_kernel(self.kernel, program_state.trace, program_state.output, sample_dims=sample_dims))
@@ -165,7 +170,7 @@ class Propose(nn.Module, Inf):
     def forward(self, *shared_args, sample_dims=None, **shared_kwargs):
         proposal_state = State(*self.proposal(*shared_args, sample_dims=sample_dims, **shared_kwargs))
 
-        conditioned_target = Condition(self.target, proposal_state.trace) # NOTE: might be a bug and needs whole trace?
+        conditioned_target = Condition(self.target, proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and needs whole trace?
         target_state = State(*conditioned_target(*shared_args, sample_dims=sample_dims, **shared_kwargs))
         lv = target_state.weights - proposal_state.weights
 
@@ -174,23 +179,5 @@ class Propose(nn.Module, Inf):
         state = self._cache
 
 
-        if self.proposal._cache is not None:
-            # FIXME: this is a hack for the moment and should be removed somehow.
-            # NOTE: this is unnecessary for the e2e/test_1dgaussians.py, but I am a bit nervous about double-gradients
-            if isinstance(self.proposal._cache, PCache):
-                raise NotImplemented("If this is the case (which it can be) i will actually need a way to propogate these detachments in a smarter way")
-
-            joint_proposal_trace = self.proposal._cache.kernel.trace
-            joint_target_trace = self.target._cache.kernel.trace
-            # can we always assume we are in NVI territory?
-            for k, rv in self.proposal._cache.program.trace.items():
-                joint_proposal_trace[k]._value = rv.value.detach()
-
-            proposal_keys = set(self.proposal._cache.program.trace.keys())
-            target_keys = set(self.target._cache.kernel.trace.keys()) - proposal_keys
-            state = PCache(
-                proposal=State(trace=trace_utils.copysubtrace(proposal_state.trace, proposal_keys), weights=proposal_state.weights, output=proposal_state.output),
-                target=State(trace=trace_utils.copysubtrace(target_state.trace, target_keys), weights=target_state.weights, output=target_state.output),
-            )
 
         return state, lv

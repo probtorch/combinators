@@ -475,6 +475,65 @@ class Trace(MutableMapping):
         log_pw_joints = log_mean_exp(log_pw_joints, 1).transpose(0, batch_dim)
         return log_pw_joints, log_marginals, log_prod_marginals
 
+class ConditioningTrace(Trace):
+    """
+    A trace-like datastructure which allows for in-place mutation.
+
+    Conditioning traces track what random variables are mutated and can be
+    converted into a Trace in one of two ways -- either by discarding untouched
+    random variables or by keeping all random variables.
+
+    Any random variable that a ConditioningTrace is initialized with have their
+    provenance changed to OBSERVED.
+    """
+    def __init__(self, tr: Trace):
+        super().__init__()
+        self._initialized = dict()
+        self._mutated = dict()
+        for k, rv in tr.items():
+            cls = type(rv)
+            if cls == RandomVariable:
+                newrv = cls(rv.dist, rv.value, provenance=Provenance.OBSERVED, mask=rv.mask, use_pmf=rv._use_pmf)
+            else:
+                newrv = cls(rv._log_density_fn, rv.value, provenance=Provenance.OBSERVED, mask=rv.mask)
+            self._nodes[k] = newrv
+            self._initialized[k] = True
+
+    def __setitem__(self, name, node):
+        """ allow for setting varialbles in a conditioning trace """
+        if not isinstance(node, Stochastic):
+            raise TypeError("Argument node must be an instance of "
+                            "probtorch.Stochastic")
+        if (node.log_prob != node.log_prob).sum() > 0:
+            raise ValueError("NaN log prob encountered in node"
+                             "with name: " + name)
+        self._mutated[name] = True
+        self._nodes[name] = node
+
+    def as_trace(self, access_only):
+        newtr = Trace()
+        # FIXME: I need to change logic for the following as well if access_only
+        newtr._counters = self._counters
+        newtr._mask = self._mask
+        newtr.idempotent = self.idempotent
+        newtr.lazy_observations = self.lazy_observations
+        mutated = set(self._mutated.keys())
+        newtr._nodes = {k:v for k, v in self._nodes.items() if access_only and k in mutated }
+
+        return newtr
+
+    def append(self, node, name=None):
+        """ append bypasses __setitem__ restrictions and may create a key if name=None """
+        start_keys = set(self.keys())
+        out = super().append(node, name=name)
+        end_keys = set(self.keys())
+        new_keys = list(end_keys - start_keys)
+        if len(new_keys) > 0:
+            self._mutated[new_keys[0]] = True
+        else:
+            self._mutated[name] = True
+        return out
+
 
 def _autogen_trace_methods():
     import torch as _torch

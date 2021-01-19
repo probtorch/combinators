@@ -115,6 +115,14 @@ def get_requires_grad(ten, is_detach_set, global_requires_grad:RequiresGrad=Requ
         return ten.requires_grad if global_requires_grad==RequiresGrad.DEFAULT else global_requires_grad == RequiresGrad.YES
 
 @typechecked
+def detach(tr:Trace):
+    def detachrv(rv):
+        rv._value = rv._value.detach()
+        return rv
+
+    return {k: detachrv(rv) for k, rv in tr.items()}
+
+@typechecked
 def copytraces(*traces: Trace, requires_grad:RequiresGrad=RequiresGrad.DEFAULT, detach:Set[str]=set(), overwrite=False)->Trace:
     """
     shallow-copies nodes from many traces into a new trace.

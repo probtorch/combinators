@@ -10,6 +10,7 @@ from pytest import fixture, mark
 from tqdm import trange
 
 import combinators.trace.utils as trace_utils
+from combinators.trace.utils import RequiresGrad
 from combinators.tensor.utils import kw_autodevice, copy, thash
 from combinators import Forward, Reverse, Propose, Kernel, Condition
 from combinators.metrics import effective_sample_size, log_Z_hat
@@ -136,7 +137,7 @@ def test_annealing_path_tempered_normals(seed):
             lw = torch.zeros(sample_shape)
 
             for k, (fwd, rev, q, p) in enumerate(zip(forwards, reverses, targets[:-1], targets[1:])):
-                q_ext = Forward(fwd, Condition(q, p_prv_tr))
+                q_ext = Forward(fwd, Condition(q, p_prv_tr, requires_grad=RequiresGrad.NO))
                 p_ext = Reverse(p, rev)
                 extend = Propose(target=p_ext, proposal=q_ext)
                 state, lv = extend(sample_shape=sample_shape, sample_dims=0)

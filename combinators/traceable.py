@@ -31,10 +31,6 @@ class Conditionable(ABC):
         # return trace
         return Trace() if self._cond_trace is None or evict else self._cond_trace
 
-    def apply_conditions(self, trace:Trace) -> None:
-        for key, value in self._cond_trace.items():
-            trace.enqueue_observation(key, value)
-
 @typechecked
 class Traceable(Conditionable):
     def __init__(self) -> None:
