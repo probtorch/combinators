@@ -47,6 +47,11 @@ class MLPKernel(Kernel):
 def seed():
     torch.manual_seed(1)
 
+@fixture(autouse=True)
+def use_fast():
+    return True
+
+
 
 def test_forward(seed):
     g = Normal(loc=0, scale=1, name="g")
@@ -96,7 +101,6 @@ def test_propose_values(seed):
     assert isinstance(log_weights, Tensor)
 
     cache = extend._cache
-    # import ipdb; ipdb.set_trace();
 
     for k in ['z_0', 'z_1']:
         assert torch.equal(cache.proposal.trace[k].value, cache.target.trace[k].value)
@@ -135,9 +139,11 @@ def test_1step_avo(seed):
 
     target_params, proposal_params = all_params = [Params(4, 1), Params(1, 4)]
     target,        proposal        = [Normal(*p, name=f'z_{p.loc}') for p in all_params]
-    fwd, rev = [MLPKernel(dim_hidden=4, ext_name=f'z_{ext_mean}') for ext_mean in [4, 1]]
+    # fwd, rev = [MLPKernel(dim_hidden=4, ext_name=f'z_{ext_mean}') for ext_mean in [4, 1]]
+    fwd = NormalLinearKernel(ext_from=f'z_1', ext_to='z_4')
+    rev = NormalLinearKernel(ext_from=f'z_4', ext_to='z_1')
 
-    optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [proposal, target, fwd, rev]], lr=0.01)
+    optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [proposal, target, fwd, rev]], lr=0.1)
 
     num_steps = 100
     loss_ct, loss_sum, loss_avgs, loss_all = 0, 0.0, [], []
@@ -149,7 +155,7 @@ def test_1step_avo(seed):
             p_ext = Reverse(target, rev)
             extend = Propose(target=p_ext, proposal=q_ext)
 
-            _, log_weights = extend(sample_shape=(200,1), sample_dims=0)
+            _, log_weights = extend(sample_shape=(5,1), sample_dims=0)
 
             # proposal.clear_observations() # FIXME: this can be automated, but it would be nice to have more infrastructure around observations
             loss = nvo_avo(log_weights).mean()
@@ -176,7 +182,7 @@ def test_1step_avo(seed):
         assert_empirical_marginal_mean_std(lambda: Forward(fwd, proposal)()[-1], target_params, Tolerance(loc=0.15, scale=0.15))
 
 
-def test_2step_avo(seed):
+def test_2step_avo(seed, use_fast):
     """
     2-step NVI (NVI-sequential): 4 intermediate densities (target and proposal always fixed).
 
@@ -186,9 +192,9 @@ def test_2step_avo(seed):
     f12, f23 = forwards = [NormalLinearKernel(ext_from=f"z_{i}", ext_to=f"z_{i+1}").to(autodevice()) for i in range(1,3)]
     r21, r32 = reverses = [NormalLinearKernel(ext_from=f"z_{i+1}", ext_to=f"z_{i}").to(autodevice()) for i in range(1,3)]
 
-    optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses, *targets]], lr=1e-2)
+    optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses, *targets]], lr=0.1 if use_fast else 1e-2)
 
-    num_steps = 2000
+    num_steps = 100 if use_fast else 400
     loss_ct, loss_sum, loss_all = 0, 0.0, []
     lvs_all = []
     sample_shape=(100,1)
@@ -196,19 +202,19 @@ def test_2step_avo(seed):
     with trange(num_steps) as bar:
         for i in bar:
             q0 = targets[0]
-            p_prv_tr, out0 = q0(sample_shape=sample_shape)
+            p_prv_tr, _, out0 = q0(sample_shape=sample_shape)
 
             loss = torch.zeros([1], **kw_autodevice())
 
             lvs = []
             for fwd, rev, q, p in zip(forwards, reverses, targets[:-1], targets[1:]):
-                q.with_observations(trace_utils.copytrace(p_prv_tr, detach=p_prv_tr.keys()))
+                # q.with_observations(trace_utils.copytrace(p_prv_tr, detach=p_prv_tr.keys()))
                 q_ext = Forward(fwd, q)
                 p_ext = Reverse(p, rev)
                 extend_argument = Propose(target=p_ext, proposal=q_ext)
                 # state, lv = extend_argument(sample_shape=sample_shape) # TODO
                 state, lv = extend_argument(sample_shape=sample_shape, sample_dims=0)
-                q.clear_observations()
+                # q.clear_observations()
 
                 lvs.append(lv)
 
@@ -253,34 +259,34 @@ def test_2step_avo(seed):
         assert abs((out12.loc - g2.dist.loc).item()) < tol.loc
         assert abs((out23.loc - g3.dist.loc).item()) < tol.loc
 
-        tr, out = g1(sample_shape=(200,1))
+        tr, _, out = g1(sample_shape=(200,1))
         assert abs(out.mean().item() - 1) < tol.loc
-        tr, out = f12(tr, out)
+        tr, _, out = f12(tr, out)
         assert abs(out.mean().item() - 2) < tol.loc
 
         pre2 = Forward(f12, g1)
-        tr, out = pre2(sample_shape=(200, 1))
+        tr, _, out = pre2(sample_shape=(200, 1))
         assert abs(out.mean().item() - 2) < tol.loc
 
-        tr, out = g2(sample_shape=(200,1))
+        tr, _, out = g2(sample_shape=(200,1))
         assert abs(out.mean().item() - 2) < tol.loc
-        tr, out = f23(tr, out)
+        tr, _, out = f23(tr, out)
         assert abs(out.mean().item() - 3) < tol.loc
 
         pre3 = Forward(f23, g2)
-        tr, out = pre3(sample_shape=(200,1))
+        tr, _, out = pre3(sample_shape=(200,1))
         assert abs(out.mean().item() - 3) < tol.loc
 
-        predict_g1_to_g2 = lambda: pre2()[1]
-        predict_g2_to_g3 = lambda: pre3()[1]
-        predict_g1_to_g3 = lambda: Forward(f23, Forward(f12, g1))()[1]
+        predict_g1_to_g2 = lambda: pre2()[-1]
+        predict_g2_to_g3 = lambda: pre3()[-1]
+        predict_g1_to_g3 = lambda: Forward(f23, Forward(f12, g1))()[-1]
 
         assert_empirical_marginal_mean_std(predict_g1_to_g2, Params(loc=2, scale=1), tol)
         assert_empirical_marginal_mean_std(predict_g2_to_g3, Params(loc=3, scale=1), tol)
         assert_empirical_marginal_mean_std(predict_g1_to_g3, Params(loc=3, scale=1), tol)
 
 
-def test_4step_avo(seed):
+def test_4step_avo(seed, use_fast):
     """
     4-step NVI-sequential: 8 intermediate densities
     """
@@ -292,28 +298,28 @@ def test_4step_avo(seed):
     assert r54.ext_to == "z_4"
     assert f45.ext_to == "z_5"
 
-    optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses, *targets]], lr=1e-2)
+    optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses, *targets]], lr=0.4 if use_fast else 1e-2)
 
-    num_steps = 4000
+    num_steps = 100 if use_fast else 1000
     sample_shape=(100,1)
     loss_ct, loss_sum, loss_avgs, loss_all = 0, 0.0, [], []
 
     with trange(num_steps) as bar:
         for i in bar:
             q0 = targets[0]
-            p_prv_tr, out0 = q0(sample_shape=sample_shape)
+            p_prv_tr, _, out0 = q0(sample_shape=sample_shape)
             loss = torch.zeros(1)
 
             lvs = []
             for fwd, rev, q, p in zip(forwards, reverses, targets[:-1], targets[1:]):
-                q.with_observations(trace_utils.copytrace(p_prv_tr, detach=p_prv_tr.keys()))
+                # q.with_observations(trace_utils.copytrace(p_prv_tr, detach=p_prv_tr.keys()))
                 q_ext = Forward(fwd, q)
                 p_ext = Reverse(p, rev)
                 extend_argument = Propose(target=p_ext, proposal=q_ext)
                 # state, lv = extend_argument(sample_shape=sample_shape) # TODO
                 state, lv = extend_argument(sample_shape=sample_shape, sample_dims=0)
-                q.clear_observations()
-                p.clear_observations()
+                # q.clear_observations()
+                # p.clear_observations()
 
                 lvs.append(lv)
 
@@ -347,20 +353,21 @@ def test_4step_avo(seed):
         for (analytic, target_loc) in zip([out12, out23, out34, out45], range(2,6)):
             assert (target_loc - analytic.loc.item()) < tol.loc
 
-        predict_g2_chain = lambda: Forward(f12, g1)()[1]
-        predict_g3_chain = lambda: Forward(f23, Forward(f12, g1))()[1]
-        predict_g4_chain = lambda: Forward(f34, Forward(f23, Forward(f12, g1)))()[1]
-        predict_g5_chain = lambda: Forward(f45, Forward(f34, Forward(f23, Forward(f12, g1))))()[1]
+        predict_g2_chain = lambda: Forward(f12, g1)()[-1]
+        predict_g3_chain = lambda: Forward(f23, Forward(f12, g1))()[-1]
+        predict_g4_chain = lambda: Forward(f34, Forward(f23, Forward(f12, g1)))()[-1]
+        predict_g5_chain = lambda: Forward(f45, Forward(f34, Forward(f23, Forward(f12, g1))))()[-1]
 
-        eval_mean_std(predict_g2_chain, Params(loc=2, scale=1), tol)
-        eval_mean_std(predict_g3_chain, Params(loc=3, scale=1), tol)
-        eval_mean_std(predict_g4_chain, Params(loc=4, scale=1), tol)
-        eval_mean_std(predict_g5_chain, Params(loc=5, scale=1), tol)
+        if not use_fast:
+            eval_mean_std(predict_g2_chain, Params(loc=2, scale=1), tol)
+            eval_mean_std(predict_g3_chain, Params(loc=3, scale=1), tol)
+            eval_mean_std(predict_g4_chain, Params(loc=4, scale=1), tol)
+            eval_mean_std(predict_g5_chain, Params(loc=5, scale=1), tol)
 
-        predict_g2 = lambda: Forward(f12, g1)()[1]
-        predict_g3 = lambda: Forward(f23, g2)()[1]
-        predict_g4 = lambda: Forward(f34, g3)()[1]
-        predict_g5 = lambda: Forward(f45, g4)()[1]
+        predict_g2 = lambda: Forward(f12, g1)()[-1]
+        predict_g3 = lambda: Forward(f23, g2)()[-1]
+        predict_g4 = lambda: Forward(f34, g3)()[-1]
+        predict_g5 = lambda: Forward(f45, g4)()[-1]
 
         eval_mean_std(predict_g2, Params(loc=2, scale=1), tol)
         eval_mean_std(predict_g3, Params(loc=3, scale=1), tol)

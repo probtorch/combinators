@@ -36,7 +36,7 @@ class State(Iterable):
             return "None"
         else:
             out_str = tensor_utils.show(self.output) if isinstance(self.output, Tensor) else self.output
-            return "tr={}; lv={}; out={}".format(trace_utils.show(self.trace), tensor_utils.show(self.weights), out_str)
+            return "tr={}; lv={}; out={}".format(trace_utils.show(self.trace), tensor_utils.show(self.weights) if self.weights is not None else "None", out_str)
     def __iter__(self):
         for x in [self.trace, self.weights, self.output]:
             yield x
@@ -152,7 +152,6 @@ class ReverseOld(KernelInf, Inf):
 
         log_aux = kernel_state.trace.log_joint(batch_dim=None, sample_dims=sample_dims)
 
-        self._cache = KCache(program_state, kernel_state)
 
         return program_state.trace, log_aux, program_state.output
 
@@ -211,6 +210,8 @@ class Propose(nn.Module, Inf):
         # FIXME: target and proposal args can / should be separated
         proposal_state = State(*self.proposal(*shared_args, sample_dims=sample_dims, **shared_kwargs))
         joint_proposal_trace = self.proposal._cache.kernel.trace
+        # breakpoint();
+
 
         # q_tar = qtr.log_joint(batch_dim=None, sample_dims=sample_dims)
 
@@ -225,6 +226,7 @@ class Propose(nn.Module, Inf):
         conditioned_target = Cond(self.target, joint_proposal_trace) # NOTE: might be a bug and needs whole trace?
         target_state = State(*conditioned_target(*shared_args, sample_dims=sample_dims, **shared_kwargs))
 
+
         joint_target_trace = self.target._cache.kernel.trace
         self._cache = PCache(target_state, proposal_state)
         state = self._cache
@@ -232,7 +234,7 @@ class Propose(nn.Module, Inf):
 
         # p_tar = ptr.log_joint(batch_dim=None, sample_dims=sample_dims)
         # lv = q_tar - p_tar
-        lv = proposal_state.weights - target_state.weights
+        lv = target_state.weights - proposal_state.weights
 
         if self.proposal._cache is not None:
             # FIXME: this is a hack for the moment and should be removed somehow.

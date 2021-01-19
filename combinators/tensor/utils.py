@@ -28,12 +28,16 @@ def _hash(t:Tensor, length:int):
     return base64.urlsafe_b64encode(hasher.digest()[:length]).decode('ascii')
 
 @typechecked
-def thash(aten:Tensor, length:int=8, no_grad_char:str=" ")->str:
+def thash(aten:Tensor, length:int=8, with_ref=False, no_grad_char:str=" ")->str:
     g = "∇" if aten.requires_grad else no_grad_char
     save_ref = aten.detach()
-    r = _hash(save_ref, length)
-    # v = _hash(save_ref.clone(), 3*(length // 4))
-    return f'#{g}{r}'
+    if with_ref:
+        r = _hash(save_ref, (length // 4))
+        v = _hash(save_ref.numpy(), 3*(length // 4))
+        return f'#{g}{r}{v}'
+    else:
+        v = _hash(save_ref.numpy(), length)
+        return f'#{g}{v}'
 
 @typechecked
 def show(aten:Tensor, fix_width:bool=True)->str:

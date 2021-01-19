@@ -27,11 +27,11 @@ class Distribution(Program):
         # FIXME: ensure conditioning a program work like this is automated?
         value = trace[self.name].value if self.name in trace else \
             (dist.rsample(sample_shape) if dist.has_rsample else dist.sample(sample_shape))
-        if validate and not (len(value.shape) >= 2):
-            raise RuntimeError("must have at least sample dim + output dim")
-        if not all(map(lambda lr: lr[0] == lr[1], zip(sample_shape, value.shape))):
-            adjust_shape = [*sample_shape, *value.shape[len(sample_shape):]]
-            value = value.view(adjust_shape)
+        # if validate and not (len(value.shape) >= 2):
+        #     raise RuntimeError("must have at least sample dim + output dim")
+        # if not all(map(lambda lr: lr[0] == lr[1], zip(sample_shape, value.shape))):
+        #     adjust_shape = [*sample_shape, *value.shape[len(sample_shape):]]
+        #     value = value.view(adjust_shape)
 
         rv = self.RandomVariable(dist=dist, value=value, provenance=Provenance.SAMPLED)
         trace.append(rv, name=self.name)
