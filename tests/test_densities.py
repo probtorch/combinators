@@ -11,7 +11,7 @@ from tqdm import trange
 
 import combinators.trace.utils as trace_utils
 from combinators.tensor.utils import kw_autodevice, copy, thash
-from combinators import Forward, Reverse, Propose, Kernel
+from combinators import Forward, Reverse, Propose, Kernel, Condition
 from combinators.metrics import effective_sample_size, log_Z_hat
 from combinators.debug import propagate, print_grads, propagate
 
@@ -25,7 +25,7 @@ from combinators.densities.kernels import MultivariateNormalLinearKernel, Multiv
 def seed():
     torch.manual_seed(1)
 
-def test_tempered_redundant(seed):
+def test_tempered_redundant_noloop(seed):
     # hyperparams
     sample_shape = (13,)
 
@@ -37,23 +37,18 @@ def test_tempered_redundant(seed):
     r10, r21 = [MultivariateNormalLinearKernel(ext_from=f'g{i+1}', ext_to=f'g{i}', loc=torch.ones(2), cov=torch.eye(2)) for i in range(0,2)]
 
     # NVI labels:
-    p_prv_tr, _ = g0(sample_shape=sample_shape)
-    g0.with_observations(trace_utils.copytrace(p_prv_tr, detach=p_prv_tr.keys()))
+    p_prv_tr, _, _ = g0(sample_shape=sample_shape)
     q1_ext = Forward(f01, g0)
     p1_ext = Reverse(halfway, r10)
     extend1 = Propose(target=p1_ext, proposal=q1_ext)
     state1, lv1 = extend1(sample_shape=sample_shape, sample_dims=0)
 
-    p_prv_tr = state1.target.trace
-    g0.clear_observations()
-
-    halfway.with_observations(trace_utils.copytrace(p_prv_tr, detach=p_prv_tr.keys()))
-    q2_ext = Forward(f12, halfway)
+    q2_ext = Forward(f12, Condition(halfway, state1.target.trace))
     p2_ext = Reverse(gK, r21)
     extend2 = Propose(target=p2_ext, proposal=q2_ext)
     state2, lv2 = extend2(sample_shape=sample_shape, sample_dims=0)
 
-def test_tempered_redundant_trivial(seed):
+def test_tempered_redundant_loop(seed):
     # hyperparams
     sample_shape = (100,)
     num_iterations = 1000
@@ -79,7 +74,7 @@ def test_tempered_redundant_trivial(seed):
             loss = torch.zeros(1, **kw_autodevice())
             lw, lvs = torch.zeros(sample_shape, **kw_autodevice()), []
             for k, (fwd, rev, q, p) in enumerate(zip(forwards, reverses, targets[:-1], targets[1:])):
-                q_ext = Forward(fwd, q, _step=k)
+                q_ext = Forward(fwd, Condition(q, p_prv_tr), _step=k)
                 p_ext = Reverse(p, rev, _step=k)
                 extend = Propose(target=p_ext, proposal=q_ext, _step=k)
                 state, lv = extend(sample_shape=sample_shape, sample_dims=0)
@@ -120,18 +115,10 @@ def test_annealing_path_tempered_normals(seed):
     reverses = [MultivariateNormalLinearKernel(ext_from=f'g{i+1}',ext_to=f'g{i}', loc=torch.ones(2)*i, cov=torch.eye(2)) for i in range(num_targets)]
 
     betas = torch.arange(0., 1., 1./num_targets)[1:] # g_0 is beta=0
-    print()
 
     path = [Tempered(f'g{k}', g0, gK, beta) for k, beta in zip(range(1,num_targets), betas)]
     path = [g0] + path + [gK]
     targets = path
-
-    with torch.no_grad():
-        fp010, fp120, fp230 = fps0 = [[copy(p, requires_grad=False) for p in fwd.parameters()] for fwd in reverses]
-        print([n for n in fp010])
-        print([n for n in fp120])
-        print([n for n in fp230])
-        hashes_fps0 = [thash(f) for fs in fps0 for f in fs]
 
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses, *targets]], lr=1e-3)
 
@@ -142,15 +129,14 @@ def test_annealing_path_tempered_normals(seed):
     with trange(num_steps) as bar:
         for i in bar:
             q0 = targets[0]
-            p_prv_tr, out0 = q0(sample_shape=sample_shape)
+            p_prv_tr, _, out0 = q0(sample_shape=sample_shape)
             loss = torch.zeros(1)
 
             lvss = []
             lw = torch.zeros(sample_shape)
 
             for k, (fwd, rev, q, p) in enumerate(zip(forwards, reverses, targets[:-1], targets[1:])):
-                q.with_observations(trace_utils.copytrace(p_prv_tr, detach=p_prv_tr.keys()))
-                q_ext = Forward(fwd, q)
+                q_ext = Forward(fwd, Condition(q, p_prv_tr))
                 p_ext = Reverse(p, rev)
                 extend = Propose(target=p_ext, proposal=q_ext)
                 state, lv = extend(sample_shape=sample_shape, sample_dims=0)
@@ -158,8 +144,6 @@ def test_annealing_path_tempered_normals(seed):
 
                 # FIXME: because p_prv_tr is not eliminating the previous trace, the trace is cumulativee but removing grads leaves backprop unaffected
                 p_prv_tr = state.target.trace
-                q.clear_observations()
-                p.clear_observations()
                 assert set(p_prv_tr.keys()) == { f'g{k+1}' }
 
                 lw += lv
@@ -203,23 +187,20 @@ def test_annealing_path_tempered_normals(seed):
     with torch.no_grad():
         fp011, fp121, fp231 = fps1 = [[copy(p, requires_grad=False) for p in fwd.parameters()] for fwd in reverses]
 
-        print([n for n in fp011])
-        print([n for n in fp121])
-        print([n for n in fp231])
-
         hashes_fps1 = [thash(f) for fs in fps1 for f in fs]
-        print([[torch.equal(p0, p1) for p0, p1 in zip(p0s, p1s)] for p0s, p1s in zip(fps0, fps1)])
-        print([p0 == p1 for p0, p1 in zip(hashes_fps0, hashes_fps1)])
 
-        empirical_loc1 = Forward(forwards[0], targets[0])(sample_shape=(2000,))[1].mean(dim=0)
+        empirical_loc1 = Forward(forwards[0], targets[0])(sample_shape=(2000,))[-1].mean(dim=0)
         print(empirical_loc1)
-        empirical_loc2 = Forward(forwards[1], Forward(forwards[0], targets[0]))(sample_shape=(2000,))[1].mean(dim=0)
+        analytic1 = propagate(N=targets[0].dist, F=forwards[0].weight(), t=forwards[0].bias(), B=targets[0].dist.covariance_matrix, marginalize=True)
+        print(analytic1)
+        empirical_loc2 = Forward(forwards[1], Forward(forwards[0], targets[0]))(sample_shape=(2000,))[-1].mean(dim=0)
         print(empirical_loc2)
-        empirical_loc3 = Forward(forwards[2], Forward(forwards[1], Forward(forwards[0], targets[0])))(sample_shape=(2000,))[1].mean(dim=0)
+        analytic2 = propagate(N=targets[1].dist, F=forwards[1].weight(), t=forwards[1].bias(), B=targets[1].dist.covariance_matrix, marginalize=True)
+        print(analytic2)
+        empirical_loc3 = Forward(forwards[2], Forward(forwards[1], Forward(forwards[0], targets[0])))(sample_shape=(2000,))[-1].mean(dim=0)
         print(empirical_loc3)
-        breakpoint();
-        print()
-
+        analytic3 = propagate(N=targets[2].dist, F=forwards[2].weight(), t=forwards[2].bias(), B=targets[2].dist.covariance_matrix, marginalize=True)
+        print(analytic3)
 
 
 def mk_kernel(target:int, std:float, num_hidden:int):
@@ -261,7 +242,8 @@ def mk_model(num_targets:int):
         reverses=mk_kernels(lambda ix: ix),
     )
 
-def test_annealing_path(seed):
+@mark.skip("right before the big one")
+def test_annealing_path_8step_simple(seed):
     K = 8
     out = mk_model(K)
     targets, forwards, reverses = [out[n] for n in ['targets', 'forwards', 'reverses']]
@@ -277,23 +259,20 @@ def test_annealing_path(seed):
     with trange(num_steps) as bar:
         for i in bar:
             q0 = targets[0]
-            p_prv_tr, out0 = q0(sample_shape=sample_shape)
+            p_prv_tr = q0(sample_shape=sample_shape)[0]
             loss = torch.zeros(1)
 
             lvs = []
             lw = torch.zeros(sample_shape)
 
             for k, (fwd, rev, q, p) in enumerate(zip(forwards, reverses, targets[:-1], targets[1:])):
-                q.with_observations(trace_utils.copytrace(p_prv_tr, detach=p_prv_tr.keys()))
-                q_ext = Forward(fwd, q, _step=k)
+                q_ext = Forward(fwd, Condition(q, p_prv_tr), _step=k)
                 p_ext = Reverse(p, rev, _step=k)
                 extend = Propose(target=p_ext, proposal=q_ext, _step=k)
                 state, lv = extend(sample_shape=sample_shape, sample_dims=0)
 
                 # FIXME: because p_prv_tr is not eliminating the previous trace, the trace is cumulativee but removing grads leaves backprop unaffected
                 p_prv_tr = state.target.trace
-                q.clear_observations()
-                p.clear_observations()
                 assert set(p_prv_tr.keys()) == { f'g_{k+1}' }
 
                 lw += lv
@@ -315,6 +294,7 @@ def test_annealing_path(seed):
                loss_ct, loss_sum  = 0, 0.0
 
 
+@mark.skip("this is the big one")
 def test_tempered_grad_check(seed):
     #!/usr/bin/env python3
     import torch
