@@ -183,8 +183,8 @@ def test_2step_avo(seed):
     With four steps, you'll need to detach whenever you compute a normalizing constant in all the intermediate steps.
     """
     g1, g2, g3 = targets = [Normal(loc=i, scale=1, name=f"z_{i}") for i in range(1,4)]
-    f12, f23 = forwards = [NormalLinearKernel(ext_name=f"z_{i}").to(autodevice()) for i in range(2,4)]
-    r21, r32 = reverses = [NormalLinearKernel(ext_name=f"z_{i}").to(autodevice()) for i in range(1,3)]
+    f12, f23 = forwards = [NormalLinearKernel(ext_from=f"z_{i}", ext_to=f"z_{i+1}").to(autodevice()) for i in range(1,3)]
+    r21, r32 = reverses = [NormalLinearKernel(ext_from=f"z_{i+1}", ext_to=f"z_{i}").to(autodevice()) for i in range(1,3)]
 
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses, *targets]], lr=1e-2)
 
@@ -285,12 +285,12 @@ def test_4step_avo(seed):
     4-step NVI-sequential: 8 intermediate densities
     """
     g1, g2, g3, g4, g5 = targets = [Normal(loc=i, scale=1, name=f"z_{i}") for i in range(1,6)]
-    f12, f23, f34, f45 = forwards = [NormalLinearKernel(ext_name=f"z_{i}") for i in range(2,6)]
-    r21, r32, r43, r54 = reverses = [NormalLinearKernel(ext_name=f"z_{i}") for i in range(1,5)]
-    assert r21.ext_name == "z_1"
-    assert f12.ext_name == "z_2"
-    assert r54.ext_name == "z_4"
-    assert f45.ext_name == "z_5"
+    f12, f23, f34, f45 = forwards = [NormalLinearKernel(ext_from=f"z_{i}", ext_to=f"z_{i+1}") for i in range(1,5)]
+    r21, r32, r43, r54 = reverses = [NormalLinearKernel(ext_from=f"z_{i+1}", ext_to=f"z_{i}") for i in range(1,5)]
+    assert r21.ext_to == "z_1"
+    assert f12.ext_to == "z_2"
+    assert r54.ext_to == "z_4"
+    assert f45.ext_to == "z_5"
 
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses, *targets]], lr=1e-2)
 

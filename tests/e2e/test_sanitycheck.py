@@ -11,7 +11,7 @@ from probtorch.util import expand_inputs
 from typeguard import typechecked
 from tqdm import trange
 from pytest import mark
-import sparklines
+#import sparklines
 import combinators.trace.utils as trace_utils
 from combinators.tensor.utils import thash, show
 from typing import Optional
