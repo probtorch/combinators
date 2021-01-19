@@ -22,7 +22,7 @@ def test_simple_program_creation():
             return x
 
     program = P()
-    tr, x = program()
+    tr, _, x = program()
     assert isinstance(x, Tensor)
     assert isinstance(tr, Trace)
     assert 'x' in tr
@@ -38,7 +38,7 @@ def test_simple_program_log_probs():
             return x
 
     program = P()
-    tr, x = program()
+    tr, _, x = program()
     log_probs = program.log_probs()
     assert 'x' in log_probs.keys() and isinstance(log_probs['x'], Tensor)
 
@@ -58,13 +58,13 @@ def test_slightly_more_complex_program_creation():
             return (x, z)
 
     program = P()
-    tr, (x, z) = program(1)
+    tr, _, (x, z) = program(1)
 
     assert isinstance(x, int)
     assert isinstance(z, Tensor)
     assert isinstance(tr, Trace)
 
-    tr2, (x2, z2) = program(2)
+    tr2, _, (x2, z2) = program(2)
     assert tr2 is not tr
     assert tr2['x'].value == torch.tensor(2)
     assert not equiv(tr['x'].dist, tr2['x'].dist)
@@ -83,7 +83,7 @@ def test_slightly_more_complex_program_logprobs():
             return (x, z)
 
     program = P()
-    tr, (x, z) = program(1)
+    tr, _, (x, z) = program(1)
     log_probs = program.log_probs()
     assert set(['x', 'a', 'z']) == program.variables \
         and all([isinstance(log_probs[k], Tensor) for k in program.variables])
@@ -113,7 +113,7 @@ def test_nn_program_creation():
             return (x, z)
 
     program = P()
-    tr, (x, z) = program(torch.ones([2]))
+    tr, _, (x, z) = program(torch.ones([2]))
 
     assert isinstance(x, Tensor)
     assert isinstance(z, Tensor)
@@ -147,7 +147,7 @@ def test_generative_program_creation():
     # can only run a sample once -- otherwise we are trying to add new things to a trace a second time
     ones = torch.ones([1])
     program.observe("observed", ones)
-    tr, (x, z) = program()
+    tr, _, (x, z) = program()
 
     assert torch.allclose(x, ones)
     assert isinstance(z, torch.Tensor)
@@ -177,11 +177,11 @@ def test_sub_program():
             self.sub = Sub()
 
         def model(self, trace, sub_arg:int, prg_arg:float):
-            tr, x = self.sub(sub_arg)
+            tr, _, x = self.sub(sub_arg)
             return x * prg_arg
 
     affine = P()
     mean, scale = 5, 1.3
-    tr, x = affine(mean, scale)
+    tr, _, x = affine(mean, scale)
 
     assert torch.allclose(x, torch.ones([1]) * mean * scale, rtol=2.5)

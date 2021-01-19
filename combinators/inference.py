@@ -64,6 +64,24 @@ class PCache:
 class Inf:
     pass
 
+
+def _dispatch(permissive):
+    def go(fn, *args:Any, **kwargs:Any):
+        if isinstance(fn, Program):
+            spec_fn = fn.model
+        elif isinstance(fn, Kernel):
+            spec_fn = fn.apply_kernel
+        else:
+            spec_fn = fn
+
+        _dispatch_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, spec_fn)} if permissive else kwargs
+        _dispatch_args   = args
+        # _dispatch_args   = [v for k,v in args.items() if check_passable_arg(k, fn)] if permissive else args
+        # assert args is None or len(args) == 0, "need to filter this list, but currently don't have an example"
+
+        return fn(*_dispatch_args, **_dispatch_kwargs)
+    return go
+
 class Condition(Inf):
     """
     Run a program's model with a conditioned trace
@@ -78,7 +96,8 @@ class Condition(Inf):
 
     def __call__(self, *args:Any, **kwargs:Any) -> Tuple[Trace, Optional[Trace], Output]:
         self.process._cond_trace = self.conditioning_trace
-        out = self.process(*args, **kwargs)
+
+        out = _dispatch(permissive=True)(self.process, *args, **kwargs)
         self.process._cond_trace = Trace()
         return out
 
@@ -89,6 +108,8 @@ class KernelInf(nn.Module, Conditionable):
         self._cache = KCache(None, None)
         self._step = _step
         self._permissive_arguments = _permissive_arguments
+        self._run_program = _dispatch(permissive=True)
+        self._run_kernel = _dispatch(permissive=True)
 
     def _show_traces(self):
         if all(map(lambda x: x is None, self._cache)):
@@ -96,29 +117,6 @@ class KernelInf(nn.Module, Conditionable):
         else:
             print("program: {}".format(self._cache.program.trace))
             print("kernel : {}".format(self._cache.kernel.trace))
-
-    def _program_args(self, fn, *args):
-        if self._permissive_arguments:
-            assert args is None or len(args) == 0, "need to filter this list, but currently don't have an example"
-            # return [v for k,v in args.items() if check_passable_arg(k, fn)]
-            return args
-        else:
-            return args
-
-    def _program_kwargs(self, fn, **kwargs):
-        if self._permissive_arguments and isinstance(fn, Program):
-            return {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn.model)}
-        else:
-            return kwargs
-
-    def _run_program(self, program, *program_args:Any, **program_kwargs:Any):
-        # runnable = Condition(self.program, self._cond_trace) if self._cond_trace is not None else self.program
-        return program(
-            *self._program_args(program, *program_args),
-            **self._program_kwargs(program, **program_kwargs))
-
-    def _run_kernel(self, kernel, program_trace: Trace, program_output:Output, sample_dims=None):
-        return kernel(program_trace, program_output, sample_dims=sample_dims)
 
 
 class Reverse(KernelInf, Inf):
@@ -129,6 +127,7 @@ class Reverse(KernelInf, Inf):
 
     def forward(self, *program_args:Any, sample_dims=None, **program_kwargs:Any) -> Tuple[Trace, Output]:
         program = Condition(self.program, self._cond_trace) if self._cond_trace is not None else self.program
+
         program_state = State(*self._run_program(program, *program_args, sample_dims=sample_dims, **program_kwargs))
         kernel_state = State(*self._run_kernel(self.kernel, program_state.trace, program_state.output, sample_dims=sample_dims))
 

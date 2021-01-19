@@ -62,8 +62,8 @@ def test_tempered_redundant_trivial(seed):
     g0 = MultivariateNormal(name='g0', loc=torch.ones(2), cov=torch.eye(2)**2)
     gK = MultivariateNormal(name='g2', loc=torch.ones(2)*3, cov=torch.eye(2)**2)
     halfway = Tempered('g1', g0, gK, torch.tensor([0.5]))
-    forwards = [MultivariateNormalKernel(ext_from=f'g{i}', ext_to=f'g{i+1}', loc=torch.ones(2), cov=torch.eye(2)) for i in range(0,2)]
-    reverses = [MultivariateNormalKernel(ext_from=f'g{i+1}', ext_to=f'g{i}', loc=torch.ones(2), cov=torch.eye(2)) for i in range(0,2)]
+    forwards = [MultivariateNormalLinearKernel(ext_from=f'g{i}', ext_to=f'g{i+1}', loc=torch.ones(2), cov=torch.eye(2)) for i in range(0,2)]
+    reverses = [MultivariateNormalLinearKernel(ext_from=f'g{i+1}', ext_to=f'g{i}', loc=torch.ones(2), cov=torch.eye(2)) for i in range(0,2)]
     targets = [g0, halfway, gK]
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses]], lr=1e-4)
 
@@ -74,20 +74,17 @@ def test_tempered_redundant_trivial(seed):
     with trange(num_iterations) as bar:
         for i in bar:
             q0 = targets[0]
-            p_prv_tr, out0 = q0(sample_shape=sample_shape)
+            p_prv_tr, _, out0 = q0(sample_shape=sample_shape)
 
             loss = torch.zeros(1, **kw_autodevice())
             lw, lvs = torch.zeros(sample_shape, **kw_autodevice()), []
             for k, (fwd, rev, q, p) in enumerate(zip(forwards, reverses, targets[:-1], targets[1:])):
-                q.with_observations(trace_utils.copytrace(p_prv_tr, detach=p_prv_tr.keys()))
                 q_ext = Forward(fwd, q, _step=k)
                 p_ext = Reverse(p, rev, _step=k)
                 extend = Propose(target=p_ext, proposal=q_ext, _step=k)
                 state, lv = extend(sample_shape=sample_shape, sample_dims=0)
 
                 p_prv_tr = state.target.trace
-                p.clear_observations()
-                q.clear_observations()
 
                 lw += lv
                 loss += nvo_rkl(lw, lv, state.proposal.trace[f'g{k}'], state.target.trace[f'g{k+1}'])

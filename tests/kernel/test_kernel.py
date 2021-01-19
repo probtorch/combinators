@@ -24,7 +24,7 @@ def trivial_kernel():
 
 def test_trivial_condition(trivial_kernel):
     cond_trace = Trace()
-    tr, out = trivial_kernel(cond_trace, (1, 2))
+    tr, _, out = trivial_kernel(cond_trace, (1, 2))
 
 @mark.skip("TODO: traces no longer condition automatically")
 def test_condition(trivial_kernel):
@@ -32,14 +32,14 @@ def test_condition(trivial_kernel):
     cond_trace = Trace()
     zs = cond_trace.normal(loc=-1, scale=3, name='z')
 
-    tr, out = trivial_kernel(cond_trace, (1, 2))
+    tr, _, out = trivial_kernel(cond_trace, (1, 2))
     assert torch.equal(tr['z'].value, zs)
 
 def test_auxilary_condition(trivial_kernel):
     # you can condition on a value
     cond_trace = Trace()
     zs = cond_trace.normal(loc=-1, scale=3, name='q')
-    tr, out = trivial_kernel(cond_trace, (1, 2))
+    tr, _, out = trivial_kernel(cond_trace, (1, 2))
     assert not torch.equal(tr['z'].value, zs)
 
 
@@ -80,11 +80,11 @@ def test_forward():
     prg_inp = torch.ones([program.out_dim])
 
     kernel = Kernel()
-    p_tr, p_out = program(prg_inp)
-    k_tr, k_out = kernel(p_tr, p_out)
+    p_tr, _, p_out = program(prg_inp)
+    k_tr, _, k_out = kernel(p_tr, p_out)
 
     forward = Forward(kernel, program)
-    f_tr, f_out = forward(prg_inp)
+    f_tr, _, f_out = forward(prg_inp)
 
     assert all(map(lambda ab: torch.equal(ab[0], ab[1]), zip(f_out, k_out)))
 
@@ -94,8 +94,8 @@ def test_reverse():
     prg_inp = torch.ones([program.out_dim])
 
     kernel = Kernel()
-    p_tr, p_out = program(prg_inp)
-    k_tr, k_out = kernel(p_tr, p_out)
+    p_tr, _, p_out = program(prg_inp)
+    k_tr, _, k_out = kernel(p_tr, p_out)
     # TODO: add some checks here
 
     reverse = Reverse(program, kernel)
