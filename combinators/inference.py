@@ -73,7 +73,7 @@ class Condition(Inf):
         else:
             return out
 
-class KernelInf(nn.Module, Conditionable):
+class KernelInf(Conditionable):
     def __init__(self, _step:Optional[int]=None, _permissive_arguments:bool=True):
         nn.Module.__init__(self)
         Conditionable.__init__(self)
@@ -99,7 +99,7 @@ class Reverse(KernelInf, Inf):
         self.foldl_loss = loss_fn
         self.loss0 = loss0
 
-    def forward(self, *program_args:Any, sample_dims=None, _debug=False, **program_kwargs:Any) -> Tuple[Trace, Optional[Tensor], Output]:
+    def __call__(self, *program_args:Any, sample_dims=None, _debug=False, **program_kwargs:Any) -> Tuple[Trace, Optional[Tensor], Output]:
         program = Condition(self.program, self._cond_trace, as_trace=False) if self._cond_trace is not None else self.program
 
         program_state = self._run_program(program, *program_args, sample_dims=sample_dims, **program_kwargs)
@@ -151,7 +151,7 @@ class Forward(KernelInf, Inf):
         return self._cache
 
 
-class Propose(nn.Module, Inf):
+class Propose(Inf):
     def __init__(self, target: Union[Program, KernelInf], proposal: Union[Program, Inf], loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: fin), loss0=torch.zeros(1), _step:Optional[int]=None, _debug:bool=False):
         super().__init__()
         self.target = target
@@ -162,7 +162,7 @@ class Propose(nn.Module, Inf):
         self._debug = _debug
         self.loss0 = loss0
 
-    def forward(self, *shared_args, sample_dims=None, _debug=False, **shared_kwargs):
+    def __call__(self, *shared_args, sample_dims=None, _debug=False, **shared_kwargs):
         proposal_state = self.proposal(*shared_args, sample_dims=sample_dims, **shared_kwargs)
 
         conditioned_target = Condition(self.target, proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and needs whole trace?
