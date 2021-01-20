@@ -69,7 +69,7 @@ class Condition(Inf):
         self.process._cond_trace = Trace()
         trace = out.trace
         if self.as_trace and isinstance(trace, ConditioningTrace):
-            return Out(trace.as_trace(access_only=not self.full_trace_return), out.weights, out.output)
+            return Out(trace.as_trace(access_only=not self.full_trace_return), out.weights, out.output, extras=dict(type=type(self).__name__ + "(" + type(self.process).__name__ + ")"))
         else:
             return out
 
@@ -110,7 +110,7 @@ class Reverse(KernelInf, Inf):
         out_trace = program_state.trace.as_trace(access_only=True) if isinstance(program_state.trace, ConditioningTrace) \
                         else program_state.trace
 
-        self._cache = Out(trace=out_trace, weights=log_aux, output=program_state.output, extras=dict(program=program_state, kernel=kernel_state))
+        self._cache = Out(trace=out_trace, weights=log_aux, output=program_state.output, extras=dict(program=program_state, kernel=kernel_state, type=type(self).__name__))
         return self._cache
 
 class Forward(KernelInf, Inf):
@@ -125,7 +125,8 @@ class Forward(KernelInf, Inf):
         kernel_state = self._run_kernel(self.kernel, program_state.trace, program_state.output, sample_dims=sample_dims)
         log_joint = kernel_state.trace.log_joint(batch_dim=None, sample_dims=sample_dims)
 
-        self._cache = Out(trace=kernel_state.trace, weights=log_joint, output=kernel_state.output, extras=dict(program=program_state, kernel=kernel_state))
+        self._cache = Out(trace=kernel_state.trace, weights=log_joint, output=kernel_state.output, extras=dict(program=program_state, kernel=kernel_state, type=type(self).__name__))
+
         return self._cache
 
 
@@ -137,6 +138,7 @@ class Propose(nn.Module, Inf):
         self._cache = Out(None, None, None)
         self.foldl_loss = loss_fn
         self._step = _step # used for debugging
+        self._debug = _debug
 
     def forward(self, *shared_args, sample_dims=None, _debug=False, **shared_kwargs):
         proposal_state = self.proposal(*shared_args, sample_dims=sample_dims, **shared_kwargs)
@@ -147,8 +149,10 @@ class Propose(nn.Module, Inf):
 
         self._cache = Out(
             extras=dict(
-                proposal=proposal_state,
-                target=target_state),
+                proposal=proposal_state if self._debug or _debug else Out(*proposal_state), # strip auxiliary traces
+                target=target_state if self._debug  or _debug else Out(*target_state), # strip auxiliary traces
+                type=type(self).__name__
+                ),
             trace=target_state.trace,
             weights=lv,
             output=target_state.output,)

@@ -3,6 +3,7 @@
 from torch import Tensor
 from typing import Any, Tuple, Optional, Dict, List, Union, Set, Callable
 from combinators.stochastic import Trace, Factor, GenericRandomVariable
+import combinators.tensor.utils as tensor_utils
 import inspect
 
 State = Any
@@ -30,7 +31,6 @@ def get_shape_kwargs(fn, sample_dims=None, batch_dim=None):
     return kwargs
 
 
-
 class property_dict(dict):
     def __getattr__(self, name):
         if name in self:
@@ -48,11 +48,26 @@ class property_dict(dict):
             raise AttributeError("No such attribute: " + name)
 
     def __repr__(self):
-        max_len = max(map(len, self.keys()))
-        return "\n  ".join([
-            f"<property_dict>:",
-            *[("{:>"+ str(max_len)+ "}: {}").format(k, tensor_utils.show(v) if isinstance(v, Tensor) else v) for k, v in self.items()]
-        ])
+        return "<property_dict>:\n" + show_nest(self, pd_header="<property_dict>")
+
+def show_nest(p:property_dict, nest_level=0, indent_len:Optional[int]=None, pd_header="<property_dict>"):
+    _max_len = max(map(len, p.keys()))
+    max_len = _max_len + nest_level * (_max_len if indent_len is None else indent_len)
+    delimiter = "\n  "
+
+    unnested = dict(filter(lambda kv: not isinstance(kv[1], property_dict), p.items()))
+    unnested_str = delimiter.join([
+        *[("{:>"+ str(max_len)+ "}: {}").format(k, tensor_utils.show(v) if isinstance(v, Tensor) else v) for k, v in unnested.items()
+         ]
+    ])
+
+    nested = dict(filter(lambda kv: isinstance(kv[1], property_dict), p.items()))
+    nested_str = delimiter.join([
+        *[("{:>"+ str(max_len)+ "}: {}").format(k + pd_header, "\n"+show_nest(v, nest_level=nest_level+1)) for k, v in nested.items()
+         ]
+    ])
+
+    return unnested_str + delimiter + nested_str
 
 PropertyDict = property_dict
 

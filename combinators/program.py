@@ -35,7 +35,7 @@ class Program(TraceModule):
 
         self.clear_cond_trace()   # closing bracket for a run, required if a user does not use the Condition combinator
 
-        return Out(trace, None, out)
+        return Out(trace, None, out, extras=dict(type=type(self).__name__))
 
     @classmethod
     def factory(cls, fn, name:str = ""):

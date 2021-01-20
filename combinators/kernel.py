@@ -41,4 +41,4 @@ class Kernel(TraceModule):
         # grab anything that is missing from the cond_trace
         full_trace = trace_utils.copytraces(cond_trace, trace)
 
-        return Out(full_trace, None, out)
+        return Out(full_trace, None, out, extras=dict(type=type(self).__name__))

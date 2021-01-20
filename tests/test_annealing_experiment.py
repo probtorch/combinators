@@ -50,7 +50,7 @@ def experiment_runner(is_smoketest, trainer):
     num_iterations=1 if is_smoketest else 10000
     # Setup
     torch.manual_seed(seed)
-    num_samples = 256
+    num_samples = 5 if is_smoketest else 256
     sample_shape=(num_samples,)
 
     # Models
@@ -110,9 +110,10 @@ def nvi_eager(i, targets, forwards, reverses, sample_shape):
         q_ext = Forward(fwd, Condition(q, p_prv_tr, requires_grad=RequiresGrad.NO), _step=k)
         p_ext = Reverse(p, rev, _step=k)
         extend = Propose(target=p_ext, proposal=q_ext, _step=k)
-        state, lv = extend(sample_shape=sample_shape, sample_dims=0)
+        state = extend(sample_shape=sample_shape, sample_dims=0)
+        lv = state.weights
 
-        p_prv_tr = state.target.trace
+        p_prv_tr = state.trace
 
         lw += lv
 
@@ -129,21 +130,67 @@ def nvi_eager(i, targets, forwards, reverses, sample_shape):
 def test_eager_annealing(is_smoketest):
     experiment_runner(is_smoketest, nvi_eager)
 
-def nvi_declarative(i, targets, forwards, reverses, sample_shape):
+def nvi_declarative1(i, targets, forwards, reverses, sample_shape):
+    def print_and_sum_loss(lv, loss):
+        out = loss + nvo_avo(lv)
+        print(out)
+        return out
+
     def mk_step(q, p, fwd, rev, k)->Propose:
         q_ext = Forward(fwd, q)
         p_ext = Reverse(p, rev)
-        return Propose(target=p_ext, proposal=q_ext, loss_fn=lambda lv: nvo_avo(lv), _debug=True, _step=k)
+        return Propose(target=p_ext, proposal=q_ext, loss_fn=print_and_sum_loss, _debug=True, _step=k)
 
     proposal = targets[0]
 
     for k, (fwd, rev, p) in enumerate(zip(forwards, reverses, targets[1:])):
         proposal = mk_step(proposal, p, fwd, rev, k) # I think we want to pass in loss here, as discussed.
     # <<<<<<  >>>>>>
-    state, lw, loss = proposal(sample_shape=sample_shape)
+    out = proposal(sample_shape=sample_shape, sample_dims=0)
+
+    def weights(out, ret=[])->[Tensor]:
+        _ret = ret + [out.weights]
+        if 'proposal' not in out:
+            return _ret
+        else:
+            return weights(out.proposal, _ret)
+
+
+    breakpoint();
+
 
     return state, lw, loss
 
-def test_declarative_annealing(is_smoketest):
+def nvi_declarative(i, targets, forwards, reverses, sample_shape):
+    def print_and_sum_loss(lv, loss):
+        out = loss + nvo_avo(lv)
+        print(out)
+        return out
 
+    def mk_step(q, p, fwd, rev, k)->Propose:
+        q_ext = Forward(fwd, q)
+        p_ext = Reverse(p, rev)
+        return Propose(target=p_ext, proposal=q_ext, loss_fn=print_and_sum_loss, _debug=True, _step=k)
+
+    proposal = targets[0]
+
+    for k, (fwd, rev, p) in enumerate(zip(forwards, reverses, targets[1:])):
+        proposal = mk_step(proposal, p, fwd, rev, k) # I think we want to pass in loss here, as discussed.
+    # <<<<<<  >>>>>>
+    out = proposal(sample_shape=sample_shape, sample_dims=0)
+
+    def weights(out, ret=[])->[Tensor]:
+        _ret = ret + [out.weights]
+        if 'proposal' not in out:
+            return _ret
+        else:
+            return weights(out.proposal.program, _ret)
+
+    breakpoint();
+
+
+    return state, lw, loss
+
+def test_declarative_annealing():
+    is_smoketest = True
     experiment_runner(is_smoketest, nvi_declarative)
