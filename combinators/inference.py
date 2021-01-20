@@ -27,10 +27,11 @@ from combinators.objectives import nvo_avo
 
 @typechecked
 class State(Iterable):
-    def __init__(self, trace:Optional[Trace], weights:Optional[Output], output:Optional[Output]):
+    def __init__(self, trace:Trace, weights:Optional[Output], output:Output):
         self.trace = trace
         self.weights = weights
         self.output = output
+        self._list = [self.trace, self.weights, self.output]
     def __repr__(self):
         if self.trace is None:
             return "None"
@@ -38,8 +39,39 @@ class State(Iterable):
             out_str = tensor_utils.show(self.output) if isinstance(self.output, Tensor) else self.output
             return "tr={}; lv={}; out={}".format(trace_utils.show(self.trace), tensor_utils.show(self.weights) if self.weights is not None else "None", out_str)
     def __iter__(self):
-        for x in [self.trace, self.weights, self.output]:
+        for x in self._list:
             yield x
+
+    def __getitem__(self, i):
+        return self._list[i]
+
+    def __len__(self):
+        return len(self._list)
+
+@typechecked
+class CombinatorState(Iterable):
+    def __init__(self, trace:Trace, weights:Optional[Output], output:Output):
+        self.trace = trace
+        self.weights = weights
+        self.output = output
+        self._list = [self.trace, self.weights, self.output]
+    def __repr__(self):
+        if self.trace is None:
+            return "None"
+        else:
+            out_str = tensor_utils.show(self.output) if isinstance(self.output, Tensor) else self.output
+            return "tr={}; lv={}; out={}".format(trace_utils.show(self.trace), tensor_utils.show(self.weights) if self.weights is not None else "None", out_str)
+    def __iter__(self):
+        for x in self._list:
+            yield x
+
+    def __getitem__(self, i):
+        return self._list[i]
+
+    def __len__(self):
+        return len(self._list)
+
+
 
 @typechecked
 class KCache:
@@ -147,7 +179,8 @@ class Reverse(KernelInf, Inf):
         out_trace = program_state.trace.as_trace(access_only=True) if isinstance(program_state.trace, ConditioningTrace) \
                         else program_state.trace
 
-        return out_trace, log_aux, program_state.output
+        self._ocache = State(out_trace, log_aux, program_state.output)
+        return self._ocache
 
 class Forward(KernelInf, Inf):
     def __init__(self, kernel: Kernel, program: Union[Program, KernelInf], _step=None, _permissive=True) -> None:
@@ -162,16 +195,17 @@ class Forward(KernelInf, Inf):
         log_joint = kernel_state.trace.log_joint(batch_dim=None, sample_dims=sample_dims)
         self._cache = KCache(program_state, kernel_state)
 
-        return kernel_state.trace, log_joint, kernel_state.output
+        self._ocache = State(kernel_state.trace, log_joint, kernel_state.output)
+        return self._ocache
 
 
 class Propose(nn.Module, Inf):
-    def __init__(self, target: Union[Program, KernelInf], proposal: Union[Program, Inf], validate:bool=True, _step=None):
+    def __init__(self, target: Union[Program, KernelInf], proposal: Union[Program, Inf], loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: x), _step:Optional[int]=None, _debug:bool=False):
         super().__init__()
         self.target = target
         self.proposal = proposal
         self._cache = PCache(None, None)
-        self.validate = validate
+        self.foldl_loss = loss_fn
         self._step = _step # used for debugging
 
     def forward(self, *shared_args, sample_dims=None, _debug=False, **shared_kwargs):
@@ -182,6 +216,6 @@ class Propose(nn.Module, Inf):
         lv = target_state.weights - proposal_state.weights
 
         self._cache = PCache(target_state, proposal_state)
-        state = self._cache
 
-        return state, lv
+        self._ocache = State(target_state.trace, lv, target_state.output)
+        return self._ocache

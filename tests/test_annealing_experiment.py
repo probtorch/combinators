@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import torch
+import os
 import math
 from torch import nn, Tensor, optim
 from torch.utils.tensorboard import SummaryWriter
@@ -18,13 +19,10 @@ from combinators.objectives import nvo_rkl, nvo_avo, mb0, mb1, _estimate_mc, eva
 from combinators import Forward, Reverse, Propose, Condition, RequiresGrad
 from combinators.stochastic import RandomVariable, ImproperRandomVariable
 from combinators.metrics import effective_sample_size, log_Z_hat
+from tests.utils import is_smoketest, seed
 
 import experiments.annealing.visualize as V
 from experiments.annealing.models import mk_model, sample_along, paper_model
-
-@fixture
-def is_smoketest():
-    return True
 
 def report(writer, ess, lzh, loss_scalar, i, eval_break, targets, forwards):
     with torch.no_grad():
@@ -49,8 +47,7 @@ def report(writer, ess, lzh, loss_scalar, i, eval_break, targets, forwards):
 def experiment_runner(is_smoketest, trainer):
     seed=1
     eval_break=50
-    num_iterations=10 if is_smoketest else 10000
-    trainer=nvi_eager
+    num_iterations=1 if is_smoketest else 10000
     # Setup
     torch.manual_seed(seed)
     num_samples = 256
@@ -120,7 +117,10 @@ def nvi_eager(i, targets, forwards, reverses, sample_shape):
         lw += lv
 
         # loss += nvo_rkl(lw, lv, state.proposal.trace[f'g{k}'], state.target.trace[f'g{k+1}'])
-        loss += nvo_avo(lv)
+        objective_loss = nvo_avo(lv)
+        print(objective_loss)
+        loss += objective_loss
+
 
         lvss.append(lv)
 
@@ -129,7 +129,7 @@ def nvi_eager(i, targets, forwards, reverses, sample_shape):
 def test_eager_annealing(is_smoketest):
     experiment_runner(is_smoketest, nvi_eager)
 
-def nvi_declarative(targets, forwards, reverses, sample_shape):
+def nvi_declarative(i, targets, forwards, reverses, sample_shape):
     def mk_step(q, p, fwd, rev, k)->Propose:
         q_ext = Forward(fwd, q)
         p_ext = Reverse(p, rev)
@@ -144,5 +144,6 @@ def nvi_declarative(targets, forwards, reverses, sample_shape):
 
     return state, lw, loss
 
-def xtest_declarative_annealing(is_smoketest):
-    experiment_runner(is_smoketest, nvi_eager)
+def test_declarative_annealing(is_smoketest):
+
+    experiment_runner(is_smoketest, nvi_declarative)

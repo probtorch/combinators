@@ -26,6 +26,8 @@ from combinators.inference import PCache, State, Condition, RequiresGrad
 from combinators.stochastic import RandomVariable, Provenance
 from combinators import Program, Kernel, Trace, Forward, Reverse, Propose
 
+from tests.utils import is_smoketest, seed
+
 logger = logging.getLogger(__name__)
 
 @fixture(autouse=True)
@@ -47,11 +49,12 @@ def test_excise_state_2step(scaffolding):
     q12 = Forward(f12, g1)
     p21 = Reverse(g2, r21)
     extend12 = Propose(target=p21, proposal=q12)
-    state12, lv12 = extend12(sample_shape=(5,1))
-    _state12q = excise_state(state12.proposal)
-    _state12p = excise_state(state12.target)
+    state12 = extend12(sample_shape=(5,1))
+    lv12 = state12.weights
+    _state12q = excise_state(extend12.proposal._cache)
+    _state12p = excise_state(extend12.target._cache)
 
-    for k, prg, cpy in [(g(1), state12.target, _state12p), (g(2), state12.target, _state12p), (g(2), state12.proposal, _state12q)]:
+    for k, prg, cpy in [(g(1), extend12.target, _state12p), (g(2), extend12.target, _state12p), (g(2), extend12.proposal, _state12q)]:
         assert k == k and prg is prg and prg.trace[k].value.requires_grad # k==k for debugging the assert
         assert cpy.trace[k].value is not prg.trace[k].value
         assert torch.equal(cpy.trace[k].value, prg.trace[k].value)
@@ -101,11 +104,12 @@ def with_shape_test(scaffolding, sample_shape, sample_dims):
     q12 = Forward(f12, g1)
     p21 = Reverse(g2, r21)
     extend12 = Propose(target=p21, proposal=q12)
-    state12, lv12 = extend12(sample_shape=sample_shape, sample_dims=sample_dims)
+    state12 = extend12(sample_shape=sample_shape, sample_dims=sample_dims)
+    lv12 = state12.weights
 
     assert lv12.shape == torch.Size([sample_shape[sample_dims]])
 
-    all_values = [rv.value for rv in [*state12.proposal.trace.values(), *state12.target.trace.values()]]
+    all_values = [rv.value for rv in [*extend12.proposal._ocache.trace.values(), *extend12.target._ocache.trace.values()]]
     for t in all_values:
         assert t.shape[sample_dims] == sample_shape[sample_dims]
 
@@ -141,7 +145,7 @@ def test_disjoint_computation_graphs_if_backprop_on_step1(scaffolding):
     p21 = Reverse(g2, r21)
     extend12 = Propose(target=p21, proposal=q12)
 
-    stat12, lv12 = extend12(sample_shape=(5,1), sample_dims=0)
+    lv12 = extend12(sample_shape=(5,1), sample_dims=0).weights
     loss12 = nvo_avo(lv12)
 
     # Step 2
@@ -149,7 +153,7 @@ def test_disjoint_computation_graphs_if_backprop_on_step1(scaffolding):
     p32 = Reverse(g3, r32)
     extend23 = Propose(target=p32, proposal=q23)
 
-    state23, lv23 = extend23(sample_shape=(5,1), sample_dims=0)
+    lv23 = extend23(sample_shape=(5,1), sample_dims=0).weights
     loss23 = nvo_avo(lv23, sample_dims=0).mean()
 
     # backward on step 1
@@ -194,14 +198,14 @@ def test_disjoint_computation_graphs_if_backprop_on_step2(scaffolding):
     q12 = Forward(f12, Condition(g1, g1_prv_tr, requires_grad=RequiresGrad.NO))
     p21 = Reverse(g2, r21)
     extend12 = Propose(target=p21, proposal=q12)
-    state12, lv12 = extend12(sample_shape=(5,1), sample_dims=0)
+    lv12 = extend12(sample_shape=(5,1), sample_dims=0).weights
     loss12 = nvo_avo(lv12)
 
     # Step 2
     q23 = Forward(f23, g2)
     p32 = Reverse(g3, r32)
     extend23 = Propose(target=p32, proposal=q23)
-    state23, lv23 = extend23(sample_shape=(5,1), sample_dims=0)
+    lv23 = extend23(sample_shape=(5,1), sample_dims=0).weights
     loss23 = nvo_avo(lv23, sample_dims=0).mean()
 
     # backward on step 2
@@ -224,7 +228,7 @@ def test_disjoint_computation_graphs_if_backprop_on_step2(scaffolding):
     for p0, p1 in [*zip(f23_params0, f23_params1), *zip(r32_params0, r32_params1)] :
         assert p0 != p1
 
-def test_disjoint_computation_graphs_if_backprop_on_step2_in_run(scaffolding):
+def test_disjoint_computation_graphs_if_backprop_on_step2_in_run(scaffolding, is_smoketest):
     targets, forwards, reverses = scaffolding
     g1, g2, g3 = targets
     f12, f23   = forwards
@@ -235,7 +239,7 @@ def test_disjoint_computation_graphs_if_backprop_on_step2_in_run(scaffolding):
     loss_ct, loss_sum, loss_avgs, loss_all = 0, 0.0, [], []
     lvs_all = []
 
-    num_steps = 100
+    num_steps = 10 if is_smoketest else 100
     num_samples = 100
 
     initial_forward_marginal2 = propagate(N=g1.as_dist(as_multivariate=True), F=f12.weight(), t=f12.bias(), B=torch.eye(1), marginalize=True)
@@ -256,10 +260,11 @@ def test_disjoint_computation_graphs_if_backprop_on_step2_in_run(scaffolding):
                 q_ext = Forward(fwd, Condition(q, p_prv_tr, requires_grad=RequiresGrad.NO))
                 p_ext = Reverse(p, rev)
                 extend = Propose(target=p_ext, proposal=q_ext)
-                state, lv = extend(sample_shape=(num_samples, 1), sample_dims=0)
+                state = extend(sample_shape=(num_samples, 1), sample_dims=0)
+                lv = state.weights
 
                 # setup for next step
-                p_prv_tr = state.target.trace
+                p_prv_tr = state.trace
                 lvs.append(lv)
                 if p.name == "g3":
                     # only run for step 1
@@ -300,7 +305,7 @@ def test_disjoint_computation_graphs_if_backprop_on_step2_in_run(scaffolding):
         assert g3.dist.loc.item() == 3. and abs(analytic_loc3 - g3.dist.loc.item()) != 0.
 
 
-def test_training_run_full(scaffolding):
+def test_training_run_full(scaffolding, is_smoketest):
     targets, forwards, reverses = scaffolding
     g1, g2, g3 = targets
     f12, f23   = forwards
@@ -311,7 +316,7 @@ def test_training_run_full(scaffolding):
     loss_ct, loss_sum, loss_avgs, loss_all = 0, 0.0, [], []
     lvs_all = []
 
-    num_steps = 1000
+    num_steps = 10 if is_smoketest else 1000
     num_samples = 100
     with trange(num_steps) as bar:
         for i in bar:
@@ -324,11 +329,12 @@ def test_training_run_full(scaffolding):
                 q_ext = Forward(fwd, Condition(q, p_prv_tr, requires_grad=RequiresGrad.NO))
                 p_ext = Reverse(p, rev)
                 extend_argument = Propose(target=p_ext, proposal=q_ext)
-                state, lv = extend_argument(sample_shape=(num_samples, 1), sample_dims=0)
+                state = extend_argument(sample_shape=(num_samples, 1), sample_dims=0)
+                lv = state.weights
                 lvs.append(lv)
 
                 # setup for next step
-                p_prv_tr = state.target.trace
+                p_prv_tr = state.trace
                 loss += nvo_avo(lv, sample_dims=0).mean()
 
             lvs_ten = torch.stack(lvs, dim=0)
@@ -357,6 +363,6 @@ def test_training_run_full(scaffolding):
         print(ess)
         # FIXME: ESS looks funny. I think I am doing it wrong?
         analytic_forward_marginal2 = propagate(N=g1.as_dist(as_multivariate=True), F=f12.weight(), t=f12.bias(), B=torch.eye(1), marginalize=True)
-        assert (g2.loc - analytic_forward_marginal2.loc).item() < 0.01
+        assert is_smoketest or (g2.loc - analytic_forward_marginal2.loc).item() < 0.01
         analytic_forward_marginal3 = propagate(N=g2.as_dist(as_multivariate=True), F=f23.weight(), t=f23.bias(), B=torch.eye(1), marginalize=True)
-        assert (g3.loc - analytic_forward_marginal3.loc).item() < 0.01
+        assert is_smoketest or (g3.loc - analytic_forward_marginal3.loc).item() < 0.01

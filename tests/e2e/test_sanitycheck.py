@@ -10,7 +10,7 @@ from combinators.densities import Normal
 from probtorch.util import expand_inputs
 from typeguard import typechecked
 from tqdm import trange
-from pytest import mark
+from pytest import mark, fixture
 #import sparklines
 import combinators.trace.utils as trace_utils
 from combinators.tensor.utils import thash, show
@@ -18,6 +18,8 @@ from typing import Optional
 from combinators.densities.kernels import NormalLinearKernel
 from torch import distributions
 from combinators.inference import Condition
+
+from tests.utils import is_smoketest, seed
 
 class _Gaussian1d(nn.Module):
     def __init__(self, loc:int, std:int, name:str, num_samples:int):
@@ -243,7 +245,7 @@ def step(k, p_prev, proposal, target, fwd_kernel, rev_kernel, num_steps):
     return q_ext, p_ext, lv, p_prop, lv_prop
 
 
-def test_Gaussian_sanitycheck():
+def test_Gaussian_sanitycheck(is_smoketest):
     torch.manual_seed(1)
     target_mean, target_stdv = 4, 1
     num_samples=200
@@ -254,7 +256,7 @@ def test_Gaussian_sanitycheck():
     rev = _SimpleKernel(num_hidden=4, name='r_10')
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [proposal, target, fwd, rev]], lr=lr)
 
-    num_steps = 1500
+    num_steps = 10 if is_smoketest else 1500
     loss_ct, loss_sum = 0, 0.0
     loss_all = []
     loss_every = []
@@ -377,15 +379,15 @@ def test_Gaussian_sanitycheck():
         eval_mean, eval_stdv = evaluation.mean().item(), evaluation.std().item()
         print("mean: {:.4f}, std: {:.4f}".format(eval_mean, eval_stdv))
         mean_tol, stdv_tol = 0.25, 0.5
-        assert (target_mean - mean_tol) < eval_mean and  eval_mean < (target_mean + mean_tol)
-        assert (target_stdv - stdv_tol) < eval_stdv and  eval_stdv < (target_stdv + stdv_tol)
+        assert is_smoketest or (target_mean - mean_tol) < eval_mean and  eval_mean < (target_mean + mean_tol)
+        assert is_smoketest or (target_stdv - stdv_tol) < eval_stdv and  eval_stdv < (target_stdv + stdv_tol)
 
 
 # @mark.skip("use Condition combinator when this is all done")
-def test_2step_sanitycheck():
+def test_2step_sanitycheck(is_smoketest):
     g = lambda i: f'g{i}'
     torch.manual_seed(1)
-    num_samples=100
+    num_samples= 100
     sample_shape = (num_samples,1)
     lr = 1e-2
     g1, g2, g3 = targets  = [Normal(loc=i, scale=1, name=g(i)) for i in range(1,4) ]
@@ -394,7 +396,7 @@ def test_2step_sanitycheck():
 
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses]], lr=lr)
 
-    num_steps = 800
+    num_steps = 10 if is_smoketest else 800
     loss_ct, loss_sum = 0, 0.0
     loss_all = []
     loss_every = []
@@ -551,7 +553,7 @@ def test_2step_sanitycheck():
         evaluation = torch.cat(samples)
         eval_mean, eval_stdv = evaluation.mean().item(), evaluation.std().item()
         print("mean: {:.4f}, std: {:.4f}".format(eval_mean, eval_stdv))
-        assert abs(2 - eval_mean) < mean_tol
+        assert is_smoketest or abs(2 - eval_mean) < mean_tol
 
         samples = []
         for _ in range(num_validate_samples):
@@ -564,4 +566,4 @@ def test_2step_sanitycheck():
         evaluation = torch.cat(samples)
         eval_mean, eval_stdv = evaluation.mean().item(), evaluation.std().item()
         print("mean: {:.4f}, std: {:.4f}".format(eval_mean, eval_stdv))
-        assert abs(3 - eval_mean) < mean_tol
+        assert is_smoketest or abs(3 - eval_mean) < mean_tol

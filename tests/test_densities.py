@@ -20,11 +20,8 @@ from combinators.nnets import LinearMap, ResMLPJ
 from combinators.objectives import nvo_rkl, nvo_avo
 from combinators.densities import MultivariateNormal, Tempered, RingGMM
 from combinators.densities.kernels import MultivariateNormalLinearKernel, MultivariateNormalKernel, IdentityKernel
+from tests.utils import is_smoketest, seed
 
-
-@fixture(autouse=True)
-def seed():
-    torch.manual_seed(1)
 
 def test_tempered_redundant_noloop(seed):
     # hyperparams
@@ -42,17 +39,17 @@ def test_tempered_redundant_noloop(seed):
     q1_ext = Forward(f01, g0)
     p1_ext = Reverse(halfway, r10)
     extend1 = Propose(target=p1_ext, proposal=q1_ext)
-    state1, lv1 = extend1(sample_shape=sample_shape, sample_dims=0)
+    state1 = extend1(sample_shape=sample_shape, sample_dims=0)
 
-    q2_ext = Forward(f12, Condition(halfway, state1.target.trace))
+    q2_ext = Forward(f12, Condition(halfway, state1.trace))
     p2_ext = Reverse(gK, r21)
     extend2 = Propose(target=p2_ext, proposal=q2_ext)
-    state2, lv2 = extend2(sample_shape=sample_shape, sample_dims=0)
+    state2 = extend2(sample_shape=sample_shape, sample_dims=0)
 
-def test_tempered_redundant_loop(seed):
+def test_tempered_redundant_loop(seed, is_smoketest):
     # hyperparams
     sample_shape = (100,)
-    num_iterations = 1000
+    num_iterations = 10 if is_smoketest else 1000
 
     # Setup
     g0 = MultivariateNormal(name='g0', loc=torch.ones(2), cov=torch.eye(2)**2)
@@ -78,12 +75,13 @@ def test_tempered_redundant_loop(seed):
                 q_ext = Forward(fwd, Condition(q, p_prv_tr), _step=k)
                 p_ext = Reverse(p, rev, _step=k)
                 extend = Propose(target=p_ext, proposal=q_ext, _step=k)
-                state, lv = extend(sample_shape=sample_shape, sample_dims=0)
+                state = extend(sample_shape=sample_shape, sample_dims=0)
+                lv = state.weights
 
-                p_prv_tr = state.target.trace
+                p_prv_tr = state.trace
 
                 lw += lv
-                loss += nvo_rkl(lw, lv, state.proposal.trace[f'g{k}'], state.target.trace[f'g{k+1}'])
+                loss += nvo_rkl(lw, lv, extend.proposal._ocache.trace[f'g{k}'], state.trace[f'g{k+1}'])
                 lvs.append(lv)
             loss.backward()
 
@@ -108,7 +106,7 @@ def test_tempered_redundant_loop(seed):
         # TODO: add some tests?
 
 
-def test_annealing_path_tempered_normals(seed):
+def test_annealing_path_tempered_normals(seed, is_smoketest):
     num_targets = 3
     g0 = MultivariateNormal(name='g0', loc=torch.zeros(2), cov=torch.eye(2)**2)
     gK = MultivariateNormal(name=f'g{num_targets}', loc=torch.ones(2)*num_targets, cov=torch.eye(2)**2)
@@ -123,7 +121,7 @@ def test_annealing_path_tempered_normals(seed):
 
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses, *targets]], lr=1e-3)
 
-    num_steps = 1000
+    num_steps = 10 if is_smoketest else 1000
     sample_shape = (100,)
     loss_ct, loss_sum, loss_avgs, loss_all = 0, 0.0, [], []
 
@@ -140,15 +138,16 @@ def test_annealing_path_tempered_normals(seed):
                 q_ext = Forward(fwd, Condition(q, p_prv_tr, requires_grad=RequiresGrad.NO))
                 p_ext = Reverse(p, rev)
                 extend = Propose(target=p_ext, proposal=q_ext)
-                state, lv = extend(sample_shape=sample_shape, sample_dims=0)
+                state = extend(sample_shape=sample_shape, sample_dims=0)
+                lv = state.weights
                 lvss.append(lv.detach())
 
                 # FIXME: because p_prv_tr is not eliminating the previous trace, the trace is cumulativee but removing grads leaves backprop unaffected
-                p_prv_tr = state.target.trace
+                p_prv_tr = state.trace
                 assert set(p_prv_tr.keys()) == { f'g{k+1}' }
 
                 lw += lv
-                # loss += nvo_rkl(lw, lv, state.proposal.trace[f'g{k}'], state.target.trace[f'g{k+1}'])
+                # loss += nvo_rkl(lw, lv, state.proposal.trace[f'g{k}'], state.trace[f'g{k+1}'])
                 if k==2:
                     loss = nvo_avo(lv)
             loss.backward()
@@ -265,14 +264,15 @@ def test_annealing_path_8step_simple(seed):
                 q_ext = Forward(fwd, Condition(q, p_prv_tr), _step=k)
                 p_ext = Reverse(p, rev, _step=k)
                 extend = Propose(target=p_ext, proposal=q_ext, _step=k)
-                state, lv = extend(sample_shape=sample_shape, sample_dims=0)
+                state = extend(sample_shape=sample_shape, sample_dims=0)
+                lv = state.weights
 
                 # FIXME: because p_prv_tr is not eliminating the previous trace, the trace is cumulativee but removing grads leaves backprop unaffected
-                p_prv_tr = state.target.trace
+                p_prv_tr = state.trace
                 assert set(p_prv_tr.keys()) == { f'g_{k+1}' }
 
                 lw += lv
-                loss += nvo_rkl(lw, lv, state.proposal.trace[f'g_{k}'], state.target.trace[f'g_{k+1}'])
+                loss += nvo_rkl(lw, lv, state.proposal.trace[f'g_{k}'], state.trace[f'g_{k+1}'])
             loss.backward()
 
             optimizer.step()
@@ -510,19 +510,20 @@ def test_tempered_grad_check(seed):
                 p_ext = Reverse(p, rev, _step=k)
                 extend = Propose(target=p_ext, proposal=q_ext, _step=k)
     #             breakpoint()
-                state, lv = extend(sample_shape=sample_shape, sample_dims=0)
+                state = extend(sample_shape=sample_shape, sample_dims=0)
+                lv = state.weights
 
-                p_prv_tr = state.target.trace
+                p_prv_tr = state.trace
                 p.clear_observations()
                 q.clear_observations()
                 lw += lv
     #             loss += nvo_avo(lv)
-    #             loss += nvo_rkl(lw, lv, state.proposal.trace[f'g{k}'], state.target.trace[f'g{k+1}'])
+    #             loss += nvo_rkl(lw, lv, state.proposal.trace[f'g{k}'], state.trace[f'g{k+1}'])
 
                 # batch_dim=None
                 # sample_dims=0
                 # rv_proposal=state.proposal.trace[f'g{k}']
-                # rv_target=state.target.trace[f'g{k+1}']
+                # rv_target=state.trace[f'g{k+1}']
                 # # TODO: move back from the proposal and target RVs to joint logprobs?
                 # reducedims = (sample_dims,)
                 #
@@ -548,7 +549,7 @@ def test_tempered_grad_check(seed):
 
                 if k==2:
                     # loss += kl_term + mb0(baseline * grad_log_Z1 - grad_log_Z2) + baseline + ldZ
-                    loss += nvo_rkl(lw, lv, state.proposal.trace[f'g{k}'], state.target.trace[f'g{k+1}'])
+                    loss += nvo_rkl(lw, lv, state.proposal.trace[f'g{k}'], state.trace[f'g{k+1}'])
                     # loss += nvo_avo(lv)
 
 
