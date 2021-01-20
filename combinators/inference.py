@@ -92,10 +92,12 @@ class KernelInf(nn.Module, Conditionable):
 
 
 class Reverse(KernelInf, Inf):
-    def __init__(self, program: Union[Program, KernelInf], kernel: Kernel, _step=None, _permissive=True) -> None:
+    def __init__(self, program: Union[Program, KernelInf], kernel: Kernel, loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: fin), loss0=torch.zeros(1), _step=None, _permissive=True) -> None:
         super().__init__(_step, _permissive)
         self.program = program
         self.kernel = kernel
+        self.foldl_loss = loss_fn
+        self.loss0 = loss0
 
     def forward(self, *program_args:Any, sample_dims=None, _debug=False, **program_kwargs:Any) -> Tuple[Trace, Optional[Tensor], Output]:
         program = Condition(self.program, self._cond_trace, as_trace=False) if self._cond_trace is not None else self.program
@@ -110,28 +112,47 @@ class Reverse(KernelInf, Inf):
         out_trace = program_state.trace.as_trace(access_only=True) if isinstance(program_state.trace, ConditioningTrace) \
                         else program_state.trace
 
-        self._cache = Out(trace=out_trace, weights=log_aux, output=program_state.output, extras=dict(program=program_state, kernel=kernel_state, type=type(self).__name__))
+        self._cache = Out(
+            trace=out_trace,
+            weights=log_aux,
+            output=program_state.output,
+            extras=dict(
+                program=program_state,
+                kernel=kernel_state,
+                type=type(self).__name__,
+                loss=self.foldl_loss(log_aux, kernel_state.loss if 'loss' in kernel_state else self.loss0)))
+
         return self._cache
 
 class Forward(KernelInf, Inf):
-    def __init__(self, kernel: Kernel, program: Union[Program, KernelInf], _step=None, _permissive=True) -> None:
+    def __init__(self, kernel: Kernel, program: Union[Program, KernelInf], loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: fin), loss0=torch.zeros(1), _step=None, _permissive=True) -> None:
         super().__init__(_step, _permissive)
         self.program = program
         self.kernel = kernel
+        self.foldl_loss = loss_fn
+        self.loss0 = loss0
 
-    def forward(self, *program_args:Any, sample_dims=None, _debug=False, **program_kwargs) -> Tuple[Trace, Optional[Tensor], Output]:
+    def __call__(self, *program_args:Any, sample_dims=None, _debug=False, **program_kwargs) -> Tuple[Trace, Optional[Tensor], Output]:
         program_state = self._run_program(self.program, *program_args, sample_dims=sample_dims, **program_kwargs)
 
         kernel_state = self._run_kernel(self.kernel, program_state.trace, program_state.output, sample_dims=sample_dims)
         log_joint = kernel_state.trace.log_joint(batch_dim=None, sample_dims=sample_dims)
 
-        self._cache = Out(trace=kernel_state.trace, weights=log_joint, output=kernel_state.output, extras=dict(program=program_state, kernel=kernel_state, type=type(self).__name__))
+        self._cache = Out(
+            trace=kernel_state.trace,
+            weights=log_joint,
+            output=kernel_state.output,
+            extras=dict(
+                program=program_state,
+                kernel=kernel_state,
+                type=type(self).__name__,
+                loss=self.foldl_loss(log_joint, kernel_state.loss if 'loss' in kernel_state else self.loss0)))
 
         return self._cache
 
 
 class Propose(nn.Module, Inf):
-    def __init__(self, target: Union[Program, KernelInf], proposal: Union[Program, Inf], loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: x), _step:Optional[int]=None, _debug:bool=False):
+    def __init__(self, target: Union[Program, KernelInf], proposal: Union[Program, Inf], loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: fin), loss0=torch.zeros(1), _step:Optional[int]=None, _debug:bool=False):
         super().__init__()
         self.target = target
         self.proposal = proposal
@@ -139,6 +160,7 @@ class Propose(nn.Module, Inf):
         self.foldl_loss = loss_fn
         self._step = _step # used for debugging
         self._debug = _debug
+        self.loss0 = loss0
 
     def forward(self, *shared_args, sample_dims=None, _debug=False, **shared_kwargs):
         proposal_state = self.proposal(*shared_args, sample_dims=sample_dims, **shared_kwargs)
@@ -151,7 +173,8 @@ class Propose(nn.Module, Inf):
             extras=dict(
                 proposal=proposal_state if self._debug or _debug else Out(*proposal_state), # strip auxiliary traces
                 target=target_state if self._debug  or _debug else Out(*target_state), # strip auxiliary traces
-                type=type(self).__name__
+                type=type(self).__name__,
+                loss=self.foldl_loss(lv, proposal_state.loss if 'loss' in proposal_state else self.loss0)
                 ),
             trace=target_state.trace,
             weights=lv,

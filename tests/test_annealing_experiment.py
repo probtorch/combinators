@@ -68,7 +68,8 @@ def experiment_runner(is_smoketest, trainer):
     with trange(num_iterations) as bar:
         for i in bar:
 
-            lw, lvss, loss = trainer(i, targets, forwards, reverses, sample_shape)
+            lvss, loss = trainer(i, targets, forwards, reverses, sample_shape)
+
             loss.backward()
 
             optimizer.step()
@@ -119,77 +120,41 @@ def nvi_eager(i, targets, forwards, reverses, sample_shape):
 
         # loss += nvo_rkl(lw, lv, state.proposal.trace[f'g{k}'], state.target.trace[f'g{k+1}'])
         objective_loss = nvo_avo(lv)
-        print(objective_loss)
         loss += objective_loss
-
 
         lvss.append(lv)
 
-    return lw, lvss, loss
+    return lvss, loss
 
 def test_eager_annealing(is_smoketest):
     experiment_runner(is_smoketest, nvi_eager)
 
-def nvi_declarative1(i, targets, forwards, reverses, sample_shape):
-    def print_and_sum_loss(lv, loss):
-        out = loss + nvo_avo(lv)
-        print(out)
-        return out
-
-    def mk_step(q, p, fwd, rev, k)->Propose:
-        q_ext = Forward(fwd, q)
-        p_ext = Reverse(p, rev)
-        return Propose(target=p_ext, proposal=q_ext, loss_fn=print_and_sum_loss, _debug=True, _step=k)
-
-    proposal = targets[0]
-
-    for k, (fwd, rev, p) in enumerate(zip(forwards, reverses, targets[1:])):
-        proposal = mk_step(proposal, p, fwd, rev, k) # I think we want to pass in loss here, as discussed.
-    # <<<<<<  >>>>>>
-    out = proposal(sample_shape=sample_shape, sample_dims=0)
-
-    def weights(out, ret=[])->[Tensor]:
-        _ret = ret + [out.weights]
-        if 'proposal' not in out:
-            return _ret
-        else:
-            return weights(out.proposal, _ret)
+def _weights(out, ret=[])->[Tensor]:
+    _ret = ret + ([out.weights] if out.weights is not None else [])
+    if 'proposal' not in out:
+        return _ret
+    else:
+        return _weights(out.proposal.program, _ret)
 
 
-    breakpoint();
+def print_and_sum_loss(lv, loss):
+    out = loss + nvo_avo(lv)
+    print(out)
+    return out
 
-
-    return state, lw, loss
 
 def nvi_declarative(i, targets, forwards, reverses, sample_shape):
-    def print_and_sum_loss(lv, loss):
-        out = loss + nvo_avo(lv)
-        print(out)
-        return out
-
     def mk_step(q, p, fwd, rev, k)->Propose:
         q_ext = Forward(fwd, q)
         p_ext = Reverse(p, rev)
         return Propose(target=p_ext, proposal=q_ext, loss_fn=print_and_sum_loss, _debug=True, _step=k)
 
     proposal = targets[0]
-
     for k, (fwd, rev, p) in enumerate(zip(forwards, reverses, targets[1:])):
-        proposal = mk_step(proposal, p, fwd, rev, k) # I think we want to pass in loss here, as discussed.
-    # <<<<<<  >>>>>>
+        proposal = mk_step(proposal, p, fwd, rev, k)
     out = proposal(sample_shape=sample_shape, sample_dims=0)
 
-    def weights(out, ret=[])->[Tensor]:
-        _ret = ret + [out.weights]
-        if 'proposal' not in out:
-            return _ret
-        else:
-            return weights(out.proposal.program, _ret)
-
-    breakpoint();
-
-
-    return state, lw, loss
+    return _weights(out), out.loss
 
 def test_declarative_annealing():
     is_smoketest = True
