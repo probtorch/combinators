@@ -13,7 +13,7 @@ import ast
 import weakref
 
 from combinators.stochastic import Trace, Factor
-from combinators.types import Output, State, TraceLike, get_shape_kwargs
+from combinators.types import Output, State, TraceLike, get_shape_kwargs, Out
 import combinators.trace.utils as trace_utils
 from combinators.trace.utils import RequiresGrad
 
@@ -28,14 +28,14 @@ class Program(TraceModule):
     def model(self, trace: Trace, *args:Any, **kwargs:Any) -> Output:
         raise NotImplementedError()
 
-    def forward(self, *args:Any, sample_dims=None, _debug=False, **kwargs:Any) -> Tuple[Trace, Optional[Tensor],  Output]:
+    def forward(self, *args:Any, sample_dims=None, _debug=False, **kwargs:Any):
         trace = self.get_trace()  # allows Condition to hook into this process
 
         out = self.model(trace, *args, **get_shape_kwargs(self.model, sample_dims=sample_dims), **kwargs)
 
         self.clear_cond_trace()   # closing bracket for a run, required if a user does not use the Condition combinator
 
-        return trace, None, out
+        return Out(trace, None, out)
 
     @classmethod
     def factory(cls, fn, name:str = ""):

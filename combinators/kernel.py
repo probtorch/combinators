@@ -13,7 +13,7 @@ import weakref
 import combinators.trace.utils as trace_utils
 
 from combinators.stochastic import Trace, Factor
-from combinators.types import Output, State, TraceLike, get_shape_kwargs, check_passable_kwarg
+from combinators.types import Output, State, TraceLike, get_shape_kwargs, check_passable_kwarg, Out
 from combinators.program import Program, model
 from combinators.traceable import TraceModule
 
@@ -28,7 +28,7 @@ class Kernel(TraceModule):
     def apply_kernel(self, trace: Trace, cond_trace: Trace, outs: Output, sample_dims:Optional[int]=None): #, batch_dim:Optional[int]=None) -> Output:
         raise NotImplementedError()
 
-    def forward(self, cond_trace: Trace, cond_outs: Output, sample_dims=None, validate=True) -> Tuple[Trace, Optional[Tensor],  Output]:
+    def forward(self, cond_trace: Trace, cond_outs: Output, sample_dims=None, validate=True):
         # get a fresh trace to make sure we don't have inplace mutation
         trace = Trace()
 
@@ -41,4 +41,4 @@ class Kernel(TraceModule):
         # grab anything that is missing from the cond_trace
         full_trace = trace_utils.copytraces(cond_trace, trace)
 
-        return full_trace, None, out
+        return Out(full_trace, None, out)

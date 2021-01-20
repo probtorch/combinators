@@ -22,9 +22,8 @@ from combinators.densities.kernels import NormalLinearKernel
 from combinators.nnets import LinearMap
 from combinators.types import get_shape_kwargs
 from combinators.tensor.utils import thash, show
-from combinators.inference import PCache, State, Condition, RequiresGrad
 from combinators.stochastic import RandomVariable, Provenance
-from combinators import Program, Kernel, Trace, Forward, Reverse, Propose
+from combinators import Program, Kernel, Trace, Forward, Reverse, Propose, Condition, RequiresGrad
 
 from tests.utils import is_smoketest, seed
 
@@ -109,7 +108,7 @@ def with_shape_test(scaffolding, sample_shape, sample_dims):
 
     assert lv12.shape == torch.Size([sample_shape[sample_dims]])
 
-    all_values = [rv.value for rv in [*extend12.proposal._ocache.trace.values(), *extend12.target._ocache.trace.values()]]
+    all_values = [rv.value for rv in [*extend12.proposal._cache.trace.values(), *extend12.target._cache.trace.values()]]
     for t in all_values:
         assert t.shape[sample_dims] == sample_shape[sample_dims]
 

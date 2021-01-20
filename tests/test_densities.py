@@ -81,7 +81,7 @@ def test_tempered_redundant_loop(seed, is_smoketest):
                 p_prv_tr = state.trace
 
                 lw += lv
-                loss += nvo_rkl(lw, lv, extend.proposal._ocache.trace[f'g{k}'], state.trace[f'g{k+1}'])
+                loss += nvo_rkl(lw, lv, extend.proposal._cache.trace[f'g{k}'], state.trace[f'g{k+1}'])
                 lvs.append(lv)
             loss.backward()
 
@@ -189,12 +189,12 @@ def test_annealing_path_tempered_normals(seed, is_smoketest):
 
         hashes_fps1 = [thash(f) for fs in fps1 for f in fs]
 
-        empirical_loc1 = Forward(forwards[0], targets[0])(sample_shape=(2000,))[-1].mean(dim=0)
+        empirical_loc1 = Forward(forwards[0], targets[0])(sample_shape=(2000,)).output.mean(dim=0)
         analytic1 = propagate(N=targets[0].dist, F=forwards[0].weight(), t=forwards[0].bias(), B=targets[0].dist.covariance_matrix, marginalize=True)
         print(empirical_loc1, analytic1)
-        empirical_loc2 = Forward(forwards[1], Forward(forwards[0], targets[0]))(sample_shape=(2000,))[-1].mean(dim=0)
+        empirical_loc2 = Forward(forwards[1], Forward(forwards[0], targets[0]))(sample_shape=(2000,)).output.mean(dim=0)
         print(empirical_loc2)
-        empirical_loc3 = Forward(forwards[2], Forward(forwards[1], Forward(forwards[0], targets[0])))(sample_shape=(2000,))[-1].mean(dim=0)
+        empirical_loc3 = Forward(forwards[2], Forward(forwards[1], Forward(forwards[0], targets[0])))(sample_shape=(2000,)).output.mean(dim=0)
         print(empirical_loc3)
 
 

@@ -18,7 +18,6 @@ from combinators.metrics import effective_sample_size
 from combinators.debug import propagate
 from combinators.objectives import nvo_avo
 from combinators.tensor.utils import thash, show, autodevice, kw_autodevice
-from combinators.inference import PCache # temporary
 from combinators.stochastic import RandomVariable, Provenance
 from combinators import Program, Kernel, Trace, Forward, Reverse, Propose, Condition, RequiresGrad
 
@@ -119,7 +118,7 @@ def test_propose_gradients(seed):
     rev = MLPKernel(dim_hidden=4, ext_name="z_0")
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [p, q, fwd, rev]], lr=0.5)
 
-    tr0 = q()[0]
+    tr0 = q().trace
     q_ext = Forward(fwd, Condition(q, tr0, requires_grad=RequiresGrad.NO))
     p_ext = Reverse(p, rev)
     extend = Propose(target=p_ext, proposal=q_ext)
@@ -183,7 +182,7 @@ def test_1step_avo(seed, is_smoketest):
                if num_steps > 100:
                    loss_avgs.append(loss_avg)
     with torch.no_grad():
-        assert_empirical_marginal_mean_std(lambda: Forward(fwd, proposal)()[-1], target_params, Tolerance(loc=0.15, scale=0.15), is_smoketest, 5 if is_smoketest else 400)
+        assert_empirical_marginal_mean_std(lambda: Forward(fwd, proposal)().output, target_params, Tolerance(loc=0.15, scale=0.15), is_smoketest, 5 if is_smoketest else 400)
 
 
 def test_2step_avo(seed, use_fast, is_smoketest):
@@ -281,9 +280,9 @@ def test_2step_avo(seed, use_fast, is_smoketest):
         tr, _, out = pre3(sample_shape=(200,1))
         assert is_smoketest or abs(out.mean().item() - 3) < tol.loc
 
-        predict_g1_to_g2 = lambda: pre2()[-1]
-        predict_g2_to_g3 = lambda: pre3()[-1]
-        predict_g1_to_g3 = lambda: Forward(f23, Forward(f12, g1))()[-1]
+        predict_g1_to_g2 = lambda: pre2().output
+        predict_g2_to_g3 = lambda: pre3().output
+        predict_g1_to_g3 = lambda: Forward(f23, Forward(f12, g1))().output
 
         assert_empirical_marginal_mean_std(predict_g1_to_g2, Params(loc=2, scale=1), tol, is_smoketest, 5 if is_smoketest else 400)
         assert_empirical_marginal_mean_std(predict_g2_to_g3, Params(loc=3, scale=1), tol, is_smoketest, 5 if is_smoketest else 400)
@@ -357,10 +356,10 @@ def test_4step_avo(seed, use_fast, is_smoketest):
         for (analytic, target_loc) in zip([out12, out23, out34, out45], range(2,6)):
             assert is_smoketest or (target_loc - analytic.loc.item()) < tol.loc
 
-        predict_g2_chain = lambda: Forward(f12, g1)()[-1]
-        predict_g3_chain = lambda: Forward(f23, Forward(f12, g1))()[-1]
-        predict_g4_chain = lambda: Forward(f34, Forward(f23, Forward(f12, g1)))()[-1]
-        predict_g5_chain = lambda: Forward(f45, Forward(f34, Forward(f23, Forward(f12, g1))))()[-1]
+        predict_g2_chain = lambda: Forward(f12, g1)().output
+        predict_g3_chain = lambda: Forward(f23, Forward(f12, g1))().output
+        predict_g4_chain = lambda: Forward(f34, Forward(f23, Forward(f12, g1)))().output
+        predict_g5_chain = lambda: Forward(f45, Forward(f34, Forward(f23, Forward(f12, g1))))().output
 
         if not use_fast:
             eval_mean_std(predict_g2_chain, Params(loc=2, scale=1), tol, is_smoketest, 5 if is_smoketest else 400)
@@ -368,10 +367,10 @@ def test_4step_avo(seed, use_fast, is_smoketest):
             eval_mean_std(predict_g4_chain, Params(loc=4, scale=1), tol, is_smoketest, 5 if is_smoketest else 400)
             eval_mean_std(predict_g5_chain, Params(loc=5, scale=1), tol, is_smoketest, 5 if is_smoketest else 400)
 
-        predict_g2 = lambda: Forward(f12, g1)()[-1]
-        predict_g3 = lambda: Forward(f23, g2)()[-1]
-        predict_g4 = lambda: Forward(f34, g3)()[-1]
-        predict_g5 = lambda: Forward(f45, g4)()[-1]
+        predict_g2 = lambda: Forward(f12, g1)().output
+        predict_g3 = lambda: Forward(f23, g2)().output
+        predict_g4 = lambda: Forward(f34, g3)().output
+        predict_g5 = lambda: Forward(f45, g4)().output
 
         eval_mean_std(predict_g2, Params(loc=2, scale=1), tol, is_smoketest, 5 if is_smoketest else 400)
         eval_mean_std(predict_g3, Params(loc=3, scale=1), tol, is_smoketest, 5 if is_smoketest else 400)

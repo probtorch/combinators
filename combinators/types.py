@@ -28,3 +28,49 @@ def get_shape_kwargs(fn, sample_dims=None, batch_dim=None):
     if check_passable_kwarg('batch_dim', fn):
         kwargs['batch_dim'] = batch_dim
     return kwargs
+
+
+
+class property_dict(dict):
+    def __getattr__(self, name):
+        if name in self:
+            return self[name]
+        else:
+            raise AttributeError("No such attribute: " + name)
+
+    def __setattr__(self, name, value):
+        self[name] = value
+
+    def __delattr__(self, name):
+        if name in self:
+            del self[name]
+        else:
+            raise AttributeError("No such attribute: " + name)
+
+    def __repr__(self):
+        max_len = max(map(len, self.keys()))
+        return "\n  ".join([
+            f"<property_dict>:",
+            *[("{:>"+ str(max_len)+ "}: {}").format(k, tensor_utils.show(v) if isinstance(v, Tensor) else v) for k, v in self.items()]
+        ])
+
+PropertyDict = property_dict
+
+class iproperty_dict(property_dict):
+    def __iter__(self):
+        for v in self.values():
+            yield v
+
+IPropertyDict = iproperty_dict
+
+class Out(PropertyDict):
+    def __init__(self, trace:Trace, weights:Optional[Output], output:Output, extras:dict=dict()):
+        self.trace = trace
+        self.weights = weights
+        self.output = output
+        for k, v in extras.items():
+            self[k] = v
+
+    def __iter__(self):
+        for x in [self.trace, self.weights, self.output]:
+            yield x
