@@ -22,14 +22,15 @@ logger = logging.getLogger(__name__)
 class Conditionable(ABC):
     def __init__(self) -> None:
         super().__init__()
+        # Optional is used to tell us if a program has a conditioning trace, as opposed to
+        # a misspecified condition on the empty trace
         self._cond_trace: Optional[Trace] = None
 
-    def get_trace(self, evict=False) -> Trace:
-        # trace = Trace()
-        # if not evict and self._cond_trace is not None:
-        #     self.apply_conditions(trace)
-        # return trace
-        return Trace() if self._cond_trace is None or evict else self._cond_trace
+    def get_trace(self) -> Trace:
+        return Trace() if self._cond_trace is None else self._cond_trace
+
+    def clear_cond_trace(self) -> None:
+        self._cond_trace = None
 
 @typechecked
 class Traceable(Conditionable):

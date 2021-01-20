@@ -130,10 +130,10 @@ def mk_model(num_targets:int):
 
 def sample_along(proposal, kernels, sample_shape=(2000,)):
     samples = []
-    tr, out = proposal(sample_shape=sample_shape)
+    tr, _, out = proposal(sample_shape=sample_shape)
     samples.append(out)
     for k in kernels:
         proposal = Forward(k, proposal)
-        tr, out = proposal(sample_shape=sample_shape)
+        tr, _, out = proposal(sample_shape=sample_shape)
         samples.append(out)
     return samples

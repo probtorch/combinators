@@ -97,7 +97,7 @@ class Condition(Inf):
         self.as_trace = as_trace
         self.full_trace_return = full_trace_return
 
-    def __call__(self, *args:Any, **kwargs:Any) -> Tuple[Trace, Optional[Trace], Output]:
+    def __call__(self, *args:Any, _debug=False, **kwargs:Any) -> Tuple[Trace, Optional[Trace], Output]:
         self.process._cond_trace = ConditioningTrace(self.conditioning_trace)
 
         out = _dispatch(permissive=True)(self.process, *args, **kwargs)
@@ -132,12 +132,12 @@ class Reverse(KernelInf, Inf):
         self.program = program
         self.kernel = kernel
 
-    def forward(self, *program_args:Any, sample_dims=None, **program_kwargs:Any) -> Tuple[Trace, Optional[Tensor], Output]:
-        program = Condition(self.program, self._cond_trace, as_trace=False, _debug=True) if self._cond_trace is not None else self.program
+    def forward(self, *program_args:Any, sample_dims=None, _debug=False, **program_kwargs:Any) -> Tuple[Trace, Optional[Tensor], Output]:
+        program = Condition(self.program, self._cond_trace, as_trace=False) if self._cond_trace is not None else self.program
 
         program_state = State(*self._run_program(program, *program_args, sample_dims=sample_dims, **program_kwargs))
 
-        kernel = Condition(self.kernel, self._cond_trace, _debug=True) if self._cond_trace is not None else self.kernel
+        kernel = Condition(self.kernel, self._cond_trace) if self._cond_trace is not None else self.kernel
         kernel_state = State(*self._run_kernel(kernel, program_state.trace, program_state.output, sample_dims=sample_dims))
 
         log_aux = kernel_state.trace.log_joint(batch_dim=None, sample_dims=sample_dims)
@@ -155,8 +155,9 @@ class Forward(KernelInf, Inf):
         self.program = program
         self.kernel = kernel
 
-    def forward(self, *program_args:Any, sample_dims=None, **program_kwargs) -> Tuple[Trace, Optional[Tensor], Output]:
+    def forward(self, *program_args:Any, sample_dims=None, _debug=False, **program_kwargs) -> Tuple[Trace, Optional[Tensor], Output]:
         program_state = State(*self._run_program(self.program, *program_args, sample_dims=sample_dims, **program_kwargs))
+
         kernel_state = State(*self._run_kernel(self.kernel, program_state.trace, program_state.output, sample_dims=sample_dims))
         log_joint = kernel_state.trace.log_joint(batch_dim=None, sample_dims=sample_dims)
         self._cache = KCache(program_state, kernel_state)
@@ -173,7 +174,7 @@ class Propose(nn.Module, Inf):
         self.validate = validate
         self._step = _step # used for debugging
 
-    def forward(self, *shared_args, sample_dims=None, **shared_kwargs):
+    def forward(self, *shared_args, sample_dims=None, _debug=False, **shared_kwargs):
         proposal_state = State(*self.proposal(*shared_args, sample_dims=sample_dims, **shared_kwargs))
 
         conditioned_target = Condition(self.target, proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and needs whole trace?
