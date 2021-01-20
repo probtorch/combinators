@@ -32,23 +32,16 @@ class NormalKernel(Kernel):
         self.ext_to = ext_to
 
     def apply_kernel(self, trace, cond_trace, cond_output, sample_dims=None):
-        # TODO: super annoying... I will just assume there is always a sample dimension and will need to add some more guardrails
-        # if sample_dims is not None:
-        #     if len(cond_output.shape) == 1:
-        #         # reshape
-        #         with_samples_shape = [*cond_output.shape[:sample_dims+1], 1, *cond_output.shape[sample_dims+1:]]
-        #         cond_output = cond_output.view(with_samples_shape)
-        #     # breakpoint();
-        #     if cond_output.shape[0] == 1 and len(cond_output.shape) == 2:
-        #         cond_output = cond_output.T
-        #     else:
-        #         pass
-        # sample_shape = cond_trac[self.ext_from].value.shape
-        # if sample_dims is not None and cond_output.shape[0] == 1 and len(cond_output.shape) == 2:
-        #     cond_output = cond_output.T
-
-        sample_shape = cond_trace[self.ext_from].value.shape
-        mu = self.net(cond_trace[self.ext_from].value.detach()) # .view(sample_shape)
+        # def samples_first(aten, sample_dims):
+        #     shape = aten.shape
+        #     sdim = sample_dims
+        #     sample_cardinality = shape[sdim]
+        #     dims_left = shape[:sdim]
+        #     dims_right = shape[sdim+1:]
+        #     return aten.view([sample_cardinality, *dims_left, *dims_right])
+        # cond_value = samples_first(cond_trace[self.ext_from].value, sample_dims)
+        cond_value = cond_trace[self.ext_from].value
+        mu = self.net(cond_value.detach())
 
         return trace.normal(loc=mu,
                             scale=torch.ones_like(mu, device=mu.device),

@@ -20,7 +20,7 @@ from combinators.objectives import nvo_avo
 from combinators.tensor.utils import thash, show, autodevice, kw_autodevice
 from combinators.inference import PCache # temporary
 from combinators.stochastic import RandomVariable, Provenance
-from combinators import Program, Kernel, Trace, Forward, Reverse, Propose
+from combinators import Program, Kernel, Trace, Forward, Reverse, Propose, Condition, RequiresGrad
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +50,6 @@ def seed():
 @fixture(autouse=True)
 def use_fast():
     return True
-
-
 
 def test_forward(seed):
     g = Normal(loc=0, scale=1, name="g")
@@ -100,10 +98,11 @@ def test_propose_values(seed):
 
     assert isinstance(log_weights, Tensor)
 
-    cache = extend._cache
+    proposal_cache = extend.proposal._cache
+    target_cache = extend.target._cache
 
     for k in ['z_0', 'z_1']:
-        assert torch.equal(cache.proposal.trace[k].value, cache.target.trace[k].value)
+        assert torch.equal(proposal_cache.kernel.trace[k].value, target_cache.kernel.trace[k].value)
 
     loss = nvo_avo(log_weights, sample_dims=0).mean()
     loss.backward()
@@ -122,17 +121,23 @@ def test_propose_gradients(seed):
     rev = MLPKernel(dim_hidden=4, ext_name="z_0")
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [p, q, fwd, rev]], lr=0.5)
 
-    q_ext = Forward(fwd, q)
+    tr0 = q()[0]
+    q_ext = Forward(fwd, Condition(q, tr0, requires_grad=RequiresGrad.NO))
     p_ext = Reverse(p, rev)
     extend = Propose(target=p_ext, proposal=q_ext)
 
     _, log_weights = extend()
-    cache = extend._cache
 
-    for k, prg in [("z_1", cache.target), ("z_0", cache.target), ("z_1", cache.proposal)]:
+    proposal_cache = extend.proposal._cache
+    target_cache = extend.target._cache
+
+    for k in ['z_0', 'z_1']:
+        assert torch.equal(proposal_cache.kernel.trace[k].value, target_cache.kernel.trace[k].value)
+
+    for k, prg in [("z_1", target_cache.kernel), ("z_0", target_cache.kernel), ("z_1", proposal_cache.kernel)]:
         assert k == k and prg is prg and prg.trace[k].value.requires_grad # k==k for debugging the assert
 
-    assert not cache.proposal.trace["z_0"].value.requires_grad
+    assert not proposal_cache.kernel.trace["z_0"].value.requires_grad
 
 def test_1step_avo(seed):
     """ The VAE test. At one step no need for any detaches. """

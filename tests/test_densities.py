@@ -191,17 +191,12 @@ def test_annealing_path_tempered_normals(seed):
         hashes_fps1 = [thash(f) for fs in fps1 for f in fs]
 
         empirical_loc1 = Forward(forwards[0], targets[0])(sample_shape=(2000,))[-1].mean(dim=0)
-        print(empirical_loc1)
         analytic1 = propagate(N=targets[0].dist, F=forwards[0].weight(), t=forwards[0].bias(), B=targets[0].dist.covariance_matrix, marginalize=True)
-        print(analytic1)
+        print(empirical_loc1, analytic1)
         empirical_loc2 = Forward(forwards[1], Forward(forwards[0], targets[0]))(sample_shape=(2000,))[-1].mean(dim=0)
         print(empirical_loc2)
-        analytic2 = propagate(N=targets[1].dist, F=forwards[1].weight(), t=forwards[1].bias(), B=targets[1].dist.covariance_matrix, marginalize=True)
-        print(analytic2)
         empirical_loc3 = Forward(forwards[2], Forward(forwards[1], Forward(forwards[0], targets[0])))(sample_shape=(2000,))[-1].mean(dim=0)
         print(empirical_loc3)
-        analytic3 = propagate(N=targets[2].dist, F=forwards[2].weight(), t=forwards[2].bias(), B=targets[2].dist.covariance_matrix, marginalize=True)
-        print(analytic3)
 
 
 def mk_kernel(target:int, std:float, num_hidden:int):

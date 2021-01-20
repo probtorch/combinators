@@ -518,7 +518,7 @@ class ConditioningTrace(Trace):
         newtr.idempotent = self.idempotent
         newtr.lazy_observations = self.lazy_observations
         mutated = set(self._mutated.keys())
-        newtr._nodes = {k:v for k, v in self._nodes.items() if access_only and k in mutated }
+        newtr._nodes = {k:v for k, v in self._nodes.items() if (access_only and k in mutated) or not access_only }
 
         return newtr
 
