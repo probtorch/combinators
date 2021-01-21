@@ -70,14 +70,22 @@ class Condition(Inf):
         self.full_trace_return = full_trace_return
 
     def __call__(self, *args:Any, _debug=False, **kwargs:Any) -> Tuple[Trace, Optional[Trace], Output]:
-        conditioning_trace = self.conditioning_trace if self.conditioning_trace is not None else self.conditioning_program(*args, _debug=_debug, **kwargs)
+        extras=dict(type=type(self).__name__ + "(" + type(self.process).__name__ + ")")
+        if self.conditioning_trace is not None:
+            conditioning_trace = self.conditioning_trace
+        else:
+            cprog_out = self.conditioning_program(*args, _debug=_debug, **kwargs)
+            conditioning_trace = cprog_out.trace
+            extras["conditioned_output"] = cprog_out
+            raise RuntimeError("[wip] requires testing")
+
         self.process._cond_trace = ConditioningTrace(conditioning_trace)
 
         out = _dispatch(permissive=True)(self.process)(*args, **kwargs)
         self.process._cond_trace = Trace()
         trace = out.trace
         if self.as_trace and isinstance(trace, ConditioningTrace):
-            return Out(trace.as_trace(access_only=not self.full_trace_return), out.weights, out.output, extras=dict(type=type(self).__name__ + "(" + type(self.process).__name__ + ")"))
+            return Out(trace.as_trace(access_only=not self.full_trace_return), out.weights, out.output, extras=extras)
         else:
             return out
 
