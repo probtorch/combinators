@@ -1,4 +1,7 @@
 #+TITLE: Notes
+* TODOs
+** TODO test whole-program conditioning
+*** TODO make sure the declartive annealing experiment didn't get messed up by not including whole-program conditioning.
 * On Lazy observations
 As-is, lazy observations are a requirement in order to statically reason
 (really, "assume") a trace's structure before running it.

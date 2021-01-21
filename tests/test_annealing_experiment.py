@@ -152,6 +152,7 @@ def nvi_declarative(i, targets, forwards, reverses, sample_shape):
     proposal = targets[0]
     for k, (fwd, rev, p) in enumerate(zip(forwards, reverses, targets[1:])):
         proposal = mk_step(proposal, p, fwd, rev, k)
+
     out = proposal(sample_shape=sample_shape, sample_dims=0)
 
     return _weights(out), out.loss
