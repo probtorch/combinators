@@ -39,7 +39,7 @@ class MLPKernel(Kernel):
 
     def apply_kernel(self, trace, cond_trace, obs):
         return trace.normal(loc=self.net(obs.detach()),
-                            scale=torch.ones(1),
+                            scale=torch.ones(1, device=obs.device),
                             value=None if self.ext_name not in cond_trace else cond_trace[self.ext_name].value,
                             name=self.ext_name)
 
@@ -50,7 +50,7 @@ def use_fast():
 
 def test_forward(seed):
     g = Normal(loc=0, scale=1, name="g")
-    fwd = MLPKernel(dim_hidden=4, ext_name="fwd")
+    fwd = MLPKernel(dim_hidden=4, ext_name="fwd").to(autodevice())
 
     ext = Forward(fwd, g)
     ext()
@@ -60,15 +60,15 @@ def test_forward(seed):
 
 def test_forward_forward(seed):
     g0 = Normal(loc=0, scale=1, name="g0")
-    f01 = MLPKernel(dim_hidden=4, ext_name="g1")
-    f12 = MLPKernel(dim_hidden=4, ext_name="g2")
+    f01 = MLPKernel(dim_hidden=4, ext_name="g1").to(autodevice())
+    f12 = MLPKernel(dim_hidden=4, ext_name="g2").to(autodevice())
 
     ext = Forward(f12, Forward(f01, g0))
     ext()
 
 def test_reverse(seed):
     g = Normal(loc=0, scale=1, name="g")
-    rev = MLPKernel(dim_hidden=4, ext_name="rev")
+    rev = MLPKernel(dim_hidden=4, ext_name="rev").to(autodevice())
 
     ext = Reverse(g, rev)
     ext()
@@ -79,8 +79,8 @@ def test_reverse(seed):
 def test_propose_values(seed):
     q = Normal(loc=4, scale=1, name="z_0")
     p = Normal(loc=0, scale=4, name="z_1")
-    fwd = MLPKernel(dim_hidden=4, ext_name="z_1")
-    rev = MLPKernel(dim_hidden=4, ext_name="z_0")
+    fwd = MLPKernel(dim_hidden=4, ext_name="z_1").to(autodevice())
+    rev = MLPKernel(dim_hidden=4, ext_name="z_0").to(autodevice())
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [p, q, fwd, rev]], lr=0.5)
     assert len(list(p.parameters())) == 0
     assert len(list(q.parameters())) == 0
@@ -112,10 +112,10 @@ def test_propose_values(seed):
     assert any([l != r for l, r in zip(rev_hashes_0, rev_hashes_1)])
 
 def test_propose_gradients(seed):
-    q = Normal(loc=4, scale=1, name="z_0")
-    p = Normal(loc=0, scale=4, name="z_1")
-    fwd = MLPKernel(dim_hidden=4, ext_name="z_1")
-    rev = MLPKernel(dim_hidden=4, ext_name="z_0")
+    q = Normal(loc=4, scale=1, name="z_0", **kw_autodevice())
+    p = Normal(loc=0, scale=4, name="z_1", **kw_autodevice())
+    fwd = MLPKernel(dim_hidden=4, ext_name="z_1").to(autodevice())
+    rev = MLPKernel(dim_hidden=4, ext_name="z_0").to(autodevice())
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [p, q, fwd, rev]], lr=0.5)
 
     tr0 = q().trace
@@ -143,8 +143,8 @@ def test_1step_avo(seed, is_smoketest):
     target_params, proposal_params = all_params = [Params(4, 1), Params(1, 4)]
     target,        proposal        = [Normal(*p, name=f'z_{p.loc}') for p in all_params]
     # fwd, rev = [MLPKernel(dim_hidden=4, ext_name=f'z_{ext_mean}') for ext_mean in [4, 1]]
-    fwd = NormalLinearKernel(ext_from=f'z_1', ext_to='z_4')
-    rev = NormalLinearKernel(ext_from=f'z_4', ext_to='z_1')
+    fwd = NormalLinearKernel(ext_from=f'z_1', ext_to='z_4').to(autodevice())
+    rev = NormalLinearKernel(ext_from=f'z_4', ext_to='z_1').to(autodevice())
 
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [proposal, target, fwd, rev]], lr=0.1)
 
@@ -293,8 +293,8 @@ def test_4step_avo(seed, use_fast, is_smoketest):
     4-step NVI-sequential: 8 intermediate densities
     """
     g1, g2, g3, g4, g5 = targets = [Normal(loc=i, scale=1, name=f"z_{i}") for i in range(1,6)]
-    f12, f23, f34, f45 = forwards = [NormalLinearKernel(ext_from=f"z_{i}", ext_to=f"z_{i+1}") for i in range(1,5)]
-    r21, r32, r43, r54 = reverses = [NormalLinearKernel(ext_from=f"z_{i+1}", ext_to=f"z_{i}") for i in range(1,5)]
+    f12, f23, f34, f45 = forwards = [NormalLinearKernel(ext_from=f"z_{i}", ext_to=f"z_{i+1}").to(autodevice()) for i in range(1,5)]
+    r21, r32, r43, r54 = reverses = [NormalLinearKernel(ext_from=f"z_{i+1}", ext_to=f"z_{i}").to(autodevice()) for i in range(1,5)]
     assert r21.ext_to == "z_1"
     assert f12.ext_to == "z_2"
     assert r54.ext_to == "z_4"
@@ -310,7 +310,7 @@ def test_4step_avo(seed, use_fast, is_smoketest):
         for i in bar:
             q0 = targets[0]
             p_prv_tr, _, out0 = q0(sample_shape=sample_shape)
-            loss = torch.zeros(1)
+            loss = torch.zeros(1, **kw_autodevice())
 
             lvs = []
             for fwd, rev, q, p in zip(forwards, reverses, targets[:-1], targets[1:]):

@@ -6,6 +6,7 @@ from pytest import mark, fixture
 from typing import Optional, Callable
 from combinators.debug import empirical_marginal_mean_std
 import os
+import numpy as np
 
 Tolerance = namedtuple("Tolerance", ['loc', 'scale'])
 Params = namedtuple("Params", ["loc", "scale"])
@@ -27,3 +28,5 @@ def is_smoketest():
 @fixture(autouse=True)
 def seed():
     torch.manual_seed(1)
+    np.random.seed(0)
+    torch.set_deterministic(True)

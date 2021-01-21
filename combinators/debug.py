@@ -41,12 +41,12 @@ def print_grads(learnables, bools_only=True):
 
 def propagate(N:dist.MultivariateNormal, F:Tensor, t:Tensor, B:Tensor, marginalize:bool=False, reverse_order:bool=False)-> dist.MultivariateNormal:
     # N is normal starting from
-    # F is NN weights on linear network of forward kernel
-    # t is bias
-    # b is cov of kernel
+    F = F.cpu() # F is NN weights on linear network of forward kernel
+    t = t.cpu() # t is bias
+    B = B.cpu() # b is cov of kernel
     with torch.no_grad():
-        a = N.loc
-        A = N.covariance_matrix
+        a = N.loc.cpu()
+        A = N.covariance_matrix.cpu()
         b = t + F @ a
         m = torch.cat((a, b))
         FA = F @ A
@@ -54,7 +54,7 @@ def propagate(N:dist.MultivariateNormal, F:Tensor, t:Tensor, B:Tensor, marginali
         if marginalize:
             return dist.MultivariateNormal(loc=b, covariance_matrix=BFFA)
         if not reverse_order:
-            A = N.covariance_matrix
+            A = N.covariance_matrix.cpu()
             C1 = torch.cat((A, (FA).T), dim=1)
             C2 = torch.cat((FA, BFFA), dim=1)
             C = torch.cat((C1, C2), dim=0)

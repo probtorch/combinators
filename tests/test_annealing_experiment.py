@@ -126,11 +126,11 @@ def nvi_eager(i, targets, forwards, reverses, sample_shape):
 
     return lvss, loss
 
-def test_eager_annealing(is_smoketest):
+def test_annealing_eager(is_smoketest):
     experiment_runner(is_smoketest, nvi_eager)
 
 def _weights(out, ret=[])->[Tensor]:
-    _ret = ret + ([out.weights] if out.weights is not None else [])
+    _ret = ret + ([out.weights.detach().cpu()] if out.weights is not None else [])
     if 'proposal' not in out:
         return _ret
     else:
@@ -147,7 +147,7 @@ def nvi_declarative(i, targets, forwards, reverses, sample_shape):
     def mk_step(q, p, fwd, rev, k)->Propose:
         q_ext = Forward(fwd, q)
         p_ext = Reverse(p, rev)
-        return Propose(target=p_ext, proposal=q_ext, loss_fn=print_and_sum_loss, _debug=True, _step=k)
+        return Propose(target=p_ext, proposal=q_ext, loss_fn=print_and_sum_loss, _debug=True, _step=k, loss0=torch.zeros(1, **kw_autodevice()))
 
     proposal = targets[0]
     for k, (fwd, rev, p) in enumerate(zip(forwards, reverses, targets[1:])):
@@ -157,6 +157,6 @@ def nvi_declarative(i, targets, forwards, reverses, sample_shape):
 
     return _weights(out), out.loss
 
-def test_declarative_annealing():
+def test_annealing_declarative():
     is_smoketest = True
     experiment_runner(is_smoketest, nvi_declarative)

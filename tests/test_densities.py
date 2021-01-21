@@ -11,7 +11,7 @@ from tqdm import trange
 
 import combinators.trace.utils as trace_utils
 from combinators.trace.utils import RequiresGrad
-from combinators.tensor.utils import kw_autodevice, copy, thash
+from combinators.tensor.utils import autodevice, kw_autodevice, copy, thash
 from combinators import Forward, Reverse, Propose, Kernel, Condition
 from combinators.metrics import effective_sample_size, log_Z_hat
 from combinators.debug import propagate, print_grads, propagate
@@ -28,11 +28,11 @@ def test_tempered_redundant_noloop(seed):
     sample_shape = (13,)
 
     # Setup
-    g0 = MultivariateNormal(name='g0', loc=torch.ones(2), cov=torch.eye(2)**2)
-    gK = MultivariateNormal(name='g2', loc=torch.ones(2), cov=torch.eye(2)**2)
-    halfway = Tempered('g1', g0, gK, torch.tensor([0.5]))
-    f01, f12 = [MultivariateNormalLinearKernel(ext_from=f'g{i}', ext_to=f'g{i+1}', loc=torch.ones(2), cov=torch.eye(2)) for i in range(0,2)]
-    r10, r21 = [MultivariateNormalLinearKernel(ext_from=f'g{i+1}', ext_to=f'g{i}', loc=torch.ones(2), cov=torch.eye(2)) for i in range(0,2)]
+    g0 = MultivariateNormal(name='g0', loc=torch.ones(2, **kw_autodevice()), cov=torch.eye(2, **kw_autodevice())**2)
+    gK = MultivariateNormal(name='g2', loc=torch.ones(2, **kw_autodevice()), cov=torch.eye(2, **kw_autodevice())**2)
+    halfway = Tempered('g1', g0, gK, torch.tensor([0.5], **kw_autodevice() ))
+    f01, f12 = [MultivariateNormalLinearKernel(ext_from=f'g{i}', ext_to=f'g{i+1}', loc=torch.ones(2, **kw_autodevice()), cov=torch.eye(2, **kw_autodevice())).to(autodevice()) for i in range(0,2)]
+    r10, r21 = [MultivariateNormalLinearKernel(ext_from=f'g{i+1}', ext_to=f'g{i}', loc=torch.ones(2, **kw_autodevice()), cov=torch.eye(2, **kw_autodevice())).to(autodevice()) for i in range(0,2)]
 
     # NVI labels:
     p_prv_tr, _, _ = g0(sample_shape=sample_shape)
@@ -52,11 +52,11 @@ def test_tempered_redundant_loop(seed, is_smoketest):
     num_iterations = 10 if is_smoketest else 1000
 
     # Setup
-    g0 = MultivariateNormal(name='g0', loc=torch.ones(2), cov=torch.eye(2)**2)
-    gK = MultivariateNormal(name='g2', loc=torch.ones(2)*3, cov=torch.eye(2)**2)
-    halfway = Tempered('g1', g0, gK, torch.tensor([0.5]))
-    forwards = [MultivariateNormalLinearKernel(ext_from=f'g{i}', ext_to=f'g{i+1}', loc=torch.ones(2), cov=torch.eye(2)) for i in range(0,2)]
-    reverses = [MultivariateNormalLinearKernel(ext_from=f'g{i+1}', ext_to=f'g{i}', loc=torch.ones(2), cov=torch.eye(2)) for i in range(0,2)]
+    g0 = MultivariateNormal(name='g0', loc=torch.ones(2, **kw_autodevice()),   cov=torch.eye(2, **kw_autodevice())**2)
+    gK = MultivariateNormal(name='g2', loc=torch.ones(2, **kw_autodevice())*3, cov=torch.eye(2, **kw_autodevice())**2)
+    halfway = Tempered('g1', g0, gK, torch.tensor([0.5], **kw_autodevice()))
+    forwards = [MultivariateNormalLinearKernel(ext_from=f'g{i}', ext_to=f'g{i+1}', loc=torch.ones(2, **kw_autodevice()), cov=torch.eye(2, **kw_autodevice())).to(autodevice()) for i in range(0,2)]
+    reverses = [MultivariateNormalLinearKernel(ext_from=f'g{i+1}', ext_to=f'g{i}', loc=torch.ones(2, **kw_autodevice()), cov=torch.eye(2, **kw_autodevice())).to(autodevice()) for i in range(0,2)]
     targets = [g0, halfway, gK]
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses]], lr=1e-4)
 
@@ -108,12 +108,12 @@ def test_tempered_redundant_loop(seed, is_smoketest):
 
 def test_annealing_path_tempered_normals(seed, is_smoketest):
     num_targets = 3
-    g0 = MultivariateNormal(name='g0', loc=torch.zeros(2), cov=torch.eye(2)**2)
-    gK = MultivariateNormal(name=f'g{num_targets}', loc=torch.ones(2)*num_targets, cov=torch.eye(2)**2)
-    forwards = [MultivariateNormalLinearKernel(ext_from=f'g{i}',ext_to=f'g{i+1}', loc=torch.ones(2)*i, cov=torch.eye(2)) for i in range(num_targets)]
-    reverses = [MultivariateNormalLinearKernel(ext_from=f'g{i+1}',ext_to=f'g{i}', loc=torch.ones(2)*i, cov=torch.eye(2)) for i in range(num_targets)]
+    g0 = MultivariateNormal(name='g0', loc=torch.zeros(2, **kw_autodevice()), cov=torch.eye(2, **kw_autodevice())**2)
+    gK = MultivariateNormal(name=f'g{num_targets}', loc=torch.ones(2, **kw_autodevice())*num_targets, cov=torch.eye(2, **kw_autodevice())**2)
+    forwards = [MultivariateNormalLinearKernel(ext_from=f'g{i}',ext_to=f'g{i+1}', loc=torch.ones(2)*i, cov=torch.eye(2)).to(autodevice()) for i in range(num_targets)]
+    reverses = [MultivariateNormalLinearKernel(ext_from=f'g{i+1}',ext_to=f'g{i}', loc=torch.ones(2)*i, cov=torch.eye(2)).to(autodevice()) for i in range(num_targets)]
 
-    betas = torch.arange(0., 1., 1./num_targets)[1:] # g_0 is beta=0
+    betas = torch.arange(0., 1., 1./num_targets, **kw_autodevice())[1:] # g_0 is beta=0
 
     path = [Tempered(f'g{k}', g0, gK, beta) for k, beta in zip(range(1,num_targets), betas)]
     path = [g0] + path + [gK]
@@ -128,11 +128,11 @@ def test_annealing_path_tempered_normals(seed, is_smoketest):
     with trange(num_steps) as bar:
         for i in bar:
             q0 = targets[0]
-            p_prv_tr, _, out0 = q0(sample_shape=sample_shape)
-            loss = torch.zeros(1)
+            p_prv_tr, _, _ = q0(sample_shape=sample_shape)
+            loss = torch.zeros(1, **kw_autodevice())
 
             lvss = []
-            lw = torch.zeros(sample_shape)
+            lw = torch.zeros(sample_shape, **kw_autodevice())
 
             for k, (fwd, rev, q, p) in enumerate(zip(forwards, reverses, targets[:-1], targets[1:])):
                 q_ext = Forward(fwd, Condition(q, p_prv_tr, requires_grad=RequiresGrad.NO))

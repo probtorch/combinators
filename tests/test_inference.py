@@ -21,7 +21,7 @@ from combinators.densities import Normal, MultivariateNormal
 from combinators.densities.kernels import NormalLinearKernel
 from combinators.nnets import LinearMap
 from combinators.types import get_shape_kwargs
-from combinators.tensor.utils import thash, show
+from combinators.tensor.utils import kw_autodevice, thash, show
 from combinators.stochastic import RandomVariable, Provenance
 from combinators import Program, Kernel, Trace, Forward, Reverse, Propose, Condition, RequiresGrad
 
@@ -321,7 +321,7 @@ def test_training_run_full(scaffolding, is_smoketest):
         for i in bar:
             q0 = targets[0]
             p_prv_tr, _, _ = q0(sample_shape=(num_samples, 1))
-            loss = torch.zeros([1])
+            loss = torch.zeros([1], **kw_autodevice())
 
             lvs = []
             for fwd, rev, q, p in zip(forwards, reverses, targets[:-1], targets[1:]):

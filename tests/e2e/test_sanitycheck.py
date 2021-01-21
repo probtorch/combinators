@@ -13,7 +13,7 @@ from tqdm import trange
 from pytest import mark, fixture
 #import sparklines
 import combinators.trace.utils as trace_utils
-from combinators.tensor.utils import thash, show
+from combinators.tensor.utils import autodevice, kw_autodevice, thash, show
 from typing import Optional
 from combinators.densities.kernels import NormalLinearKernel
 from torch import distributions
@@ -391,8 +391,8 @@ def test_2step_sanitycheck(is_smoketest):
     sample_shape = (num_samples,1)
     lr = 1e-2
     g1, g2, g3 = targets  = [Normal(loc=i, scale=1, name=g(i)) for i in range(1,4) ]
-    f12, f23 = forwards = [NormalLinearKernel(ext_from=g(i), ext_to=g(i+1)) for i in range(1,3) ]
-    r21, r32 = reverses = [NormalLinearKernel(ext_from=g(i+1), ext_to=g(i)) for i in range(1,3) ]
+    f12, f23 = forwards = [NormalLinearKernel(ext_from=g(i), ext_to=g(i+1)).to(autodevice()) for i in range(1,3) ]
+    r21, r32 = reverses = [NormalLinearKernel(ext_from=g(i+1), ext_to=g(i)).to(autodevice()) for i in range(1,3) ]
 
     optimizer = torch.optim.Adam([dict(params=x.parameters()) for x in [*forwards, *reverses]], lr=lr)
 
@@ -412,8 +412,8 @@ def test_2step_sanitycheck(is_smoketest):
             p_prv_tr, _, _ = g1(sample_shape=sample_shape)
             # sampling reparameterized will have a gradient
             # NOTE: probtorch will default to running rsample
-            lw = torch.zeros([1])
-            loss = torch.zeros([1])
+            lw = torch.zeros([1], **kw_autodevice())
+            loss = torch.zeros([1], **kw_autodevice())
             # ================== #
             # Nestable           #
             # ================== #
@@ -456,7 +456,7 @@ def test_2step_sanitycheck(is_smoketest):
             lw = lw.detach() # completely detached so this is okay with reparam
             values = -lv
             # convice yourself: current intro of JMLR + check with forward grad
-            log_weights = torch.zeros_like(lv)
+            log_weights = torch.zeros_like(lv, **kw_autodevice())
             sample_dims=0
             reducedims=(sample_dims,)
             keepdims=False
@@ -508,12 +508,12 @@ def test_2step_sanitycheck(is_smoketest):
             lw = lw.detach() # completely detached so this is okay with reparam
             values = -lv
             # convice yourself: current intro of JMLR + check with forward grad
-            log_weights = torch.zeros_like(lv)
+            log_weights = torch.zeros_like(lv, **kw_autodevice())
             sample_dims=0
             reducedims=(sample_dims,)
             keepdims=False
             # loss = _estimate_mc(-lv, torch.zeros_like(lv), sample_dims=0, reducedims=(0,), keepdims=False,)
-            nw = torch.nn.functional.softmax(torch.zeros_like(lv), dim=sample_dims)
+            nw = torch.nn.functional.softmax(torch.zeros_like(lv, **kw_autodevice()), dim=sample_dims)
 
             loss += ((nw * values).sum(dim=reducedims, keepdim=keepdims)).mean()
             loss.backward()

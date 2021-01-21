@@ -122,7 +122,7 @@ class GMM(Density):
         super().__init__(name, self.log_density_fn)
         # FIXME: self.components = nn.ParameterList([distributions.MultivariateNormal(loc=locs[k], covariance_matrix=covs[k]) for k in range(K)])
         self.components = [distributions.MultivariateNormal(loc=locs[k], covariance_matrix=covs[k]) for k in range(K)]
-        self.assignments = distributions.Categorical(torch.ones(K)) # take this off the trace
+        self.assignments = distributions.Categorical(torch.ones(K, device=locs[0].device)) # take this off the trace
         # self.assignments = Categorical("assignments", probs=torch.ones(K))
 
     def sample(self, sample_shape=torch.Size([1])):

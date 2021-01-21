@@ -51,15 +51,16 @@ class NormalKernel(Kernel):
     def __repr__(self):
         return f'ext_to={self.ext_to}:' + super().__repr__()
 
+
+class NormalLinearKernel(NormalKernel):
+    def __init__(self, ext_from, ext_to, device=None):
+        super().__init__(ext_from, ext_to, LinearMap(dim=1).to(autodevice(device)))
+
     def weight(self):
         return self.net.weight()
 
     def bias(self):
         return self.net.bias()
-
-class NormalLinearKernel(NormalKernel):
-    def __init__(self, ext_from, ext_to, device=None):
-        super().__init__(ext_from, ext_to, LinearMap(dim=1).to(autodevice(device)))
 
 class MultivariateNormalKernel(Kernel):
     def __init__(

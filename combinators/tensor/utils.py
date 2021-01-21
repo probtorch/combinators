@@ -33,10 +33,10 @@ def thash(aten:Tensor, length:int=8, with_ref=False, no_grad_char:str=" ")->str:
     save_ref = aten.detach()
     if with_ref:
         r = _hash(save_ref, (length // 4))
-        v = _hash(save_ref.numpy(), 3*(length // 4))
+        v = _hash(save_ref.cpu().numpy(), 3*(length // 4))
         return f'#{g}{r}{v}'
     else:
-        v = _hash(save_ref.numpy(), length)
+        v = _hash(save_ref.cpu().numpy(), length)
         return f'#{g}{v}'
 
 @typechecked

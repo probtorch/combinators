@@ -14,6 +14,7 @@ from typing import Iterable
 
 from combinators.types import check_passable_arg, check_passable_kwarg, get_shape_kwargs, Out
 from combinators.trace.utils import RequiresGrad, copytrace
+from combinators.tensor.utils import autodevice, kw_autodevice
 import combinators.trace.utils as trace_utils
 import combinators.tensor.utils as tensor_utils
 from combinators.stochastic import Trace, ConditioningTrace
@@ -27,7 +28,12 @@ from combinators.objectives import nvo_avo
 
 
 class Inf:
-    pass
+    def __init__(self, loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda _, fin: fin), loss0=None, device=None, _step=None, _debug=False):
+        self.loss0 = torch.zeros(1, device=autodevice(device)) if loss0 is None else loss0.to(autodevice(device))
+        self.foldl_loss = loss_fn
+        self._step = _step
+        self._debug = _debug
+        self._cache = Out(None, None, None)
 
 
 def _dispatch(permissive):
@@ -55,7 +61,8 @@ class Condition(Inf):
     TOOO: should also be able to Condition any combinator.
     FIXME: can't condition a conditioned model at the moment
     """
-    def __init__(self, process: Conditionable, trace: Optional[Trace]=None, program:Optional[Inf]=None, requires_grad:RequiresGrad=RequiresGrad.DEFAULT, detach:Set[str]=set(), as_trace=True, full_trace_return=True, _step=None, _debug=False) -> None:
+    def __init__(self, process: Conditionable, trace: Optional[Trace]=None, program:Optional[Inf]=None, requires_grad:RequiresGrad=RequiresGrad.DEFAULT, detach:Set[str]=set(), as_trace=True, full_trace_return=True, _step=None, _debug=False, loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: fin), loss0=None, device=None) -> None:
+        Inf.__init__(self, _step=_step, _debug=_debug, loss_fn=loss_fn, loss0=loss0, device=device)
         assert trace is not None or program is not None
         self.process = process
         if trace is not None:
@@ -65,7 +72,6 @@ class Condition(Inf):
 
         self._requires_grad = requires_grad
         self._detach = detach
-        self._debug = _debug
         self.as_trace = as_trace
         self.full_trace_return = full_trace_return
 
@@ -89,12 +95,10 @@ class Condition(Inf):
         else:
             return out
 
-class KernelInf(Conditionable):
-    def __init__(self, _step:Optional[int]=None, _permissive_arguments:bool=True):
-        nn.Module.__init__(self)
+class KernelInf(Conditionable, Inf):
+    def __init__(self, _permissive_arguments:bool=True, loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: fin), loss0=None, device=None, _step=None, _debug=False):
         Conditionable.__init__(self)
-        self._cache = Out(None, None, None)
-        self._step = _step
+        Inf.__init__(self, _step=_step, _debug=_debug, loss_fn=loss_fn, loss0=loss0, device=device)
         self._permissive_arguments = _permissive_arguments
 
     def _show_traces(self):
@@ -105,13 +109,11 @@ class KernelInf(Conditionable):
             print("kernel : {}".format(self._cache.kernel.trace))
 
 
-class Reverse(KernelInf, Inf):
-    def __init__(self, program: Union[Program, KernelInf], kernel: Kernel, loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: fin), loss0=torch.zeros(1), _step=None, _permissive=True) -> None:
-        super().__init__(_step, _permissive)
+class Reverse(KernelInf):
+    def __init__(self, program: Union[Program, KernelInf], kernel: Kernel, loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: fin), loss0=None, device=None, _step=None, _debug=False, _permissive=True) -> None:
+        super().__init__(_permissive, loss_fn=loss_fn, loss0=loss0, device=device, _step=_step, _debug=_debug)
         self.program = program
         self.kernel = kernel
-        self.foldl_loss = loss_fn
-        self.loss0 = loss0
 
     def __call__(self, *program_args:Any, sample_dims=None, _debug=False, **program_kwargs:Any) -> Tuple[Trace, Optional[Tensor], Output]:
         program = Condition(self.program, trace=self._cond_trace, as_trace=False) if self._cond_trace is not None else self.program
@@ -138,13 +140,11 @@ class Reverse(KernelInf, Inf):
 
         return self._cache
 
-class Forward(KernelInf, Inf):
-    def __init__(self, kernel: Kernel, program: Union[Program, KernelInf], loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: fin), loss0=torch.zeros(1), _step=None, _permissive=True) -> None:
-        super().__init__(_step, _permissive)
+class Forward(KernelInf):
+    def __init__(self, kernel: Kernel, program: Union[Program, KernelInf], loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: fin), loss0=None, device=None, _step=None, _debug=False, _permissive=True) -> None:
+        super().__init__(_permissive, loss_fn=loss_fn, loss0=loss0, device=device, _step=_step, _debug=_debug)
         self.program = program
         self.kernel = kernel
-        self.foldl_loss = loss_fn
-        self.loss0 = loss0
         self._run_program = _dispatch(permissive=True)(self.program)
         self._run_kernel = _dispatch(permissive=True)(self.kernel)
 
@@ -168,18 +168,38 @@ class Forward(KernelInf, Inf):
 
 
 class Propose(Inf):
-    def __init__(self, target: Union[Program, KernelInf], proposal: Union[Program, Inf], loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: fin), loss0=torch.zeros(1), _step:Optional[int]=None, _debug:bool=False):
-        super().__init__()
+    def __init__(self, target: Union[Program, KernelInf], proposal: Union[Program, Inf], loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: fin), loss0=None, device=None, _step:Optional[int]=None, _debug:bool=False):
+        super().__init__(loss_fn=loss_fn, loss0=loss0, device=device, _step=_step, _debug=_debug)
         self.target = target
         self.proposal = proposal
-        self._cache = Out(None, None, None)
-        self.foldl_loss = loss_fn
-        self._step = _step # used for debugging
-        self._debug = _debug
-        self.loss0 = loss0
 
     def __call__(self, *shared_args, sample_dims=None, _debug=False, **shared_kwargs):
         proposal_state = self.proposal(*shared_args, sample_dims=sample_dims, **shared_kwargs)
+
+        conditioned_target = Condition(self.target, trace=proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and needs whole trace?
+        target_state = conditioned_target(*shared_args, sample_dims=sample_dims, **shared_kwargs)
+        lv = target_state.weights - proposal_state.weights
+
+        self._cache = Out(
+            extras=dict(
+                proposal=proposal_state if self._debug or _debug else Out(*proposal_state), # strip auxiliary traces
+                target=target_state if self._debug  or _debug else Out(*target_state), # strip auxiliary traces
+                type=type(self).__name__,
+                loss=self.foldl_loss(lv, proposal_state.loss if 'loss' in proposal_state else self.loss0)
+                ),
+            trace=target_state.trace,
+            weights=lv,
+            output=target_state.output,)
+
+        return self._cache
+
+class Resample(Inf):
+    def __init__(self, program: Union[Program, Inf], loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda x, fin: fin), loss0=None, device=None, _step:Optional[int]=None, _debug:bool=False):
+        super().__init__(loss_fn=loss_fn, loss0=loss0, device=device, _step=_step, _debug=_debug)
+        self.program = program
+
+    def __call__(self, *shared_args, sample_dims=None, _debug=False, **shared_kwargs):
+        proposal_state = self.program(*shared_args, sample_dims=sample_dims, **shared_kwargs)
 
         conditioned_target = Condition(self.target, trace=proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and needs whole trace?
         target_state = conditioned_target(*shared_args, sample_dims=sample_dims, **shared_kwargs)
