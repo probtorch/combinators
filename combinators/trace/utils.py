@@ -122,8 +122,9 @@ def detach(tr:Trace):
 
     return {k: detachrv(rv) for k, rv in tr.items()}
 
+
 @typechecked
-def copytraces(*traces: Trace, requires_grad:RequiresGrad=RequiresGrad.DEFAULT, detach:Set[str]=set(), overwrite=False)->Trace:
+def copytraces(*traces: Trace, requires_grad:RequiresGrad=RequiresGrad.DEFAULT, detach:Set[str]=set(), overwrite=False, mapper=(lambda x: x))->Trace:
     """
     shallow-copies nodes from many traces into a new trace.
     unless overwrite is set, there is a first-write presidence.
@@ -137,9 +138,10 @@ def copytraces(*traces: Trace, requires_grad:RequiresGrad=RequiresGrad.DEFAULT, 
                 else:
                     pass
 
-            newrv = copyrv(rv, requires_grad=get_requires_grad(rv.value, k in detach, requires_grad))
+            newrv = copyrv(rv, requires_grad=get_requires_grad(rv.value, k in detach, requires_grad), mapper=mapper)
             newtr.append(newrv, name=k)
     return newtr
+
 
 @typechecked
 def copytrace(tr: Trace, **kwargs)->Trace:
@@ -147,15 +149,27 @@ def copytrace(tr: Trace, **kwargs)->Trace:
     return copytraces(tr, **kwargs)
 
 @typechecked
-def copyrv(rv:Union[RandomVariable, ImproperRandomVariable], requires_grad: bool=True, provenance:Optional[Provenance]=None, deepcopy_value=False):
+def copyrv(rv:Union[RandomVariable, ImproperRandomVariable], requires_grad: bool=True, provenance:Optional[Provenance]=None, deepcopy_value=False, mapper=(lambda x: x)):
     RVClass = type(rv)
     value = tensor_utils.copy(rv.value, requires_grad=requires_grad, deepcopy=deepcopy_value)
     provenance = provenance if provenance is not None else rv.provenance
 
     if RVClass is RandomVariable:
         # TODO: what about copying the dist?
-        return RVClass(dist=rv.dist, value=value, provenance=provenance, mask=rv.mask, use_pmf=rv._use_pmf)
+        return RVClass(**mapper(dict(dist=rv.dist, value=value, provenance=provenance, mask=rv.mask, use_pmf=rv._use_pmf)))
     elif RVClass is ImproperRandomVariable:
-        return RVClass(log_density_fn=rv._log_density_fn, value=value, provenance=provenance, mask=rv.mask)
+        return RVClass(**mapper(dict(log_density_fn=rv._log_density_fn, value=value, provenance=provenance, mask=rv.mask)))
     else:
         raise NotImplementedError()
+
+
+@typechecked
+def mapvalues(*traces: Trace, mapper=None, **kwargs):
+    assert mapper is not None
+    def rvmapper(kwargs):
+        if 'log_density_fn' in kwargs:
+            # have an improper random variable
+            return dict(log_density_fn=kwargs['log_density_fn'], value=mapper(kwargs['value']), provenance=kwargs['provenance'], mask=kwargs['mask'])
+        else:
+            return dict(dist=kwargs['dist'], value=mapper(kwargs['value']), provenance=kwargs['provenance'], mask=kwargs['mask'], use_pmf=kwargs['use_pmf'])
+    return copytraces(*traces, mapper=rvmapper, **kwargs)

@@ -78,14 +78,18 @@ class ImproperRandomVariable(GenericRandomVariable):
         provenance(:obj:`Provenance`): Indicates whether the value was sampled or observed.
     """
 
-    def __init__(self, log_density_fn:Callable[[Tensor], Tensor], value:Tensor, provenance:Provenance=Provenance.OBSERVED, mask=None):
-        log_prob = log_density_fn(value)
-        super().__init__(value=value, log_prob=log_prob, provenance=provenance, mask=mask)
+    def __init__(self, log_density_fn:Callable[[Tensor], Tensor], value:Tensor, provenance:Provenance=Provenance.OBSERVED, mask=None, log_prob=None):
+        super().__init__(value=value, log_prob=log_density_fn(value) if log_prob is None else log_prob, provenance=provenance, mask=mask)
         self._log_density_fn = log_density_fn
+
+    @property
+    def log_density_fn(self):
+        return self._log_density_fn
 
     def __repr__(self):
         return f"ImproperRandomVariable containing: {repr(self._value)}"
 
+        self._log_density_fn = log_density_fn
 class RandomVariable(GenericRandomVariable):
     """Random variables wrap a PyTorch Variable to associate a distribution
     and a log probability density or mass.
@@ -96,13 +100,16 @@ class RandomVariable(GenericRandomVariable):
         observed(bool): Indicates whether the value was sampled or observed.
     """
 
-    def __init__(self, dist, value, provenance=Provenance.SAMPLED, mask=None, use_pmf=True):
+    def __init__(self, dist, value, provenance=Provenance.SAMPLED, mask=None, use_pmf=True, log_prob=None):
         self._dist = dist
         self._use_pmf = use_pmf
-        log_prob = dist.log_pmf(value) if use_pmf and hasattr(dist, 'log_pmf') else dist.log_prob(value)
         self._reparameterized = dist.has_rsample
-
-        super().__init__(value=value, log_prob=log_prob, provenance=provenance, mask=mask)
+        super().__init__(
+            value=value,
+            provenance=provenance,
+            mask=mask,
+            log_prob=log_prob if log_prob is not None else \
+                (dist.log_pmf(value) if use_pmf and hasattr(dist, 'log_pmf') else dist.log_prob(value)))
 
     @property
     def dist(self):

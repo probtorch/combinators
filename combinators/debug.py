@@ -8,6 +8,7 @@ from combinators.inference import State
 from combinators.stochastic import Trace
 from typeguard import typechecked
 from typing import Callable
+import numpy as np
 
 def excise(t:Tensor) -> Tensor:
     """ clone a tensor and remove it from the computation graph """
@@ -23,6 +24,11 @@ def excise_trace(tr:Trace) -> Trace:
         newrv = RVClass(rv.dist, newval, provenance=rv.provenance, mask=rv.mask)
         newtr.append(newrv, name=k)
     return newtr
+
+def seed(s=42):
+    torch.manual_seed(s)
+    np.random.seed(s)
+    torch.set_deterministic(True)
 
 def print_grad(*args:nn.Module):
     for i, x in enumerate(*args):

@@ -16,10 +16,11 @@ from combinators.densities import MultivariateNormal, Tempered, RingGMM, Normal
 from combinators.densities.kernels import MultivariateNormalKernel, MultivariateNormalLinearKernel, NormalLinearKernel
 from combinators.nnets import ResMLPJ
 from combinators.objectives import nvo_rkl, nvo_avo, mb0, mb1, _estimate_mc, eval_nrep
-from combinators import Forward, Reverse, Propose, Condition, RequiresGrad
+from combinators import Forward, Reverse, Propose, Condition, RequiresGrad, Resample
 from combinators.stochastic import RandomVariable, ImproperRandomVariable
 from combinators.metrics import effective_sample_size, log_Z_hat
 from tests.utils import is_smoketest, seed
+import combinators.debug as debug
 
 import experiments.annealing.visualize as V
 from experiments.annealing.models import mk_model, sample_along, paper_model
@@ -45,12 +46,12 @@ def report(writer, ess, lzh, loss_scalar, i, eval_break, targets, forwards):
 
 
 def experiment_runner(is_smoketest, trainer):
-    seed=1
+    debug.seed()
     eval_break=50
-    num_iterations=1 if is_smoketest else 10000
+    num_iterations=3 if is_smoketest else 10000
     # Setup
-    torch.manual_seed(seed)
-    num_samples = 5 if is_smoketest else 256
+    # num_samples = 5 if is_smoketest else 256
+    num_samples=5
     sample_shape=(num_samples,)
 
     # Models
@@ -126,8 +127,38 @@ def nvi_eager(i, targets, forwards, reverses, sample_shape):
 
     return lvss, loss
 
+def nvi_eager_resample(i, targets, forwards, reverses, sample_shape):
+    q0 = targets[0]
+    p_prv_tr, _, _ = q0(sample_shape=sample_shape)
+
+    loss = torch.zeros(1, **kw_autodevice())
+    lw, lvss = torch.zeros(sample_shape, **kw_autodevice()), []
+
+    for k, (fwd, rev, q, p) in enumerate(zip(forwards, reverses, targets[:-1], targets[1:])):
+        q_ext = Forward(fwd, Condition(q, p_prv_tr, requires_grad=RequiresGrad.NO), _step=k)
+        p_ext = Reverse(p, rev, _step=k)
+        extend = Resample(Propose(target=p_ext, proposal=q_ext, _step=k))
+
+        state = extend(sample_shape=sample_shape, sample_dims=0)
+        lv = state.weights
+
+        p_prv_tr = state.trace
+
+        lw += lv
+
+        # loss += nvo_rkl(lw, lv, state.proposal.trace[f'g{k}'], state.target.trace[f'g{k+1}'])
+        objective_loss = nvo_avo(lv)
+        loss += objective_loss
+
+        lvss.append(lv)
+
+    return lvss, loss
+
 def test_annealing_eager(is_smoketest):
     experiment_runner(is_smoketest, nvi_eager)
+
+def test_annealing_eager_resample(is_smoketest):
+    experiment_runner(is_smoketest, nvi_eager_resample)
 
 def _weights(out, ret=[])->[Tensor]:
     _ret = ret + ([out.weights.detach().cpu()] if out.weights is not None else [])
