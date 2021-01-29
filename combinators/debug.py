@@ -64,8 +64,8 @@ def seed(s=42):
     torch.backends.cudnn.benchmark = True # just incase something goes wrong with set_deterministic
 
 def is_smoketest():
-    env_var = os.getenv('COMBINATORS_SMOKETEST') is not None
-    return env_var
+    env_var = os.getenv('SMOKE')
+    return env_var is not None or env_var == 'true'
 
 def print_grad(*args:nn.Module):
     for i, x in enumerate(*args):

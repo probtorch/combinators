@@ -23,7 +23,7 @@ def g(i):
 
 @fixture
 def is_smoketest():
-    debug.is_smoketest()
+    return debug.is_smoketest()
 
 @fixture(autouse=True)
 def seed():
