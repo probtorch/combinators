@@ -55,9 +55,9 @@ def rws_objective_eager(enc_rws_eta, enc_apg_z, generative, og, x, compare=False
     prp = Propose(proposal=Forward(enc_apg_z, enc_rws_eta), target=og)
     out = prp(x=x, prior_ng=generative.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
 
-    log_w = out.log_weight.detach()
+    log_w = out.log_omega.detach()
     w = F.softmax(log_w, 0)
-    loss = (w * (- out.proposal.log_joint)).sum(0).mean()
+    loss = (w * (- out.proposal.log_omega)).sum(0).mean()
     if compare:
         breakpoint();
 
@@ -75,9 +75,9 @@ def rws_objective_eager(enc_rws_eta, enc_apg_z, generative, og, x, compare=True,
     prp = Propose(proposal=Forward(enc_apg_z, enc_rws_eta), target=og)
     out = prp(x=x, prior_ng=generative.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
 
-    log_w = out.log_weight.detach()
+    log_w = out.log_omega.detach()
     w = F.softmax(log_w, 0)
-    loss = (w * (- out.proposal.log_joint)).sum(0).mean()
+    loss = (w * (- out.proposal.log_omega)).sum(0).mean()
     if compare:
         breakpoint();
 
@@ -143,8 +143,8 @@ def apg_update_z(enc_apg_z, generative, q_eta_z, x):
         metrics['density'].append(log_p_f.unsqueeze(0))
     return log_w, q_eta_z_f, metrics
 
-def resample_variables(resampler, q, log_weights):
-    ancestral_index = resampler.sample_ancestral_index(log_weights)
+def resample_variables(resampler, q, log_omega):
+    ancestral_index = resampler.sample_ancestral_index(log_omega)
     tau = q['precisions'].value
     tau_concentration = q['precisions'].dist.concentration
     tau_rate = q['precisions'].dist.rate
@@ -198,14 +198,14 @@ def apg_objective(enc_rws_eta, enc_apg_z, generative, og, x, num_sweeps, sample_
     # # #    _loss, _log_w, _q_eta_z_out = oneshot_hao(enc_rws_eta, enc_apg_z, generative, og, x)
     # # #
     # # #    from combinators.resampling.strategies import APGResampler
-    # # #    q_eta_z = resample_variables(resampler, _q_eta_z_out.trace, log_weights=_log_w)
+    # # #    q_eta_z = resample_variables(resampler, _q_eta_z_out.trace, log_omega=_log_w)
     # # #    debug.seed(1)
     # # #
     # # ## otherwise, eager combinators looks like:
     # # #prp  = Propose(proposal=Forward(enc_apg_z, enc_rws_eta), target=og)
     # # #out = prp(x, prior_ng=generative.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
     # # #
-    # # #log_w = out.log_weight.detach()
+    # # #log_w = out.log_omega.detach()
     # # #w = F.softmax(log_w, 0)
     # # #loss = (w * (- out.proposal.weights)).sum(0).mean()
     og2, og2k = generative
@@ -219,7 +219,7 @@ def apg_objective(enc_rws_eta, enc_apg_z, generative, og, x, num_sweeps, sample_
     debug.seed(1)
     _loss, log_w, q_eta_z_out = oneshot_hao(enc_rws_eta, enc_apg_z, og, x)
     q_eta_z = q_eta_z_out.trace
-    q_eta_z = resample_variables(resampler, q_eta_z, log_weights=log_w)
+    q_eta_z = resample_variables(resampler, q_eta_z, log_omega=log_w)
     # ================================================================
     # sweep 2 (for m in range(num_sweeps-1)):
     # log_w_eta, q_eta_z, metrics = apg_update_eta(enc_apg_eta, generative, q_eta_z, x)
@@ -258,11 +258,16 @@ def apg_objective(enc_rws_eta, enc_apg_z, generative, og, x, num_sweeps, sample_
 
     out2 = prp2(**kwargs)
 
-    print(torch.equal(log_q_f, out2.proposal.log_joint))
-    print(torch.equal(log_p_f, out2.target.log_joint))
-    print(torch.equal(log_w_f, out2.log_weight))
+    def debug_print(a, b):
+        with torch.no_grad():
+            eq = torch.equal(a, b)
+            print(eq, *[t.detach().sum().cpu().item() for t in [a, b] if not eq])
 
-    print(tensor_utils.show(log_w_f), tensor_utils.show(out2.log_weight))
+    debug_print(log_q_f, out2.proposal.log_omega)
+    debug_print(log_p_f, out2.target.log_omega)
+    debug_print(log_w_f, out2.log_omega)
+
+    print(tensor_utils.show(log_w_f), tensor_utils.show(out2.log_omega))
     breakpoint();
 
     log_q_f = q_eta_z_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
@@ -294,9 +299,9 @@ def apg_objective(enc_rws_eta, enc_apg_z, generative, og, x, num_sweeps, sample_
     w = F.softmax(log_w, 0).detach()
     breakpoint();
     # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    q_eta_z = resample_variables(resampler, q_eta_z, log_weights=log_w_eta)
+    q_eta_z = resample_variables(resampler, q_eta_z, log_omega=log_w_eta)
     log_w_z, q_eta_z, metrics = apg_update_z(enc_apg_z, og, q_eta_z, x)
-    q_eta_z = resample_variables(resampler, q_eta_z, log_weights=log_w_z)
+    q_eta_z = resample_variables(resampler, q_eta_z, log_omega=log_w_z)
 
     return metrics
 
@@ -314,7 +319,7 @@ def mk_metrics(loss, w, out, num_sweeps=1, ess_required=True, mode_required=True
                 # this is stable at 1/3
                 metrics['E_z'] = q_eta_z['states'].dist.probs.mean(0).detach().mean().cpu().item()
         if density_required:
-            metrics['density'] = out.target.log_joint.detach().mean().cpu().item()
+            metrics['density'] = out.target.log_omega.detach().mean().cpu().item()
 
         if num_sweeps > 1:
             pass
@@ -334,7 +339,7 @@ def train(objective, models, target, og, og2, data, assignments, num_epochs, sam
     """ data size  S * B * N * 2 """
     # Setup
     debug.seed(seed)
-    writer = debug.MaybeWriter(enable=with_tensorboard)
+    # writer = debug.MaybeWriter(enable=with_tensorboard)
     loss_ct, loss_sum = 0, 0.0
 
     [enc_rws_eta, enc_apg_z, enc_apg_eta], generative = models, target
