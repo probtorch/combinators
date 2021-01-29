@@ -284,39 +284,6 @@ def oneshot(enc_rws_eta, enc_rws_z, generative, x, metrics, result_flags):
     return log_w, q_eta_z, metrics
 
 
-def apg_update_eta(enc_apg_eta, generative, q_eta_z, x, metrics, result_flags):
-    """
-    Given local variable z, update global variables eta := {mu, tau}.
-    """
-    # forward
-    q_eta_z_f = enc_apg_eta(q_eta_z, x, prior_ng=generative.prior_ng) ## forward kernel
-    p_f = generative.forward(q_eta_z_f, x)
-    log_q_f = q_eta_z_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    log_p_f = p_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    log_w_f = log_p_f - log_q_f
-    ## backward
-    q_eta_z_b = enc_apg_eta(q_eta_z, x, prior_ng=generative.prior_ng)
-    p_b = generative.forward(q_eta_z_b, x)
-    log_q_b = q_eta_z_b.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    log_p_b = p_b.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    log_w_b = log_p_b - log_q_b
-    log_w = (log_w_f - log_w_b).detach()
-    w = F.softmax(log_w, 0).detach()
-    if result_flags['loss_required']:
-        loss = (w * (- log_q_f)).sum(0).mean()
-        metrics['loss'].append(loss.unsqueeze(0))
-    if result_flags['ess_required']:
-        ess = (1. / (w**2).sum(0))
-        metrics['ess'].append(ess.unsqueeze(0)) # 1-by-B tensor
-    if result_flags['mode_required']:
-        E_tau = (q_eta_z_f['precisions'].dist.concentration / q_eta_z_f['precisions'].dist.rate).mean(0).detach()
-        E_mu = q_eta_z_f['means'].dist.loc.mean(0).detach()
-        metrics['E_tau'].append(E_tau.unsqueeze(0))
-        metrics['E_mu'].append(E_mu.unsqueeze(0))
-    if result_flags['density_required']:
-        metrics['density'].append(log_p_f.unsqueeze(0)) # 1-by-B-length vector
-    return log_w, q_eta_z_f, metrics
-
 def apg_update_z(enc_apg_z, generative, q_eta_z, x, metrics, result_flags):
     """
     Given the current samples of global variable (eta = mu + tau),
