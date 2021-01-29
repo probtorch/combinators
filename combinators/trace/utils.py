@@ -167,10 +167,9 @@ def copyrv(rv:Union[RandomVariable, ImproperRandomVariable], requires_grad: bool
     provenance = provenance if provenance is not None else rv.provenance
 
     if RVClass is RandomVariable:
-        # TODO: what about copying the dist?
-        return RVClass(**mapper(dict(dist=rv.dist, value=value, provenance=provenance, mask=rv.mask, use_pmf=rv._use_pmf)))
+        return RVClass(**mapper(dict(dist=rv.dist, use_pmf=rv._use_pmf, value=value, provenance=provenance, mask=rv.mask, log_prob=rv.log_prob)))
     elif RVClass is ImproperRandomVariable:
-        return RVClass(**mapper(dict(log_density_fn=rv._log_density_fn, value=value, provenance=provenance, mask=rv.mask)))
+        return RVClass(**mapper(dict(log_density_fn=rv._log_density_fn, value=value, provenance=provenance, mask=rv.mask, log_prob=rv.log_prob)))
     else:
         raise NotImplementedError()
 
@@ -179,9 +178,11 @@ def copyrv(rv:Union[RandomVariable, ImproperRandomVariable], requires_grad: bool
 def mapvalues(*traces: Trace, mapper=None, **kwargs):
     assert mapper is not None
     def rvmapper(kwargs):
+        shared_kwargs = dict(value=mapper(kwargs['value']), provenance=kwargs['provenance'], mask=kwargs['mask'], log_prob=kwargs['log_prob'])
         if 'log_density_fn' in kwargs:
             # have an improper random variable
-            return dict(log_density_fn=kwargs['log_density_fn'], value=mapper(kwargs['value']), provenance=kwargs['provenance'], mask=kwargs['mask'])
+            return dict(log_density_fn=kwargs['log_density_fn'], **shared_kwargs)
         else:
-            return dict(dist=kwargs['dist'], value=mapper(kwargs['value']), provenance=kwargs['provenance'], mask=kwargs['mask'], use_pmf=kwargs['use_pmf'])
+            return dict(dist=kwargs['dist'],  use_pmf=kwargs['use_pmf'], **shared_kwargs)
+
     return copytraces(*traces, mapper=rvmapper, **kwargs)
