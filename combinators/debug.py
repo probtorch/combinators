@@ -13,7 +13,7 @@ import numpy as np
 import random
 from torch.utils.tensorboard import SummaryWriter
 
-class MaybeWriter(SummaryWriter):
+class xMaybeWriter(SummaryWriter):
     def __init__(self, enable=True):
         super().__init__()
         self.enabled = enable
