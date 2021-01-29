@@ -45,7 +45,7 @@ def assert_valid_subtrace(tr1:Trace, tr2:Trace) -> None:
 
 
 @typechecked
-def valeq(t1:Trace, t2:Trace, nodes:Optional[Dict[str, Any]]=None, check_exist:bool=True)->bool:
+def valeq(t1:Trace, t2:Trace, nodes:Optional[Dict[str, Any]]=None, check_exist:bool=True, strict:bool=False)->bool:
     """
     Two traces are value-equivalent for a set of names iff the values of the corresponding names in both traces exist
     and are mutually equal.
@@ -53,30 +53,24 @@ def valeq(t1:Trace, t2:Trace, nodes:Optional[Dict[str, Any]]=None, check_exist:b
     check_exist::boolean    Controls if a name must exist in both traces, if set to False one values of variables that
                             exist in both traces are checks for 'value equivalence'
     """
+    t1nodes:Set[str] = set(t1._nodes.keys())
+    t2nodes:Set[str] = set(t2._nodes.keys())
     if nodes is None:
-        nodes = set(t1._nodes.keys()).intersection(t2._nodes.keys())
-    # pretty sure this is all you need:
-    all_in = all(name in t1 and name in t2 for name in nodes)
-    all_eq = all(trace_eq(t1, t2, name) for name in nodes)
-    # this is the original code:
-    for name in nodes:
-        # TODO: check if check_exist handes everything correctly
-        if t1[name] is not None and t2[name] is not None:
-            if not torch.equal(t1[name].value, t2[name].value):
-                if all_eq:
-                    import ipdb; ipdb.set_trace();
-                    raise Exception("Check logic!!!")
-                return False
-                # raise Exception("Values for same RV differs in traces")
-        elif check_exist:
-            if not all_in:
-                import ipdb; ipdb.set_trace();
-                raise Exception("Check logic!!!")
-            raise Exception("RV does not exist in traces")
+        _nodes = t1nodes.union(t2nodes) if strict else t1nodes.intersection(t2nodes)
+    else:
+        _nodes = nodes
 
-    if not (all_in and all_eq):
-        import ipdb; ipdb.set_trace();
-        raise Exception("Check logic!!!")
+    if not all(name in t1 and name in t2 for name in _nodes):
+        str_t1nodes = "{" + ", ".join(t1nodes) + "}"
+        str_t2nodes = "{" + ", ".join(t2nodes) + "}"
+        cmpr_string = "are not in {" + ", ".join(_nodes) + "}" if nodes is not None \
+            else "are not equal"
+        raise Exception("trace's keys {}:\n  trace 1: {}\n  trace 2: {}".format(cmpr_string, str_t1nodes, str_t2nodes))
+
+    invalid = list(filter(lambda name: not trace_eq(t1, t2, name), _nodes))
+    if len(invalid) > 0:
+        str_nodes = "{" + ", ".join(invalid) + "}"
+        raise Exception("RV nodes {} are not equal in:\n  trace 1: {}\n  trace 2: {}".format(str_nodes, t1, t2))
 
     return True
 
