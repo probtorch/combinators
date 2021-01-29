@@ -126,3 +126,44 @@ class APGResampler():
         gather_index = ancestral_index.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).repeat(1, 1, dim3, dim4, dim5)
         return torch.gather(var, 0, gather_index)
 
+import torch
+from torch.distributions.categorical import Categorical
+from torch.distributions.uniform import Uniform
+import torch.nn.functional as F
+
+
+class APGSResamplerOriginal():
+    def __init__(self, sample_size):
+        self.strategy = 'systematic'
+        self.uniformer = Uniform(low=torch.Tensor([0.0]), high=torch.Tensor([1.0]))
+        self.spacing = torch.arange(sample_size).float()
+        self.S = sample_size
+
+    def sample_ancestral_index(self, log_weights):
+        """
+        sample ancestral indices
+        """
+        sample_dim, batch_dim = log_weights.shape
+
+        positions = (self.uniformer.sample((batch_dim,)) + self.spacing) / self.S
+        # weights = log_weights.exp()
+        normalized_weights = F.softmax(log_weights, 0)
+        cumsums = torch.cumsum(normalized_weights.transpose(0, 1), dim=1)
+        (normalizers, _) = torch.max(input=cumsums, dim=1, keepdim=True)
+        normalized_cumsums = cumsums / normalizers ## B * S
+
+        ancestral_index = torch.searchsorted(normalized_cumsums, positions)
+        assert ancestral_index.shape == (batch_dim, sample_dim), "ERROR! systematic resampling resulted unexpected index shape."
+        ancestral_index = ancestral_index.transpose(0, 1)
+
+        return ancestral_index
+
+    def resample_4dims(self, var, ancestral_index):
+        sample_dim, batch_dim, dim3, dim4 = var.shape
+        gather_index = ancestral_index.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, dim3, dim4)
+        return torch.gather(var, 0, gather_index)
+
+    def resample_5dims(self, var, ancestral_index):
+        sample_dim, batch_dim, dim3, dim4, dim5 = var.shape
+        gather_index = ancestral_index.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).repeat(1, 1, dim3, dim4, dim5)
+        return torch.gather(var, 0, gather_index)
