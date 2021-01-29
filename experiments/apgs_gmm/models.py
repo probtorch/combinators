@@ -4,15 +4,14 @@ import torch.nn.functional as F
 from torch.distributions.normal import Normal
 from torch.distributions.gamma import Gamma
 from torch.distributions.one_hot_categorical import OneHotCategorical as cat
-from combinators.objectives import posterior_eta
-import combinators.stochastic as probtorch
+from experiments.apgs_gmm.objectives import posterior_eta
 from combinators.stochastic import Trace
 
 
 import torch.distributions as D
 from collections import namedtuple
 from combinators import Program, Kernel
-from combinators.densities import OneHotCategorical, OneHotCategorical
+from combinators.densities import OneHotCategorical, OneHotCategorical, NormalGamma
 from combinators.stochastic import Trace, RandomVariable, Provenance
 from combinators.trace.utils import maybe_sample
 
