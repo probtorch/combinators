@@ -62,7 +62,8 @@ def experiment_runner(is_smoketest, trainer):
     assert all([len(list(k.parameters())) >  0 for k in [*forwards, *reverses]])
 
     # logging
-    writer = debug.MaybeWriter(is_smoketest)
+    # writer = debug.MaybeWriter(is_smoketest)
+    writer = SummaryWriter(is_smoketest)
     loss_ct, loss_sum, loss_moving_100 = 0, 0.0, []
 
     with torch.no_grad():
@@ -132,7 +133,7 @@ def nvi_eager(i, targets, forwards, reverses, sample_shape):
         p_ext = Reverse(p, rev, _step=k)
         extend = Propose(target=p_ext, proposal=q_ext, _step=k)
         state = extend(sample_shape=sample_shape, sample_dims=0)
-        lv = state.log_weight
+        lv = state.log_omega
 
         p_prv_tr = state.trace
 
@@ -159,7 +160,7 @@ def nvi_eager_resample(i, targets, forwards, reverses, sample_shape):
         extend = Resample(Propose(target=p_ext, proposal=q_ext, _step=k))
 
         state = extend(sample_shape=sample_shape, sample_dims=0)
-        lv = state.log_weight
+        lv = state.log_omega
 
         p_prv_tr = state.trace
 
@@ -181,12 +182,12 @@ def test_annealing_eager_resample(is_smoketest):
     print("test_annealing_eager_resample")
     experiment_runner(is_smoketest, nvi_eager_resample)
 
-def _log_joint(out, ret=[])->[Tensor]:
-    _ret = ret + ([out.log_joint.detach().cpu()] if out.log_joint is not None else [])
+def _log_omega(out, ret=[])->[Tensor]:
+    _ret = ret + ([out.log_omega.detach().cpu()] if out.log_joint is not None else [])
     if 'proposal' not in out:
         return _ret
     else:
-        return _log_joint(out.proposal.program, _ret)
+        return _log_omega(out.proposal.program, _ret)
 
 
 def print_and_sum_loss(lv, loss):
@@ -207,10 +208,9 @@ def nvi_declarative(i, targets, forwards, reverses, sample_shape):
 
     out = proposal(sample_shape=sample_shape, sample_dims=0)
 
-    return _log_joint(out), out.loss
+    return _log_omega(out), out.loss
 
 @mark.skip("accumulation of gradient needs to be fixed")
 def test_annealing_declarative():
-    is_smoketest = True
     print("test_annealing_declarative")
     experiment_runner(is_smoketest, nvi_declarative)

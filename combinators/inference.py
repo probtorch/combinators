@@ -118,7 +118,7 @@ class Condition(Inf):
             if k not in ['conditioned_output', 'trace', 'weight', 'output']:
                 extras[k] = v
         if self.as_trace and isinstance(trace, ConditioningTrace):
-            return Out(trace.as_trace(access_only=not self.full_trace_return), out.log_joint, out.output, extras=extras)
+            return Out(trace.as_trace(access_only=not self.full_trace_return), out.log_omega, out.output, extras=extras)
         else:
             return out
 
@@ -171,7 +171,7 @@ class Reverse(KernelInf):
 
         self._cache = Out(
             trace=out_trace,
-            log_joint=log_aux,
+            log_omega=log_aux,
             output=program_state.output,
             extras=dict(
                 program=program_state,
@@ -199,27 +199,24 @@ class Forward(KernelInf):
         self._run_program = _dispatch(permissive=True)(self.program)
         self._run_kernel = _dispatch(permissive=True)(self.kernel)
 
-    def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, **program_kwargs) -> Tuple[Trace, Optional[Tensor], Output]:
+    def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, **program_kwargs) -> Out:
 
-        program_state = self._run_program(*program_args, sample_dims=sample_dims, batch_dim=batch_dim, **program_kwargs)
+        program_state = self._run_program(*program_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, **program_kwargs)
 
-        kernel_state = self._run_kernel(program_state.trace, program_state.output, sample_dims=sample_dims, batch_dim=batch_dim, **program_kwargs)
+        kernel_state = self._run_kernel(program_state.trace, program_state.output, *program_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, **program_kwargs)
 
-        log_joint = kernel_state.trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
+        log_omega = kernel_state.trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized) #, nodes=set(kernel_state.trace.keys()).intersection(set(program_state.trace.keys())))
 
         self._cache = Out(
             trace=kernel_state.trace,
-
-            log_joint=log_joint,
-
+            log_omega=log_omega,
             output=kernel_state.output,
-
             extras=dict(
                 program=program_state,
                 kernel=kernel_state,
                 type=type(self).__name__,
-                loss=self.foldl_loss(log_joint, maybe(kernel_state, 'loss', self.loss0)),
-                log_weight= maybe(program_state, 'log_weight', 0),
+                loss=self.foldl_loss(log_omega, maybe(kernel_state, 'loss', self.loss0)),
+                # log_weight= maybe(program_state, 'log_weight', 0),
                 ))
 
         return self._cache
@@ -242,8 +239,8 @@ class Propose(Inf):
         proposal_state = self.proposal(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, **shared_kwargs)
 
         conditioned_target = Condition(self.target, trace=proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and _doesn't_ need the whole trace?
-        target_state = conditioned_target(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, **shared_kwargs)
-        lv = target_state.log_joint - proposal_state.log_joint
+        target_state = conditioned_target(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, **shared_kwargs)
+        lv = target_state.log_omega - proposal_state.log_omega
 
         self._cache = Out(
             extras=dict(
@@ -251,10 +248,10 @@ class Propose(Inf):
                 target=target_state if self._debug  or _debug else Out(*target_state), # strip auxiliary traces
                 type=type(self).__name__,
                 loss=self.foldl_loss(lv, maybe(proposal_state, 'loss', self.loss0)),
-                log_weight=maybe(proposal_state, 'log_weight', lv, lambda lw: lw+lv),
+                # log_weight=maybe(proposal_state, 'log_weight', lv, lambda lw: lw+lv),
                 ),
             trace=target_state.trace,
-            log_joint=lv,
+            log_omega=lv,
             output=target_state.output,)
 
         return self._cache

@@ -79,13 +79,13 @@ class iproperty_dict(property_dict):
 IPropertyDict = iproperty_dict
 
 class Out(PropertyDict):
-    def __init__(self, trace:Trace, log_joint:Optional[Output], output:Output, extras:dict=dict()):
+    def __init__(self, trace:Trace, log_omega:Optional[Output], output:Output, extras:dict=dict()):
         self.trace = trace
-        self.log_joint = log_joint
+        self.log_omega = log_omega
         self.output = output
         for k, v in extras.items():
             self[k] = v
 
     def __iter__(self):
-        for x in [self.trace, self.log_joint, self.output]:
+        for x in [self.trace, self.log_omega, self.output]:
             yield x
