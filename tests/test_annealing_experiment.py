@@ -22,7 +22,8 @@ from combinators.metrics import effective_sample_size, log_Z_hat
 from tests.utils import is_smoketest, seed
 import combinators.debug as debug
 
-import experiments.annealing.visualize as V
+import experiments.visualize as V
+
 from experiments.annealing.models import mk_model, sample_along, paper_model
 
 def report(writer, ess, lzh, loss_scalar, i, eval_break, targets, forwards):
