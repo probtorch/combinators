@@ -10,6 +10,22 @@ from typeguard import typechecked
 from typing import Callable
 import numpy as np
 import random
+from torch.utils.tensorboard import SummaryWriter
+
+class MaybeWriter(SummaryWriter):
+    def __init__(self, enable=True):
+        super().__init__()
+        self.enabled = enable
+
+    def maybe_run(self, function, *args, **kwargs):
+        if self.enabled:
+            return function(self, *args, **kwargs)
+
+    def add_scalar(self,*args, **kwargs):
+        self.maybe_run(super().add_scalar, *args, **kwargs)
+
+    def add_figure(self,*args, **kwargs):
+        self.maybe_run(super().add_figure, *args, **kwargs)
 
 def excise(t:Tensor) -> Tensor:
     """ clone a tensor and remove it from the computation graph """
