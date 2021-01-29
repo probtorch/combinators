@@ -14,7 +14,7 @@ import combinators.trace.utils as trace_utils
 
 
 from combinators.stochastic import Trace, Factor
-from combinators.types import Output, check_passable_kwarg, Out
+from combinators.types import Output, check_passable_kwarg, check_passable_arg, Out
 from combinators.program import Program, model
 from combinators.traceable import TraceModule
 
@@ -29,7 +29,13 @@ class Kernel(TraceModule):
     def apply_kernel(self, trace: Trace, cond_trace: Trace, outs: Output, sample_dims:Optional[int]=None, batch_dims=None, **kwargs:Any): #, batch_dim:Optional[int]=None) -> Output:
         raise NotImplementedError()
 
-    def forward(self, cond_trace: Trace, cond_outs: Output, sample_dims=None, batch_dims=None, validate=True, **kwargs) -> Tuple[Trace, Output]:
+    def forward(self, cond_trace: Trace, cond_outs: Output, sample_dims:int=None, batch_dims:int=None, validate:bool=True, **kwargs) -> Out:
+        if not (isinstance(cond_trace, Trace) and
+                isinstance(sample_dims, (int, type(None))) and
+                isinstance(batch_dims, (int, type(None))) and
+                isinstance(validate, bool)):
+            raise TypeError("expected arguments do not typecheck. Current suggestion is to pass auxillary apply_kernel arguments as kwargs.")
+
         # get a fresh trace to make sure we don't have inplace mutation
         trace = Trace()
 
