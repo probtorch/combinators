@@ -2,14 +2,26 @@
 import torch
 from torch import Tensor
 from combinators.stochastic import Trace, Provenance, RandomVariable, ImproperRandomVariable
+from torch import distributions as D
 from combinators.types import TraceLike
-from typing import Callable, Any, Tuple, Optional, Set
+from typing import Callable, Any, Tuple, Optional, Set, Union, Dict
 from copy import deepcopy
 from typeguard import typechecked
 from itertools import chain
-from typing import *
 import combinators.tensor.utils as tensor_utils
 from enum import Enum, auto
+from combinators.types import check_passable_kwarg
+
+@typechecked
+def maybe_sample(trace:Trace, sample_shape:Union[Tuple[int], None, tuple]) -> Callable[[D.Distribution, str], Tuple[Tensor, Provenance]]:
+    def curried(dist:D.Distribution, name:str) -> Tuple[Tensor, Provenance]:
+        if name in trace:
+            return trace[name].value, Provenance.OBSERVED
+        elif sample_shape is None:
+            return (dist.rsample() if dist.has_rsample else dist.sample(), Provenance.SAMPLED)
+        else:
+            return (dist.rsample(sample_shape) if dist.has_rsample else dist.sample(sample_shape), Provenance.SAMPLED)
+    return curried
 
 @typechecked
 def is_valid_subtype(_subtr: Trace, _super: Trace)->bool:
