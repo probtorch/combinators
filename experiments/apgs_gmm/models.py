@@ -211,6 +211,71 @@ class GenerativeOriginal(Program):
 
         return None
 
+class GenerativeV2(Program):
+    """
+    The generative model of GMM
+    """
+    def __init__(self, K, D, CUDA, device):
+        super().__init__(with_joint=True)
+        self.K = K
+        self.prior_mu = torch.zeros((K, D))
+        self.prior_nu = torch.ones((K, D)) * 0.1
+        self.prior_alpha = torch.ones((K, D)) * 2
+        self.prior_beta = torch.ones((K, D)) * 2
+        self.prior_pi = torch.ones(K) * (1./ K)
+
+        if CUDA:
+            with torch.cuda.device(device):
+                self.prior_mu = self.prior_mu.cuda()
+                self.prior_nu = self.prior_nu.cuda()
+                self.prior_alpha = self.prior_alpha.cuda()
+                self.prior_beta = self.prior_beta.cuda()
+                self.prior_pi = self.prior_pi.cuda()
+
+        self.prior_ng = (self.prior_alpha, self.prior_beta, self.prior_mu, self.prior_nu) ## this tuple is needed as parameter in enc_eta as enc_rws
+
+    def model(self, trace, x, reparameterized=False):
+        """
+        evaluate the log joint i.e. log p (x, z, tau, mu)
+        """
+        assert 'precisions' in trace and 'means' in trace and 'states' in trace
+        provenance=Provenance.OBSERVED
+
+        gamma = D.Gamma(self.prior_alpha, self.prior_beta)
+        tau = trace['precisions'].value
+        trace.append(RandomVariable(dist=gamma, value=tau, provenance=provenance), name='precisions')
+
+        normal = D.Normal(self.prior_mu, 1. / (self.prior_nu * tau).sqrt())
+        mu = trace['means'].value
+        trace.append(RandomVariable(dist=normal, value=mu, provenance=provenance), name='means')
+
+        oh_cat = D.OneHotCategorical(probs=self.prior_pi)
+        z = trace['states'].value
+        trace.append(RandomVariable(dist=oh_cat, value=z, provenance=provenance), name='states')
+
+        return None
+
+class GenerativeLikelihoodV2(Kernel):
+    """
+    The likelihood of data given GenerativeV2
+    """
+    def __init__(self):
+        super().__init__()
+
+    def apply_kernel(self, trace, cond_trace, cond_output, x):
+        """
+        evaluate the log joint i.e. log p (x, z, tau, mu)
+        """
+        assert 'precisions' in cond_trace and 'means' in cond_trace and 'states' in cond_trace
+        tau, mu, z = [cond_trace[k].value for k in ['precisions', 'means', 'states']]
+
+        labels_flat = z.argmax(-1).unsqueeze(-1).repeat(1, 1, 1, x.shape[-1])
+        mu_expand = torch.gather(mu, 2, labels_flat)
+        sigma_expand = torch.gather(1. / tau.sqrt(), 2, labels_flat)
+        trace.normal(mu_expand, sigma_expand, value=x, name='lls')
+
+        return None
+
 
 class Generative(Program):
     """ The generative model of GMM """
