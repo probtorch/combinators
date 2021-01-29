@@ -1,32 +1,35 @@
-# ============================================================================= #
-#                              APG Objectives                                   #
-# ============================================================================= #
 import torch
-from torch import Tensor
+import torch.nn.functional as F
 from torch.distributions.normal import Normal
 from torch.distributions.gamma import Gamma
 from torch.distributions.uniform import Uniform
 from torch.distributions.one_hot_categorical import OneHotCategorical as cat
-from torch._six import inf
+import torch
+import torch.nn.functional as F
+from torch.distributions.normal import Normal
+from torch.distributions.one_hot_categorical import OneHotCategorical as cat
 
+import combinators.stochastic as  probtorch
 
-def kls_eta(models, ob, z):
+def kls_eta(models, x, z):
     """
     compute the KL divergence KL(p(\eta | x, z)|| q(\eta | x, z))
     """
     (_, _, enc_apg_eta, generative) = models
-    q_f_eta = enc_apg_eta(ob=ob, z=z, prior_ng=generative.prior_ng, sampled=True)
-    mu = q_f_eta['means'].value
-    tau = q_f_eta['precisions'].value
+    q_z = probtorch.Trace()
+    _ = q_z.variable(cat, probs=generative.prior_pi, value=z, name='states')
+    q = enc_apg_eta(q_z, x, prior_ng=generative.prior_ng)
+    mu = q['means'].value
+    tau = q['precisions'].value
     ## KLs for mu and sigma based on Normal-Gamma prior
-    q_alpha = q_f_eta['precisions'].dist.concentration
-    q_beta = q_f_eta['precisions'].dist.rate
-    q_mu = q_f_eta['means'].dist.loc
-    q_std = q_f_eta['means'].dist.scale
+    q_alpha = q['precisions'].dist.concentration
+    q_beta = q['precisions'].dist.rate
+    q_mu = q['means'].dist.loc
+    q_std = q['means'].dist.scale
     q_nu = 1. / (tau * (q_std**2)) # nu*tau = 1 / std**2
 
-    posterior_alpha, posterior_beta, posterior_mu, posterior_nu = posterior_eta(ob=ob,
-                                                                                z=z,
+    posterior_alpha, posterior_beta, posterior_mu, posterior_nu = posterior_eta(x,
+                                                                                z,
                                                                                 prior_alpha=generative.prior_alpha,
                                                                                 prior_beta=generative.prior_beta,
                                                                                 prior_mu=generative.prior_mu,
@@ -97,21 +100,14 @@ def nats_to_params(nat1, nat2, nat3, nat4):
     beta = - nat2 - (nu * (mu**2) / 2)
     return alpha, beta, mu, nu
 
-def pointwise_sufficient_statistics(ob:Tensor, z:Tensor, expand1=True):
+def data_to_stats(ob, z):
     """
     pointwise sufficient statstics
     stat1 : sum of I[z_n=k], S * B * K * 1
     stat2 : sum of I[z_n=k]*x_n, S * B * K * D
     stat3 : sum of I[z_n=k]*x_n^2, S * B * K * D
-    TODO: add some asserts for the comment above
     """
     stat1 = z.sum(2).unsqueeze(-1)
-    if expand1:
-        stat1_expand = stat1.repeat(1, 1, 1, ob.shape[-1]) ## S * B * K * D
-        stat1_nonzero = stat1_expand
-        stat1_nonzero[stat1_nonzero == 0.0] = 1.0
-        stat1 = (stat1_expand, stat1_nonzero)
-
     z_expand = z.unsqueeze(-1).repeat(1, 1, 1, 1, ob.shape[-1])
     ob_expand = ob.unsqueeze(-1).repeat(1, 1, 1, 1, z.shape[-1]).transpose(-1, -2)
     stat2 = (z_expand * ob_expand).sum(2)
@@ -122,7 +118,10 @@ def posterior_eta(ob, z, prior_alpha, prior_beta, prior_mu, prior_nu):
     """
     conjugate postrior of eta, given the normal-gamma prior
     """
-    (stat1_expand, stat1_nonzero), stat2, stat3 = pointwise_sufficient_statistics(ob, z)
+    stat1, stat2, stat3 = data_to_stats(ob, z)
+    stat1_expand = stat1.repeat(1, 1, 1, ob.shape[-1]) ## S * B * K * D
+    stat1_nonzero = stat1_expand
+    stat1_nonzero[stat1_nonzero == 0.0] = 1.0
     x_bar = stat2 / stat1_nonzero
     post_alpha = prior_alpha + stat1_expand / 2
     post_nu = prior_nu + stat1_expand
@@ -180,6 +179,7 @@ def kls_NGs(q_alpha, q_beta, q_mu, q_nu, p_alpha, p_beta, p_mu, p_nu):
     kl_in = kl_NG_NG(p_alpha, p_beta, p_mu, p_nu, q_alpha, q_beta, q_mu, q_nu).sum(-1)
     return kl_ex, kl_in
 
+from torch._six import inf
 
 def kl_cat_cat(p_logits, q_logits, EPS=-1e14):
     p_probs= p_logits.exp()
@@ -195,7 +195,7 @@ def kls_cats(q_logits, p_logits):
     KL_in = kl_cat_cat(p_logits, q_logits)
     return KL_ex, KL_in
 
-def apg_objective(models, x, result_flags, num_sweeps, block, resampler):
+def apg_objective(models, x, result_flags, num_sweeps, resampler):
     """
     Amortized Population Gibbs objective in GMM problem
     ==========
@@ -214,229 +214,184 @@ def apg_objective(models, x, result_flags, num_sweeps, block, resampler):
     z : S * B * N * K, cluster assignments, as local variables
     ==========
     """
-    trace = {'loss' : [], 'ess' : [], 'E_tau' : [], 'E_mu' : [], 'E_z' : [], 'density' : []} ## a dictionary that tracks things needed during the sweeping
+    metrics = {'loss' : [], 'ess' : [], 'E_tau' : [], 'E_mu' : [], 'E_z' : [], 'density' : []} ## a dictionary that tracks things needed during the sweeping
     (enc_rws_eta, enc_apg_z, enc_apg_eta, generative) = models
-    log_w, tau, mu, z, trace = oneshot(enc_rws_eta, enc_apg_z, generative, x, trace, result_flags)
-    tau, mu, z = resample_variables(resampler, tau, mu, z, log_weights=log_w)
+    log_w, q_eta_z, metrics = oneshot(enc_rws_eta, enc_apg_z, generative, x, metrics, result_flags)
+    q_eta_z = resample_variables(resampler, q_eta_z, log_weights=log_w)
     for m in range(num_sweeps-1):
-        if block == 'decomposed':
-            log_w_eta, tau, mu, trace = apg_update_eta(enc_apg_eta, generative, x, z, tau, mu, trace, result_flags)
-            tau, mu, z = resample_variables(resampler, tau, mu, z, log_weights=log_w_eta)
-            log_w_z, z, trace = apg_update_z(enc_apg_z, generative, x, tau, mu, z, trace, result_flags)
-            tau, mu, z = resample_variables(resampler, tau, mu, z, log_weights=log_w_z)
-        elif block == 'joint':
-            log_w, tau, mu, z, trace = apg_update_joint(enc_apg_z, enc_apg_eta, generative, x, z, tau, mu, trace, result_flags)
-            tau, mu, z = resample_variables(resampler, tau, mu, z, log_weights=log_w)
-        else:
-            raise ValueError
+            log_w_eta, q_eta_z, metrics = apg_update_eta(enc_apg_eta, generative, q_eta_z, x, metrics, result_flags)
+            q_eta_z = resample_variables(resampler, q_eta_z, log_weights=log_w_eta)
+            log_w_z, q_eta_z, metrics = apg_update_z(enc_apg_z, generative, q_eta_z, x, metrics, result_flags)
+            q_eta_z = resample_variables(resampler, q_eta_z, log_weights=log_w_z)
     if result_flags['loss_required']:
-        trace['loss'] = torch.cat(trace['loss'], 0)
+        metrics['loss'] = torch.cat(metrics['loss'], 0)
     if result_flags['ess_required']:
-        trace['ess'] = torch.cat(trace['ess'], 0)
+        metrics['ess'] = torch.cat(metrics['ess'], 0)
     if result_flags['mode_required']:
-        trace['E_tau'] = torch.cat(trace['E_tau'], 0)
-        trace['E_mu'] = torch.cat(trace['E_mu'], 0)
-        trace['E_z'] = torch.cat(trace['E_z'], 0)  # (num_sweeps) * B * N * K
+        metrics['E_tau'] = torch.cat(metrics['E_tau'], 0)
+        metrics['E_mu'] = torch.cat(metrics['E_mu'], 0)
+        metrics['E_z'] = torch.cat(metrics['E_z'], 0)  # (num_sweeps) * B * N * K
     if result_flags['density_required']:
-        trace['density'] = torch.cat(trace['density'], 0)  # (num_sweeps) * S * B
-    return trace
+        metrics['density'] = torch.cat(metrics['density'], 0)  # (num_sweeps) * S * B
+    return metrics
 
-def rws_objective(models, x, result_flags):
+def rws_objective(models, x, result_flags, num_sweeps):
     """
     The objective of RWS method
     """
-    trace = {'loss' : [], 'ess' : [], 'E_tau' : [], 'E_mu' : [], 'E_z' : [], 'density' : []}
+    metrics = {'loss' : [], 'ess' : [], 'E_tau' : [], 'E_mu' : [], 'E_z' : [], 'density' : []}
     (enc_rws_eta, enc_rws_z, generative) = models
-    w, tau, mu, z, trace = oneshot(enc_rws_eta, enc_rws_z, generative, x, trace, result_flags)
+    log_w, q_eta_z, metrics = oneshot(enc_rws_eta, enc_rws_z, generative, x, metrics, result_flags)
     if result_flags['loss_required']:
-        trace['loss'] = torch.cat(trace['loss'], 0)
+        metrics['loss'] = torch.cat(metrics['loss'], 0)
     if result_flags['ess_required']:
-        trace['ess'] = torch.cat(trace['ess'], 0)
+        metrics['ess'] = torch.cat(metrics['ess'], 0)
     if result_flags['mode_required']:
-        trace['E_tau'] = torch.cat(trace['E_tau'], 0)
-        trace['E_mu'] = torch.cat(trace['E_mu'], 0)
-        trace['E_z'] = torch.cat(trace['E_z'], 0)
+        metrics['E_tau'] = torch.cat(metrics['E_tau'], 0)
+        metrics['E_mu'] = torch.cat(metrics['E_mu'], 0)
+        metrics['E_z'] = torch.cat(metrics['E_z'], 0)
     if result_flags['density_required']:
-        trace['density'] = torch.cat(trace['density'], 0)
-    return trace
+        metrics['density'] = torch.cat(metrics['density'], 0)
+    return metrics
 
-def oneshot(enc_rws_eta, enc_rws_z, generative, x, trace, result_flags):
+def oneshot(enc_rws_eta, enc_rws_z, generative, x, metrics, result_flags):
     """
     One-shot for eta and z, like a normal RWS
     """
-    q_eta = enc_rws_eta(x, prior_ng=generative.prior_ng, sampled=True)
-    p_eta = generative.eta_prior(q=q_eta)
-    log_q_eta = q_eta['means'].log_prob.sum(-1).sum(-1) + q_eta['precisions'].log_prob.sum(-1).sum(-1)
-    log_p_eta = p_eta['means'].log_prob.sum(-1).sum(-1) + p_eta['precisions'].log_prob.sum(-1).sum(-1)
-    tau = q_eta['precisions'].value
-    mu = q_eta['means'].value
-    q_z = enc_rws_z(x, tau=tau, mu=mu, sampled=True)
-    p_z = generative.z_prior(q=q_z)
-    log_q_z = q_z['states'].log_prob.sum(-1)
-    log_p_z = p_z['states'].log_prob.sum(-1)
-    z = q_z['states'].value
-    ll = generative.log_prob(x, z=z, tau=tau, mu=mu, aggregate=True)
-    log_p = ll + log_p_eta + log_p_z
-    log_q =  log_q_eta + log_q_z
+    q_eta_z = enc_rws_eta(x, prior_ng=generative.prior_ng)
+    q_eta_z = enc_rws_z(q_eta_z, x)
+    p = generative.forward(q_eta_z, x)
+    log_p = p.log_joint(sample_dims=0, batch_dim=1, reparameterized=False) ## it is annoying to repeat these same arguments every time I call .log_joint
+    log_q = q_eta_z.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     log_w = (log_p - log_q).detach()
     w = F.softmax(log_w, 0).detach()
     if result_flags['loss_required']:
         loss = (w * (- log_q)).sum(0).mean()
-        trace['loss'].append(loss.unsqueeze(0))
+        metrics['loss'].append(loss.unsqueeze(0))
     if result_flags['ess_required']:
         ess = (1. / (w**2).sum(0))
-        trace['ess'].append(ess.unsqueeze(0))
+        metrics['ess'].append(ess.unsqueeze(0))
     if result_flags['mode_required']:
-        E_tau = (q_eta['precisions'].dist.concentration / q_eta['precisions'].dist.rate).mean(0).detach()
-        E_mu = q_eta['means'].dist.loc.mean(0).detach()
-        E_z = q_z['states'].dist.probs.mean(0).detach()
-        trace['E_tau'].append(E_tau.unsqueeze(0))
-        trace['E_mu'].append(E_mu.unsqueeze(0))
-        trace['E_z'].append(E_z.unsqueeze(0))
+        E_tau = (q_eta_z['precisions'].dist.concentration / q_eta_z['precisions'].dist.rate).mean(0).detach()
+        E_mu = q_eta_z['means'].dist.loc.mean(0).detach()
+        E_z = q_eta_z['states'].dist.probs.mean(0).detach()
+        metrics['E_tau'].append(E_tau.unsqueeze(0))
+        metrics['E_mu'].append(E_mu.unsqueeze(0))
+        metrics['E_z'].append(E_z.unsqueeze(0))
     if result_flags['density_required']:
         log_joint = log_p.detach()
-        trace['density'].append(log_joint.unsqueeze(0))
-    return log_w, tau, mu, z, trace
-
-def apg_update_joint(enc_apg_z, enc_apg_eta, generative, x, z_old, tau_old, mu_old, trace, result_flags):
-    """
-    Jointly update all the variables
-    """
-    q_f_eta = enc_apg_eta(x, z=z_old, prior_ng=generative.prior_ng, sampled=True)
-    p_f_eta = generative.eta_prior(q=q_f_eta)
-    log_q_f_eta = q_f_eta['means'].log_prob.sum(-1).sum(-1) + q_f_eta['precisions'].log_prob.sum(-1).sum(-1)
-    log_p_f_eta = p_f_eta['means'].log_prob.sum(-1).sum(-1) + p_f_eta['precisions'].log_prob.sum(-1).sum(-1)
-    tau = q_f_eta['precisions'].value
-    mu = q_f_eta['means'].value
-    q_f_z = enc_apg_z(x, tau=tau, mu=mu, sampled=True)
-    p_f_z = generative.z_prior(q=q_f_z)
-    log_q_f_z = q_f_z['states'].log_prob.sum(-1)
-    log_p_f_z = p_f_z['states'].log_prob.sum(-1)
-    z = q_f_z['states'].value
-    ll_f = generative.log_prob(x, z=z, tau=tau, mu=mu, aggregate=True)
-    log_w_f = ll_f + log_p_f_eta - log_q_f_eta - log_q_f_z + log_p_f_z
-    ## backward
-    q_b_z = enc_apg_z(x, tau=tau, mu=mu, sampled=False, z_old=z_old)
-    p_b_z = generative.z_prior(q=q_b_z)
-    log_q_b_z = q_b_z['states'].log_prob.sum(-1)
-    log_p_b_z = p_b_z['states'].log_prob.sum(-1)
-    q_b_eta = enc_apg_eta(x, z=z_old, prior_ng=generative.prior_ng, sampled=False, tau_old=tau_old, mu_old=mu_old)
-    p_b_eta = generative.eta_prior(q=q_b_eta)
-    log_q_b_eta = q_b_eta['means'].log_prob.sum(-1).sum(-1) + q_b_eta['precisions'].log_prob.sum(-1).sum(-1)
-    log_p_b_eta = p_b_eta['means'].log_prob.sum(-1).sum(-1) + p_b_eta['precisions'].log_prob.sum(-1).sum(-1)
-    ll_b = generative.log_prob(x, z=z_old, tau=tau_old, mu=mu_old, aggregate=True)
-    log_w_b = ll_b + log_p_b_eta - log_q_b_eta + log_p_b_z - log_q_b_z
-    log_w = (log_w_f - log_w_b).detach()
-    w = F.softmax(log_w, 0).detach()
-    if result_flags['loss_required']:
-        loss = (w * (- log_q_f_eta - log_q_f_z)).sum(0).mean()
-        trace['loss'].append(loss.unsqueeze(0))
-    if result_flags['ess_required']:
-        ess = (1. / (w**2).sum(0))
-        trace['ess'].append(ess.unsqueeze(0))
-    if result_flags['mode_required']:
-        E_tau = (q_f['precisions'].dist.concentration / q_f['precisions'].dist.rate).mean(0).detach()
-        E_mu = q_f['means'].dist.loc.mean(0).detach()
-        trace['E_tau'].append(E_tau.unsqueeze(0))
-        trace['E_mu'].append(E_mu.unsqueeze(0))
-        E_z = q_f['states'].dist.probs.mean(0).detach()
-        trace['E_z'].append(z.unsqueeze(0))
-    if result_flags['density_required']:
-        log_joint = (ll_f + log_p_f_eta + log_p_f_z).detach()
-        trace['density'].append(log_joint.unsqueeze(0))
-    return log_w, tau, mu, z, trace
+        metrics['density'].append(log_joint.unsqueeze(0))
+    return log_w, q_eta_z, metrics
 
 
-def apg_update_eta(enc_apg_eta, generative, x, z, tau_old, mu_old, trace, result_flags):
+def apg_update_eta(enc_apg_eta, generative, q_eta_z, x, metrics, result_flags):
     """
     Given local variable z, update global variables eta := {mu, tau}.
     """
-    q_f = enc_apg_eta(x, z=z, prior_ng=generative.prior_ng, sampled=True) ## forward kernel
-    p_f = generative.eta_prior(q=q_f)
-    log_q_f = q_f['means'].log_prob.sum(-1).sum(-1) + q_f['precisions'].log_prob.sum(-1).sum(-1)
-    log_p_f = p_f['means'].log_prob.sum(-1).sum(-1) + p_f['precisions'].log_prob.sum(-1).sum(-1)
-    tau = q_f['precisions'].value
-    mu = q_f['means'].value
-    ll_f = generative.log_prob(x, z=z, tau=tau, mu=mu, aggregate=True)
-    log_w_f = ll_f + log_p_f - log_q_f
+    # forward
+    q_eta_z_f = enc_apg_eta(q_eta_z, x, prior_ng=generative.prior_ng) ## forward kernel
+    p_f = generative.forward(q_eta_z_f, x)
+    log_q_f = q_eta_z_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    log_p_f = p_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    log_w_f = log_p_f - log_q_f
     ## backward
-    q_b = enc_apg_eta(x, z=z, prior_ng=generative.prior_ng, sampled=False, tau_old=tau_old, mu_old=mu_old)
-    p_b = generative.eta_prior(q=q_b)
-    log_q_b = q_b['means'].log_prob.sum(-1).sum(-1) + q_b['precisions'].log_prob.sum(-1).sum(-1)
-    log_p_b = p_b['means'].log_prob.sum(-1).sum(-1) + p_b['precisions'].log_prob.sum(-1).sum(-1)
-    ll_b = generative.log_prob(x, z=z, tau=tau_old, mu=mu_old, aggregate=True)
-    log_w_b = ll_b + log_p_b - log_q_b
+    q_eta_z_b = enc_apg_eta(q_eta_z, x, prior_ng=generative.prior_ng)
+    p_b = generative.forward(q_eta_z_b, x)
+    log_q_b = q_eta_z_b.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    log_p_b = p_b.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    log_w_b = log_p_b - log_q_b
     log_w = (log_w_f - log_w_b).detach()
     w = F.softmax(log_w, 0).detach()
     if result_flags['loss_required']:
         loss = (w * (- log_q_f)).sum(0).mean()
-        trace['loss'].append(loss.unsqueeze(0))
+        metrics['loss'].append(loss.unsqueeze(0))
     if result_flags['ess_required']:
         ess = (1. / (w**2).sum(0))
-        trace['ess'].append(ess.unsqueeze(0)) # 1-by-B tensor
+        metrics['ess'].append(ess.unsqueeze(0)) # 1-by-B tensor
     if result_flags['mode_required']:
-        E_tau = (q_f['precisions'].dist.concentration / q_f['precisions'].dist.rate).mean(0).detach()
-        E_mu = q_f['means'].dist.loc.mean(0).detach()
-        trace['E_tau'].append(E_tau.unsqueeze(0))
-        trace['E_mu'].append(E_mu.unsqueeze(0))
+        E_tau = (q_eta_z_f['precisions'].dist.concentration / q_eta_z_f['precisions'].dist.rate).mean(0).detach()
+        E_mu = q_eta_z_f['means'].dist.loc.mean(0).detach()
+        metrics['E_tau'].append(E_tau.unsqueeze(0))
+        metrics['E_mu'].append(E_mu.unsqueeze(0))
     if result_flags['density_required']:
-        trace['density'].append(log_p_f.unsqueeze(0)) # 1-by-B-length vector
-    return log_w, tau, mu, trace
+        metrics['density'].append(log_p_f.unsqueeze(0)) # 1-by-B-length vector
+    return log_w, q_eta_z_f, metrics
 
-def apg_update_z(enc_apg_z, generative, x, tau, mu, z_old, trace, result_flags):
+def apg_update_z(enc_apg_z, generative, q_eta_z, x, metrics, result_flags):
     """
     Given the current samples of global variable (eta = mu + tau),
     update local variable state i.e. z
     """
-    q_f = enc_apg_z(x, tau=tau, mu=mu, sampled=True)
-    p_f = generative.z_prior(q=q_f)
-    log_q_f = q_f['states'].log_prob
-    log_p_f = p_f['states'].log_prob
-    z = q_f['states'].value
-    ll_f = generative.log_prob(x, z=z, tau=tau, mu=mu, aggregate=False)
-    log_w_f = ll_f + log_p_f - log_q_f
+    # forward
+    q_eta_z_f = enc_apg_z(q_eta_z, x)
+    p_f = generative.forward(q_eta_z_f, x)
+    log_q_f = q_eta_z_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    log_p_f = p_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    log_w_f = log_p_f - log_q_f
     ## backward
-    q_b = enc_apg_z(x, tau=tau, mu=mu, sampled=False, z_old=z_old)
-    p_b = generative.z_prior(q=q_b)
-    log_q_b = q_b['states'].log_prob
-    log_p_b = p_b['states'].log_prob
-    ll_b = generative.log_prob(x, z=z_old, tau=tau, mu=mu, aggregate=False)
-    log_w_b = ll_b + log_p_b - log_q_b
-    log_w_local = (log_w_f - log_w_b).detach()
-    w_local = F.softmax(log_w_local, 0).detach()
-    log_w = log_w_local.sum(-1)
+    q_eta_z_b = enc_apg_z(q_eta_z, x)
+    p_b = generative.forward(q_eta_z_b, x)
+    log_q_b = q_eta_z_b.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    log_p_b = p_b.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    log_w_b = log_p_b - log_q_b
+    log_w = (log_w_f - log_w_b).detach()
+    w = F.softmax(log_w, 0).detach()
     if result_flags['loss_required']:
-        loss = (w_local * (- log_q_f)).sum(0).sum(-1).mean()
-        trace['loss'][-1] = trace['loss'][-1] + loss.unsqueeze(0)
+        loss = (w * (- log_q_f)).sum(0).sum(-1).mean()
+        metrics['loss'][-1] = metrics['loss'][-1] + loss.unsqueeze(0)
     if result_flags['mode_required']:
-        E_z = q_f['states'].dist.probs.mean(0).detach()
-        trace['E_z'].append(E_z.unsqueeze(0))
+        E_z = q_eta_z_f['states'].dist.probs.mean(0).detach()
+        metrics['E_z'].append(E_z.unsqueeze(0))
     if result_flags['density_required']:
-        trace['density'][-1] = trace['density'][-1] + (ll_f + log_p_f).sum(-1).unsqueeze(0)
-    return log_w, z, trace
+        metrics['density'].append(log_p_f.unsqueeze(0))
+    return log_w, q_eta_z_f, metrics
 
-def resample_variables(resampler, tau, mu, z, log_weights):
+
+def resample_variables(resampler, q, log_weights):
     ancestral_index = resampler.sample_ancestral_index(log_weights)
+    tau = q['precisions'].value
+    tau_concentration = q['precisions'].dist.concentration
+    tau_rate = q['precisions'].dist.rate
+    mu = q['means'].value
+    mu_loc = q['means'].dist.loc
+    mu_scale = q['means'].dist.scale
+    z = q['states'].value
+    z_probs = q['states'].dist.probs
     tau = resampler.resample_4dims(var=tau, ancestral_index=ancestral_index)
+    tau_concentration = resampler.resample_4dims(var=tau_concentration, ancestral_index=ancestral_index)
+    tau_rate = resampler.resample_4dims(var=tau_rate, ancestral_index=ancestral_index)
     mu = resampler.resample_4dims(var=mu, ancestral_index=ancestral_index)
+    mu_loc = resampler.resample_4dims(var=mu_loc, ancestral_index=ancestral_index)
+    mu_scale = resampler.resample_4dims(var=mu_scale, ancestral_index=ancestral_index)
     z = resampler.resample_4dims(var=z, ancestral_index=ancestral_index)
-    return tau, mu, z
+    z_probs = resampler.resample_4dims(var=z_probs, ancestral_index=ancestral_index)
+    q_resampled = probtorch.Trace()
+    q_resampled.gamma(tau_concentration,
+                      tau_rate,
+                      value=tau,
+                      name='precisions')
+    q_resampled.normal(mu_loc,
+                       mu_scale,
+                       value=mu,
+                       name='means')
+    _ = q_resampled.variable(cat, probs=z_probs, value=z, name='states')
+    return q_resampled
 
 
 def gibbs_objective(models, x, result_flags, num_sweeps):
     """
     The Gibbs sampler objective
     """
-    trace = {'density' : []}
+    metrics = {'density' : []}
     (enc_rws_eta, enc_rws_z, _, generative) = models
-    _, tau, mu, z, trace = oneshot(enc_rws_eta, enc_rws_z, generative, x, trace, result_flags)
+    _, tau, mu, z, metrics = oneshot(enc_rws_eta, enc_rws_z, generative, x, metrics, result_flags)
     for m in range(num_sweeps-1):
-        tau, mu, z, trace = gibbs_sweep(generative, x, z, trace)
+        tau, mu, z, metrics = gibbs_sweep(generative, x, z, metrics)
     if result_flags['density_required']:
-        trace['density'] = torch.cat(trace['density'], 0)  # (num_sweeps) * S * B
-    return trace
+        metrics['density'] = torch.cat(metrics['density'], 0)  # (num_sweeps) * S * B
+    return metrics
 
-def gibbs_sweep(generative, x, z, trace):
+def gibbs_sweep(generative, x, z, metrics):
     """
     Gibbs updates
     """
@@ -459,41 +414,41 @@ def gibbs_sweep(generative, x, z, trace):
     log_prior_mu = Normal(generative.prior_mu, 1. / (generative.prior_nu * tau).sqrt()).log_prob(mu).sum(-1).sum(-1)
     log_prior_z = cat(probs=generative.prior_pi).log_prob(z).sum(-1)
     log_joint = ll + log_prior_tau + log_prior_mu + log_prior_z
-    trace['density'].append(log_joint.unsqueeze(0)) # 1-by-B-length vector
-    return tau, mu, z, trace
+    metrics['density'].append(log_joint.unsqueeze(0)) # 1-by-B-length vector
+    return tau, mu, z, metrics
 
 def hmc_objective(models, x, result_flags, hmc_sampler):
     """
     HMC + marginalization over discrete variables in GMM problem
     """
-    trace = {'density' : []}
+    metrics = {'density' : []}
     (enc_rws_eta, enc_rws_z, _, generative) = models
-    _, tau, mu, z, trace = oneshot(enc_rws_eta, enc_rws_z, generative, x, trace, result_flags)
-    log_tau, mu, trace = hmc_sampler.hmc_sampling(generative,
+    _, tau, mu, z, metrics = oneshot(enc_rws_eta, enc_rws_z, generative, x, metrics, result_flags)
+    log_tau, mu, metrics = hmc_sampler.hmc_sampling(generative,
                                                   x,
                                                   log_tau=tau.log(),
                                                   mu=mu,
-                                                  trace=trace)
-    trace['density'] = torch.cat(trace['density'], 0)
-    return log_tau.exp(), mu, trace
+                                                  metrics=metrics)
+    metrics['density'] = torch.cat(metrics['density'], 0)
+    return log_tau.exp(), mu, metrics
 
 def bpg_objective(models, x, result_flags, num_sweeps, resampler):
     """
     bpg objective
     """
-    trace = {'density' : []} ## a dictionary that tracks things needed during the sweeping
+    metrics = {'density' : []} ## a dictionary that tracks things needed during the sweeping
     (enc_rws_eta, enc_apg_z, enc_apg_eta, generative) = models
-    log_w, tau, mu, z, trace = oneshot(enc_rws_eta, enc_apg_z, generative, x, trace, result_flags)
+    log_w, tau, mu, z, metrics = oneshot(enc_rws_eta, enc_apg_z, generative, x, metrics, result_flags)
     tau, mu, z = resample_variables(resampler, tau, mu, z, log_weights=log_w)
     for m in range(num_sweeps-1):
-        log_w_eta, tau, mu, trace = bpg_update_eta(generative, x, z, tau, mu, trace)
+        log_w_eta, tau, mu, metrics = bpg_update_eta(generative, x, z, tau, mu, metrics)
         tau, mu, z = resample_variables(resampler, tau, mu, z, log_weights=log_w_eta)
-        log_w_z, z, trace = apg_update_z(enc_apg_z, generative, x, tau, mu, z, trace, result_flags)
+        log_w_z, z, metrics = apg_update_z(enc_apg_z, generative, x, tau, mu, z, metrics, result_flags)
         tau, mu, z = resample_variables(resampler, tau, mu, z, log_weights=log_w_z)
-    trace['density'] = torch.cat(trace['density'], 0)  # (num_sweeps) * S * B
-    return trace
+    metrics['density'] = torch.cat(metrics['density'], 0)  # (num_sweeps) * S * B
+    return metrics
 
-def bpg_update_eta(generative, x, z, tau_old, mu_old, trace):
+def bpg_update_eta(generative, x, z, tau_old, mu_old, metrics):
     """
     Given local variable z, update global variables eta := {mu, tau}.
     """
@@ -505,5 +460,5 @@ def bpg_update_eta(generative, x, z, tau_old, mu_old, trace):
     ll_f = generative.log_prob(x, z=z, tau=tau, mu=mu, aggregate=True)
     ll_b = generative.log_prob(x, z=z, tau=tau_old, mu=mu_old, aggregate=True)
     log_w = (ll_f - ll_b).detach()
-    trace['density'].append(log_p_f.unsqueeze(0)) # 1-by-B-length vector
-    return log_w, tau, mu, trace
+    metrics['density'].append(log_p_f.unsqueeze(0)) # 1-by-B-length vector
+    return log_w, tau, mu, metrics
