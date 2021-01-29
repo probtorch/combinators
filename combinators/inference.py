@@ -156,15 +156,15 @@ class Reverse(KernelInf):
         self.program = program
         self.kernel = kernel
 
-    def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, **program_kwargs:Any) -> Tuple[Trace, Optional[Tensor], Output]:
+    def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, **program_kwargs:Any) -> Tuple[Trace, Optional[Tensor], Output]:
         program = Condition(self.program, trace=self._cond_trace, as_trace=False) if self._cond_trace is not None else self.program
 
-        program_state = _dispatch(permissive=True)(program)(*program_args, sample_dims=sample_dims, batch_dim=batch_dim, **program_kwargs)
+        program_state = _dispatch(permissive=True)(program)(*program_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, **program_kwargs)
 
         kernel = Condition(self.kernel, trace=self._cond_trace) if self._cond_trace is not None else self.kernel
-        kernel_state = _dispatch(permissive=True)(kernel)(program_state.trace, program_state.output, sample_dims=sample_dims, batch_dim=batch_dim)
+        kernel_state = _dispatch(permissive=True)(kernel)(program_state.trace, program_state.output, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, **program_kwargs)
 
-        log_aux = kernel_state.trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim)
+        log_aux = kernel_state.trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
 
         out_trace = program_state.trace.as_trace(access_only=True) if isinstance(program_state.trace, ConditioningTrace) \
                         else program_state.trace
@@ -199,16 +199,21 @@ class Forward(KernelInf):
         self._run_program = _dispatch(permissive=True)(self.program)
         self._run_kernel = _dispatch(permissive=True)(self.kernel)
 
-    def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, **program_kwargs) -> Tuple[Trace, Optional[Tensor], Output]:
+    def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, **program_kwargs) -> Tuple[Trace, Optional[Tensor], Output]:
+
         program_state = self._run_program(*program_args, sample_dims=sample_dims, batch_dim=batch_dim, **program_kwargs)
 
-        kernel_state = self._run_kernel(program_state.trace, program_state.output, sample_dims=sample_dims, batch_dim=batch_dim)
-        log_joint = kernel_state.trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim)
+        kernel_state = self._run_kernel(program_state.trace, program_state.output, sample_dims=sample_dims, batch_dim=batch_dim, **program_kwargs)
+
+        log_joint = kernel_state.trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
 
         self._cache = Out(
             trace=kernel_state.trace,
+
             weights=log_joint,
+
             output=kernel_state.output,
+
             extras=dict(
                 program=program_state,
                 kernel=kernel_state,
@@ -233,11 +238,11 @@ class Propose(Inf):
         self.target = target
         self.proposal = proposal
 
-    def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, **shared_kwargs):
-        proposal_state = self.proposal(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, **shared_kwargs)
+    def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, **shared_kwargs):
+        proposal_state = self.proposal(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, **shared_kwargs)
 
         conditioned_target = Condition(self.target, trace=proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and _doesn't_ need the whole trace?
-        target_state = conditioned_target(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, **shared_kwargs)
+        target_state = conditioned_target(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, **shared_kwargs)
         lv = target_state.weights - proposal_state.weights
 
         self._cache = Out(
@@ -269,8 +274,8 @@ class Resample(Inf):
         self.program = program
         self.strategy = strategy()
 
-    def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, **shared_kwargs):
-        program_state = self.program(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, **shared_kwargs)
+    def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, **shared_kwargs):
+        program_state = self.program(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, **shared_kwargs)
         # change_tr = mapvalues(program_state.trace, mapper=lambda v: v.unsqueeze(1))
         # change_lw = program_state.cumulative_log_weight.unsqueeze(1)
         # tr, lw = program_state.trace, program_state.cumulative_log_weight # aggregating state is currently a PITA
