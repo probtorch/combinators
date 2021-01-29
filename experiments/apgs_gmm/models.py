@@ -57,7 +57,7 @@ class Enc_rws_eta(Program):
                 1. / (q_nu * trace['precisions'].value).sqrt(), # std = 1 / sqrt(nu * tau)
                 value=mu,
                 name='means')
-        return (x, prior_ng)
+        return None
 
 
 class Enc_apg_eta(Kernel):
@@ -72,8 +72,7 @@ class Enc_apg_eta(Kernel):
         self.apg_eta_ob = nn.Sequential(
             nn.Linear(K+D, D))
 
-    def apply_kernel(self, q_eta_z_new, q_eta_z, q_output):
-        x, prior_ng = q_output
+    def apply_kernel(self, q_eta_z_new, q_eta_z, q_output, x, prior_ng):
         (prior_alpha, prior_beta, prior_mu, prior_nu) = prior_ng
         try:
             z = q_eta_z['states'].value
@@ -85,7 +84,7 @@ class Enc_apg_eta(Kernel):
 
         _ = q_eta_z_new.one_hot_categorical(probs=q_eta_z['states'].dist.probs, value=q_eta_z['states'].value, name='states')
 
-        gamma = Gamma(q_alpha, q_beta).sample()
+        gamma = Gamma(q_alpha, q_beta)
         tau, provenance = maybe_sample(q_eta_z, None)(gamma, 'precisions')
         q_eta_z_new.append(RandomVariable(dist=gamma, value=tau, provenance=provenance), name='precisions')
 
@@ -108,8 +107,8 @@ class Enc_apg_z(Kernel):
             nn.Tanh(),
             nn.Linear(num_hidden, 1))
 
-    def apply_kernel(self, trace, q_eta_z, q_output):
-        (x, prior_ng) = q_output
+    def apply_kernel(self, trace, q_eta_z, q_output, x, prior_ng):
+        # (x, prior_ng) = q_output
         S, B, N, D = x.shape
         try:
             tau = q_eta_z['precisions'].value
