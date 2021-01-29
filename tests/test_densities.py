@@ -76,7 +76,7 @@ def test_tempered_redundant_loop(seed, is_smoketest):
                 p_ext = Reverse(p, rev, _step=k)
                 extend = Propose(target=p_ext, proposal=q_ext, _step=k)
                 state = extend(sample_shape=sample_shape, sample_dims=0)
-                lv = state.weights
+                lv = state.log_joint
 
                 p_prv_tr = state.trace
 
@@ -139,7 +139,7 @@ def test_annealing_path_tempered_normals(seed, is_smoketest):
                 p_ext = Reverse(p, rev)
                 extend = Propose(target=p_ext, proposal=q_ext)
                 state = extend(sample_shape=sample_shape, sample_dims=0)
-                lv = state.weights
+                lv = state.log_joint
                 lvss.append(lv.detach())
 
                 # FIXME: because p_prv_tr is not eliminating the previous trace, the trace is cumulativee but removing grads leaves backprop unaffected
@@ -265,7 +265,7 @@ def test_annealing_path_8step_simple(seed):
                 p_ext = Reverse(p, rev, _step=k)
                 extend = Propose(target=p_ext, proposal=q_ext, _step=k)
                 state = extend(sample_shape=sample_shape, sample_dims=0)
-                lv = state.weights
+                lv = state.log_joint
 
                 # FIXME: because p_prv_tr is not eliminating the previous trace, the trace is cumulativee but removing grads leaves backprop unaffected
                 p_prv_tr = state.trace
@@ -511,7 +511,7 @@ def test_tempered_grad_check(seed):
                 extend = Propose(target=p_ext, proposal=q_ext, _step=k)
     #             breakpoint()
                 state = extend(sample_shape=sample_shape, sample_dims=0)
-                lv = state.weights
+                lv = state.log_joint
 
                 p_prv_tr = state.trace
                 p.clear_observations()

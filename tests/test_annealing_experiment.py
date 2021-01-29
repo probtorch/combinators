@@ -114,7 +114,7 @@ def nvi_eager(i, targets, forwards, reverses, sample_shape):
         p_ext = Reverse(p, rev, _step=k)
         extend = Propose(target=p_ext, proposal=q_ext, _step=k)
         state = extend(sample_shape=sample_shape, sample_dims=0)
-        lv = state.weights
+        lv = state.log_weight
 
         p_prv_tr = state.trace
 
@@ -141,7 +141,7 @@ def nvi_eager_resample(i, targets, forwards, reverses, sample_shape):
         extend = Resample(Propose(target=p_ext, proposal=q_ext, _step=k))
 
         state = extend(sample_shape=sample_shape, sample_dims=0)
-        lv = state.weights
+        lv = state.log_weight
 
         p_prv_tr = state.trace
 
@@ -161,12 +161,12 @@ def test_annealing_eager(is_smoketest):
 def test_annealing_eager_resample(is_smoketest):
     experiment_runner(is_smoketest, nvi_eager_resample)
 
-def _weights(out, ret=[])->[Tensor]:
-    _ret = ret + ([out.weights.detach().cpu()] if out.weights is not None else [])
+def _log_joint(out, ret=[])->[Tensor]:
+    _ret = ret + ([out.log_joint.detach().cpu()] if out.log_joint is not None else [])
     if 'proposal' not in out:
         return _ret
     else:
-        return _weights(out.proposal.program, _ret)
+        return _log_joint(out.proposal.program, _ret)
 
 
 def print_and_sum_loss(lv, loss):
@@ -187,7 +187,7 @@ def nvi_declarative(i, targets, forwards, reverses, sample_shape):
 
     out = proposal(sample_shape=sample_shape, sample_dims=0)
 
-    return _weights(out), out.loss
+    return _log_joint(out), out.loss
 
 def test_annealing_declarative():
     is_smoketest = True

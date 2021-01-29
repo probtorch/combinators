@@ -118,7 +118,7 @@ class Condition(Inf):
             if k not in ['conditioned_output', 'trace', 'weight', 'output']:
                 extras[k] = v
         if self.as_trace and isinstance(trace, ConditioningTrace):
-            return Out(trace.as_trace(access_only=not self.full_trace_return), out.weights, out.output, extras=extras)
+            return Out(trace.as_trace(access_only=not self.full_trace_return), out.log_joint, out.output, extras=extras)
         else:
             return out
 
@@ -171,14 +171,14 @@ class Reverse(KernelInf):
 
         self._cache = Out(
             trace=out_trace,
-            weights=log_aux,
+            log_joint=log_aux,
             output=program_state.output,
             extras=dict(
                 program=program_state,
                 kernel=kernel_state,
                 type=type(self).__name__,
                 loss=self.foldl_loss(log_aux, maybe(kernel_state, 'loss', self.loss0)),
-                cumulative_log_weight=maybe(program_state, 'cumulative_log_weight', 0),
+                log_weight=maybe(program_state, 'log_weight', 0),
                 ))
 
         return self._cache
@@ -210,7 +210,7 @@ class Forward(KernelInf):
         self._cache = Out(
             trace=kernel_state.trace,
 
-            weights=log_joint,
+            log_joint=log_joint,
 
             output=kernel_state.output,
 
@@ -219,7 +219,7 @@ class Forward(KernelInf):
                 kernel=kernel_state,
                 type=type(self).__name__,
                 loss=self.foldl_loss(log_joint, maybe(kernel_state, 'loss', self.loss0)),
-                cumulative_log_weight= maybe(program_state, 'cumulative_log_weight', 0),
+                log_weight= maybe(program_state, 'log_weight', 0),
                 ))
 
         return self._cache
@@ -243,7 +243,7 @@ class Propose(Inf):
 
         conditioned_target = Condition(self.target, trace=proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and _doesn't_ need the whole trace?
         target_state = conditioned_target(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, **shared_kwargs)
-        lv = target_state.weights - proposal_state.weights
+        lv = target_state.log_joint - proposal_state.log_joint
 
         self._cache = Out(
             extras=dict(
@@ -251,10 +251,10 @@ class Propose(Inf):
                 target=target_state if self._debug  or _debug else Out(*target_state), # strip auxiliary traces
                 type=type(self).__name__,
                 loss=self.foldl_loss(lv, maybe(proposal_state, 'loss', self.loss0)),
-                cumulative_log_weight=maybe(proposal_state, 'cumulative_log_weight', lv, lambda lw: lw+lv),
+                log_weight=maybe(proposal_state, 'log_weight', lv, lambda lw: lw+lv),
                 ),
             trace=target_state.trace,
-            weights=lv,
+            log_joint=lv,
             output=target_state.output,)
 
         return self._cache
@@ -266,7 +266,7 @@ class Resample(Inf):
     """
     def __init__(
             self,
-            program: Inf, # not Union[Program, Inf] because (@stites) is not computing weights for programs, (which I guess would be the joint?)
+            program: Inf, # not Union[Program, Inf] because (@stites) is not computing log_joint for programs, (which I guess would be the joint?)
             _step:Optional[int]=None,
             _debug:bool=False,
             strategy=rstrat.Systematic):
@@ -277,19 +277,20 @@ class Resample(Inf):
     def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, **shared_kwargs):
         program_state = self.program(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, **shared_kwargs)
         # change_tr = mapvalues(program_state.trace, mapper=lambda v: v.unsqueeze(1))
-        # change_lw = program_state.cumulative_log_weight.unsqueeze(1)
-        # tr, lw = program_state.trace, program_state.cumulative_log_weight # aggregating state is currently a PITA
+        # change_lw = program_state.log_weight.unsqueeze(1)
+        # tr, lw = program_state.trace, program_state.log_weight # aggregating state is currently a PITA
 
-        tr_, lw_ = self.strategy(program_state.trace, program_state.cumulative_log_weight, sample_dim=sample_dims, batch_dim=batch_dim)
+        tr_, lw_ = self.strategy(program_state.trace, program_state.log_weight, sample_dim=sample_dims, batch_dim=batch_dim)
 
         self._cache = Out(
             extras=dict(
                 program=program_state if self._debug or _debug else Out(*program_state), # strip auxiliary traces
                 type=type(self).__name__,
-                cumulative_log_weight=lw_,
+                log_weight=lw_,
                 ),
             trace=tr_,
-            weights=lw_,
+            #log_joint=lw_,
+            log_joint=None,
             output=program_state.output)
 
         return self._cache

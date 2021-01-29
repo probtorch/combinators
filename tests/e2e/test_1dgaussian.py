@@ -91,9 +91,9 @@ def test_propose_values(seed):
     p_ext = Reverse(p, rev)
     extend = Propose(target=p_ext, proposal=q_ext)
 
-    log_weights = extend().weights
+    log_log_joint = extend().log_joint
 
-    assert isinstance(log_weights, Tensor)
+    assert isinstance(log_log_joint, Tensor)
 
     proposal_cache = extend.proposal._cache
     target_cache = extend.target._cache
@@ -101,7 +101,7 @@ def test_propose_values(seed):
     for k in ['z_0', 'z_1']:
         assert torch.equal(proposal_cache.kernel.trace[k].value, target_cache.kernel.trace[k].value)
 
-    loss = nvo_avo(log_weights, sample_dims=0).mean()
+    loss = nvo_avo(log_log_joint, sample_dims=0).mean()
     loss.backward()
 
     optimizer.step()
@@ -124,7 +124,7 @@ def test_propose_gradients(seed):
     extend = Propose(target=p_ext, proposal=q_ext)
 
     state = extend()
-    log_weights = state.weights
+    log_log_joint = state.log_joint
 
     proposal_cache = extend.proposal._cache
     target_cache = extend.target._cache
@@ -158,10 +158,10 @@ def test_1step_avo(seed, is_smoketest):
             p_ext = Reverse(target, rev)
             extend = Propose(target=p_ext, proposal=q_ext)
 
-            log_weights = extend(sample_shape=(5,1), sample_dims=0).weights
+            log_log_joint = extend(sample_shape=(5,1), sample_dims=0).log_joint
 
             # proposal.clear_observations() # FIXME: this can be automated, but it would be nice to have more infrastructure around observations
-            loss = nvo_avo(log_weights).mean()
+            loss = nvo_avo(log_log_joint).mean()
 
             loss.backward()
 
@@ -217,7 +217,7 @@ def test_2step_avo(seed, use_fast, is_smoketest):
                 extend_argument = Propose(target=p_ext, proposal=q_ext)
                 # state, lv = extend_argument(sample_shape=sample_shape) # TODO
                 state = extend_argument(sample_shape=sample_shape, sample_dims=0)
-                lv = state.weights
+                lv = state.log_joint
 
                 lvs.append(lv)
 
@@ -322,7 +322,7 @@ def test_4step_avo(seed, use_fast, is_smoketest):
                 state = extend_argument(sample_shape=sample_shape, sample_dims=0)
                 # q.clear_observations()
                 # p.clear_observations()
-                lv = state.weights
+                lv = state.log_joint
 
                 lvs.append(lv)
 
