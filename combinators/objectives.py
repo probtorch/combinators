@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import torch
 import math
+import torch.nn.functional as F
 
 from torch import Tensor
 from typing import Tuple
@@ -10,7 +11,7 @@ def _estimate_mc(values: Tensor, log_weights: Tensor, sample_dims: Tuple[int], r
     if len(log_weights.shape) == 1:
         return values.sum(dim=reducedims, keepdim=keepdims)
     else:
-        nw = torch.nn.functional.softmax(log_weights, dim=sample_dims)
+        nw = F.softmax(log_weights, dim=sample_dims)
         return (nw * values).sum(dim=reducedims, keepdim=keepdims)
 
 def nvo_avo(lv: Tensor, sample_dims=0) -> Tensor:
