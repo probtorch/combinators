@@ -14,6 +14,7 @@ from typing import Iterable
 import operator
 
 from combinators.types import check_passable_arg, check_passable_kwarg, get_shape_kwargs, Out
+from combinators.utils import dispatch
 from combinators.trace.utils import RequiresGrad, copytrace, mapvalues
 from combinators.tensor.utils import autodevice, kw_autodevice
 import combinators.trace.utils as trace_utils
@@ -30,6 +31,19 @@ import combinators.resampling.strategies as rstrat
 
 def maybe(obj, name, default, fn=(lambda x: x)):
     return fn(getattr(obj, name)) if hasattr(obj, name) else default
+
+
+
+def _dispatch(permissive):
+    def get_callable(fn):
+        if isinstance(fn, Program):
+            spec_fn = fn.model
+        elif isinstance(fn, Kernel):
+            spec_fn = fn.apply_kernel
+        else:
+            spec_fn = fn
+        return spec_fn
+    return dispatch(get_callable, permissive)
 
 class Inf(ABC):
     def __init__(
@@ -52,24 +66,6 @@ class Inf(ABC):
     def __call__(self, *args:Any, _debug=False, **kwargs:Any) -> Out:
         raise NotImplementedError("@abstractproperty but type system doesn't understand it")
 
-def _dispatch(permissive):
-    def curry_fn(fn):
-        def go(*args:Any, **kwargs:Any):
-            if isinstance(fn, Program):
-                spec_fn = fn.model
-            elif isinstance(fn, Kernel):
-                spec_fn = fn.apply_kernel
-            else:
-                spec_fn = fn
-
-            _dispatch_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, spec_fn)} if permissive else kwargs
-            _dispatch_args   = args
-            # _dispatch_args   = [v for k,v in args.items() if check_passable_arg(k, fn)] if permissive else args
-            # assert args is None or len(args) == 0, "need to filter this list, but currently don't have an example"
-
-            return fn(*_dispatch_args, **_dispatch_kwargs)
-        return go
-    return curry_fn
 
 class Condition(Inf):
     """
