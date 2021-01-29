@@ -5,6 +5,7 @@ from collections import namedtuple
 from pytest import mark, fixture
 from typing import Optional, Callable
 from combinators.debug import empirical_marginal_mean_std
+import combinators.debug as debug
 import os
 import numpy as np
 
@@ -22,11 +23,8 @@ def g(i):
 
 @fixture
 def is_smoketest():
-    env_var = os.getenv('COMBINATORS_SMOKETEST') is not None
-    return env_var
+    debug.is_smoketest()
 
 @fixture(autouse=True)
 def seed():
-    torch.manual_seed(1)
-    np.random.seed(0)
-    torch.set_deterministic(True)
+    debug.seed(1)

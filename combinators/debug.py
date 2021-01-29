@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from urllib.request import AbstractDigestAuthHandler
+import os
 import torch
 from torch import Tensor
 from torch import nn
@@ -62,6 +62,10 @@ def seed(s=42):
     random.seed(s)
     torch.set_deterministic(True)
     torch.backends.cudnn.benchmark = True # just incase something goes wrong with set_deterministic
+
+def is_smoketest():
+    env_var = os.getenv('COMBINATORS_SMOKETEST') is not None
+    return env_var
 
 def print_grad(*args:nn.Module):
     for i, x in enumerate(*args):
