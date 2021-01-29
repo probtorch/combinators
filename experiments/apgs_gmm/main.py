@@ -386,6 +386,7 @@ if __name__ == '__main__':
     parser.add_argument('--simulate', default=False, type=bool)
     # parser.add_argument('--num_sweeps', default=1, type=int)
     args = parser.parse_args()
+    debug.seed(1)
 
     data_path='../../data/gmm/'
     if args.simulate:
