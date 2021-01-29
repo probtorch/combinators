@@ -129,31 +129,31 @@ class Resample(Inf):
     """
     def __init__(
             self,
-            program: Inf, # not Union[Program, Inf] because (@stites) is not computing log_joint for programs, (which I guess would be the joint?)
+            resample: Inf, # not Union[Program, Inf] because (@stites) is not computing log_joint for programs, (which I guess would be the joint?)
             _step:Optional[int]=None,
             _debug:bool=False,
             strategy=rstrat.Systematic):
         super().__init__(_step=_step, _debug=_debug)
-        self.program = program
+        self.resample = resample
         self.strategy = strategy()
 
     def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, **shared_kwargs) -> Out:
-        program_state = self.program(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, **shared_kwargs)
-        # change_tr = mapvalues(program_state.trace, mapper=lambda v: v.unsqueeze(1))
-        # change_lw = program_state.log_weight.unsqueeze(1)
-        # tr, lw = program_state.trace, program_state.log_weight # aggregating state is currently a PITA
+        resample_state = self.resample(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, **shared_kwargs)
+        # change_tr = mapvalues(resample_state.trace, mapper=lambda v: v.unsqueeze(1))
+        # change_lw = resample_state.log_weight.unsqueeze(1)
+        # tr, lw = resample_state.trace, resample_state.log_weight # aggregating state is currently a PITA
 
-        tr_, lw_ = self.strategy(program_state.trace, program_state.log_omega, sample_dim=sample_dims, batch_dim=batch_dim)
+        tr_, lw_ = self.strategy(resample_state.trace, resample_state.log_omega, sample_dim=sample_dims, batch_dim=batch_dim)
 
         self._cache = Out(
             extras=dict(
-                program=program_state if self._debug or _debug else Out(*program_state), # strip auxiliary traces
+                resample=resample_state if self._debug or _debug else Out(*resample_state), # strip auxiliary traces
                 type=type(self).__name__,
                 log_weight=lw_,
                 ),
             trace=tr_,
             log_omega=lw_,
-            output=program_state.output)
+            output=resample_state.output)
 
         return self._cache
 
