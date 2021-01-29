@@ -9,6 +9,7 @@ from combinators.stochastic import Trace
 from typeguard import typechecked
 from typing import Callable
 import numpy as np
+import random
 
 def excise(t:Tensor) -> Tensor:
     """ clone a tensor and remove it from the computation graph """
@@ -28,7 +29,9 @@ def excise_trace(tr:Trace) -> Trace:
 def seed(s=42):
     torch.manual_seed(s)
     np.random.seed(s)
+    random.seed(s)
     torch.set_deterministic(True)
+    torch.backends.cudnn.benchmark = True # just incase something goes wrong with set_deterministic
 
 def print_grad(*args:nn.Module):
     for i, x in enumerate(*args):
