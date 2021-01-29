@@ -1,9 +1,12 @@
 #+TITLE: Notes
 * TODOs
-** TODO test whole-program conditioning
-*** TODO make sure the declartive annealing experiment didn't get messed up by not including whole-program conditioning.
-** NEXT resample combinator
-** TODO gibbs example
+** DONE test whole-program conditioning
+*** DONE make sure the declartive annealing experiment didn't get messed up by not including whole-program conditioning.
+** DONE resample combinator
+** DONE RWS-VAE on GMM
+** TODO APGS on GMM
+** TODO RWS-VAE on BMNIST
+** TODO APGS on BMNIST
 * On Lazy observations
 As-is, lazy observations are a requirement in order to statically reason
 (really, "assume") a trace's structure before running it.
