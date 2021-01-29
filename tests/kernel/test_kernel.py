@@ -24,7 +24,7 @@ def trivial_kernel():
 
 def test_trivial_condition(trivial_kernel):
     cond_trace = Trace()
-    tr, _, out = trivial_kernel(cond_trace, (1, 2))
+    out = trivial_kernel(cond_trace, (1, 2))
 
 @mark.skip("TODO: traces no longer condition automatically")
 def test_condition(trivial_kernel):
@@ -32,16 +32,15 @@ def test_condition(trivial_kernel):
     cond_trace = Trace()
     zs = cond_trace.normal(loc=-1, scale=3, name='z')
 
-    tr, _, out = trivial_kernel(cond_trace, (1, 2))
-    assert torch.equal(tr['z'].value, zs)
+    out = trivial_kernel(cond_trace, (1, 2))
+    assert torch.equal(out.trace['z'].value, zs)
 
 def test_auxilary_condition(trivial_kernel):
     # you can condition on a value
     cond_trace = Trace()
     zs = cond_trace.normal(loc=-1, scale=3, name='q')
-    tr, _, out = trivial_kernel(cond_trace, (1, 2))
-    assert not torch.equal(tr['z'].value, zs)
-
+    out = trivial_kernel(cond_trace, (1, 2))
+    assert not torch.equal(out.trace['z'].value, zs)
 
 class Simple(Program):
     in_dim, out_dim = 8, 2
