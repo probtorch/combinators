@@ -7,6 +7,7 @@ from torch import Tensor, distributions, Size, nn
 import torch.distributions as D
 from typing import Optional, Dict, Union, Callable
 from combinators.tensor.utils import kw_autodevice, autodevice
+import combinators.trace.utils as trace_utils
 
 from combinators import Program
 from combinators.embeddings import CovarianceEmbedding
@@ -25,20 +26,19 @@ class Distribution(Program):
     def model(self, trace, sample_shape=torch.Size([1,1]), validate=True):
         dist = self.dist
         # FIXME: ensure conditioning a program work like this is automated?
-        value = trace[self.name].value if self.name in trace else \
-            (dist.rsample(sample_shape) if dist.has_rsample else dist.sample(sample_shape))
+        value, provenance = trace_utils.maybe_sample(trace, sample_shape)(dist, self.name)
         # if validate and not (len(value.shape) >= 2):
         #     raise RuntimeError("must have at least sample dim + output dim")
         # if not all(map(lambda lr: lr[0] == lr[1], zip(sample_shape, value.shape))):
         #     adjust_shape = [*sample_shape, *value.shape[len(sample_shape):]]
         #     value = value.view(adjust_shape)
 
-        rv = self.RandomVariable(dist=dist, value=value, provenance=Provenance.SAMPLED)
+        rv = self.RandomVariable(dist=dist, value=value, provenance=provenance) # <<< rv.log_prob = dist.log_prob(value)
         trace.append(rv, name=self.name)
         return trace[self.name].value
 
     def __repr__(self):
-        return f'[{self.name}]' + super().__repr__()
+        return f'Distribution[name={self.name}; dist={repr(self.dist)}]'
 
 class Normal(Distribution):
     def __init__(self, loc, scale, name, reparam=True, device=None):
@@ -50,8 +50,8 @@ class Normal(Distribution):
         self._dist = distributions.Normal(loc=self.loc, scale=self.scale)
         super().__init__(name, self._dist)
 
-    def __repr__(self):
-        return f"Normal(name={self.name}, loc={self._loc}, scale={self._scale})"
+    # def __repr__(self):
+    #     return f"Normal(name={self.name}, loc={self._loc}, scale={self._scale})"
 
     def as_dist(self, as_multivariate=False):
         return self._dist if not as_multivariate else \
@@ -70,6 +70,42 @@ class Categorical(Distribution):
         self.logits = logits
         self.validate_args = validate_args
         super().__init__(name, distributions.Categorical(probs, logits, validate_args))
+
+class OneHotCategorical(Distribution):
+    def __init__(self, name, probs=None, logits=None, validate_args=None):
+        self.probs = probs
+        self.logits = logits
+        self.validate_args = validate_args
+        super().__init__(name, distributions.OneHotCategorical(probs, logits, validate_args))
+
+
+class NormalGamma(Distribution):
+    """ The generative model of GMM """
+    PRECISIONS = 'precisions'
+    MEANS = 'means'
+
+    def __init__(self, mu, nu, alpha, beta, prefix=""):
+        self.prefix = '' if len(prefix) == 0 else prefix + "_"
+        self.PRECISIONS = self.prefix + NormalGamma.PRECISIONS
+        self.MEANS = self.prefix + NormalGamma.MEANS
+        super().__init__(dist=None, name=f"{{{self.PRECISIONS}, {self.MEANS}}}")
+
+        self.mu = mu
+        self.nu = nu
+        self.alpha = alpha
+        self.beta = beta
+
+    def model(self, trace, sample_shape=None):
+        gamma = D.Gamma(self.alpha, self.beta)
+        precisions, provenance = trace_utils.maybe_sample(trace, sample_shape)(gamma, self.PRECISIONS)
+        trace.append(RandomVariable(dist=gamma, value=precisions, provenance=provenance), name=self.PRECISIONS)
+
+        normal = D.Normal(self.mu, 1. / (self.nu * precisions).sqrt())
+        means, provenance = trace_utils.maybe_sample(trace, None)(normal, self.MEANS)
+        trace.append(RandomVariable(dist=normal, value=means, provenance=provenance), name=self.MEANS)
+
+        return (precisions, means)
+
 
 class Density(Program):
     """ A program that represents a single unnormalized distribution that you can query logprobs on. """
@@ -164,3 +200,4 @@ class RingGMM(GMM):
         locs = torch.tensor([position(a*math.pi/180) for a in angles], **kw_autodevice(device)) * loc_scale
         covs = [torch.eye(2, **kw_autodevice(device)) * scale for _ in range(count)]
         super().__init__(name=name, locs=locs, covs=covs)
+
