@@ -21,21 +21,24 @@ from combinators.traceable import TraceModule
 
 class Program(TraceModule):
     """ superclass of a program? """
-    def __init__(self):
+    def __init__(self, with_joint=False):
         super().__init__()
+        self._with_joint=with_joint
 
     @abstractmethod
     def model(self, trace: Trace, *args:Any, **kwargs:Any) -> Output:
         raise NotImplementedError()
 
-    def forward(self, *args:Any, sample_dims=None, _debug=False, **kwargs:Any):
+    def forward(self, *args:Any, sample_dims=None, batch_dim=None, reparameterized=True, **kwargs:Any):
         trace = self.get_trace()  # allows Condition to hook into this process
 
-        out = self.model(trace, *args, **get_shape_kwargs(self.model, sample_dims=sample_dims), **kwargs)
+        out = self.model(trace, *args, **get_shape_kwargs(self.model, sample_dims=sample_dims, batch_dim=batch_dim), **kwargs)
 
         self.clear_cond_trace()   # closing bracket for a run, required if a user does not use the Condition combinator
 
-        return Out(trace, None, out, extras=dict(type=type(self).__name__))
+        log_joint = trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized) if self._with_joint else None
+
+        return Out(trace, log_joint, out, extras=dict(type=type(self).__name__))
 
     @classmethod
     def factory(cls, fn, name:str = ""):
