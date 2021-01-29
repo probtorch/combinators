@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from urllib.request import AbstractDigestAuthHandler
 import torch
 from torch import Tensor
 from torch import nn
@@ -26,6 +27,19 @@ class MaybeWriter(SummaryWriter):
 
     def add_figure(self,*args, **kwargs):
         self.maybe_run(super().add_figure, *args, **kwargs)
+
+@typechecked
+def runtime() -> str:
+    try:
+        # magic global function in ipython shells
+        ipy_str = str(type(get_ipython()))
+        if 'zmqshell' in ipy_str:
+            return 'jupyter'
+        if 'terminal' in ipy_str:
+            return 'ipython'
+    except:
+        return 'terminal'
+
 
 def excise(t:Tensor) -> Tensor:
     """ clone a tensor and remove it from the computation graph """
