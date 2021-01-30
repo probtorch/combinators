@@ -11,6 +11,7 @@ from itertools import chain
 import combinators.tensor.utils as tensor_utils
 from enum import Enum, auto
 from combinators.types import check_passable_kwarg
+import inspect
 
 @typechecked
 def maybe_sample(trace:Trace, sample_shape:Union[Tuple[int], None, tuple]) -> Callable[[D.Distribution, str], Tuple[Tensor, Provenance]]:
@@ -180,3 +181,26 @@ def mapvalues(*traces: Trace, mapper=None, **kwargs):
             return dict(dist=kwargs['dist'],  use_pmf=kwargs['use_pmf'], **shared_kwargs)
 
     return copytraces(*traces, mapper=rvmapper, **kwargs)
+
+def distprops(dist):
+    return [
+        p for p in (set(inspect.getfullargspec(dist.__init__).args) - {'self'})
+            if hasattr(dist, p)
+    ]
+
+def disteq(d1, d2, return_invalid=False, allclose=False):
+    if type(d1) != type(d1):
+        return False
+
+    props = distprops(d1)
+
+    def eq(l, r):
+        tequal = torch.allclose if allclose else torch.equal
+        return tequal(l, r) if isinstance(l, Tensor) and isinstance(r, Tensor) else l == r
+
+    noteq = [p for p in props if not eq(getattr(d1, p), getattr(d2, p))]
+
+    if return_invalid:
+        return len(noteq) == 0, noteq
+    else:
+        return len(noteq) == 0
