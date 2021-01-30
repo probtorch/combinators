@@ -385,11 +385,12 @@ def apg_objective(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x, num_sw
 
     return metrics
 
-def mk_metrics(loss, w, out, num_sweeps=1, ess_required=True, mode_required=True, density_required=True, mode_required_with_z=False, ix=None):
+def mk_metrics(loss, out, num_sweeps=1, ess_required=True, mode_required=True, density_required=True, mode_required_with_z=False, ix=None):
     with torch.no_grad():
         metrics = dict()
         metrics['loss'] = loss.mean().cpu().item()
         if ess_required:
+            w = F.softmax(out.log_omega.detach(), 0)
             metrics['ess'] = (1. / (w**2).sum(0)).mean().cpu().item()
         if mode_required:
             assert ix != None
@@ -555,10 +556,38 @@ def rws_objective_eager(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg_eta=N
     w = F.softmax(log_w, 0)
     loss = (w * (- out.proposal.log_omega)).sum(0).mean()
     if compare:
+        assert torch.allclose(loss, _loss)
         assert torch.allclose(log_w, _log_w)
         assert trace_utils.valeq(out.trace, _q_eta_z_out.trace)
 
-    return loss, mk_metrics(loss, w, out, ix=ix(1,1))
+    return loss, mk_metrics(loss, out, ix=ix(1,1))
 
-def test_rws_vae():
+def rws_objective_declarative(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg_eta=None, compare=True, sample_size=None, num_sweeps=1):
+    assert num_sweeps == 1
+    if compare:
+        debug.seed(1)
+        _loss, _log_w, _q_eta_z_out = oneshot_hao(enc_rws_eta, enc_apg_z, og, x)
+        debug.seed(1)
+
+    def loss_fn(out, loss):
+        log_w = out.log_omega.detach()
+        w = F.softmax(log_w, 0)
+        return (w * (- out.proposal.log_omega)).sum(0).mean() + loss
+
+    # otherwise, eager combinators looks like:
+    prp = Propose(proposal=Forward(enc_apg_z, enc_rws_eta), target=og, ix=ix(1,1), loss_fn=loss_fn)
+    out = prp(x=x, prior_ng=og.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
+
+    if compare:
+        assert torch.allclose(out.loss, _loss)
+        assert torch.allclose(out.log_omega, _log_w)
+        assert trace_utils.valeq(out.trace, _q_eta_z_out.trace)
+
+    return out.loss, mk_metrics(out.loss, out, ix=ix(1,1))
+
+def test_rws_vae_eager():
     main(objective=rws_objective_eager, num_sweeps=1, is_smoketest=debug.is_smoketest(), simulate=False)
+
+def test_rws_vae_declarative():
+    main(objective=rws_objective_declarative, num_sweeps=1, is_smoketest=debug.is_smoketest(), simulate=False)
+

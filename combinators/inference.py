@@ -48,7 +48,7 @@ def _dispatch(permissive):
 class Inf(ABC):
     def __init__(
             self,
-            loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda _, fin: fin),
+            loss_fn:Callable[[Out, Tensor], Tensor]=(lambda _, fin: fin),
             loss0=None,
             device=None,
             ix:Union[Tuple[int], NamedTuple, None]=None,
@@ -152,13 +152,14 @@ class Resample(Inf):
 
         self._cache = Out(
             extras=dict(
-                resample=program_state if self._debug or _debug else Out(*program_state), # strip auxiliary traces
+                program=program_state if self._debug or _debug else Out(*program_state), # strip auxiliary traces
                 type=type(self).__name__,
                 log_weight=lw_,
                 ),
             trace=tr_,
             log_omega=lw_,
             output=program_state.output)
+        self._cache['loss'] = self.foldl_loss(self._cache, maybe(program_state, 'loss', self.loss0))
 
         return self._cache
 
@@ -224,9 +225,9 @@ class Reverse(KernelInf):
                 program=program_state,
                 kernel=kernel_state,
                 type=type(self).__name__,
-                loss=self.foldl_loss(log_aux, maybe(kernel_state, 'loss', self.loss0)),
                 log_weight=maybe(program_state, 'log_weight', 0),
                 ))
+        self._cache['loss'] = self.foldl_loss(self._cache, maybe(kernel_state, 'loss', self.loss0))
 
         return self._cache
 
@@ -269,10 +270,9 @@ class Forward(KernelInf):
                 program=program_state,
                 kernel=kernel_state,
                 type=type(self).__name__,
-                loss=self.foldl_loss(log_omega, maybe(kernel_state, 'loss', self.loss0)),
-                # log_weight= maybe(program_state, 'log_weight', 0),
                 ))
 
+        self._cache['loss'] = self.foldl_loss(self._cache, maybe(kernel_state, 'loss', self.loss0))
         return self._cache
 
 
@@ -305,11 +305,9 @@ class Propose(Conditionable, Inf):
                 proposal=proposal_state if self._debug or _debug else Out(*proposal_state), # strip auxiliary traces
                 target=target_state if self._debug  or _debug else Out(*target_state), # strip auxiliary traces
                 type=type(self).__name__,
-                loss=self.foldl_loss(lv, maybe(proposal_state, 'loss', self.loss0)),
-                # log_weight=maybe(proposal_state, 'log_weight', lv, lambda lw: lw+lv),
                 ),
             trace=target_state.trace,
             log_omega=lv,
             output=target_state.output,)
-
+        self._cache['loss'] = self.foldl_loss(self._cache, maybe(proposal_state, 'loss', self.loss0))
         return self._cache
