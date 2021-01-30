@@ -42,26 +42,6 @@ def oneshot_hao(enc_rws_eta, enc_apg_z, og, x):
     _loss = (w * (- log_q)).sum(0).mean()
     return _loss, log_w, _q_eta_z_out
 
-def xrws_objective_eager(enc_rws_eta, enc_apg_z, generative, og, x, compare=True, sample_size=None, num_sweeps=1):
-    """ One-shot for eta and z, like a normal RWS """
-    assert num_sweeps == 1
-    if compare:
-        debug.seed(1)
-        _loss, _log_w, _q_eta_z_out = oneshot_hao(enc_rws_eta, enc_apg_z, og, x)
-        debug.seed(1)
-
-    # otherwise, eager combinators looks like:
-    prp = Propose(proposal=Forward(enc_apg_z, enc_rws_eta), target=og)
-    out = prp(x=x, prior_ng=og.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
-
-    log_w = out.log_omega.detach()
-    w = F.softmax(log_w, 0)
-    loss = (w * (- out.proposal.log_omega)).sum(0).mean()
-    if compare:
-        print(torch.equal(log_w, _log_w))
-        breakpoint();
-
-    return loss, mk_metrics(loss, w, out)
 
 def apg_update_eta(enc_apg_eta, generative, q_eta_z, x):
     """ Given local variable z, update global variables eta := {mu, tau}. """
@@ -79,19 +59,6 @@ def apg_update_eta(enc_apg_eta, generative, q_eta_z, x):
     log_w_b = log_p_b - log_q_b
     log_w = (log_w_f - log_w_b).detach()
     w = F.softmax(log_w, 0).detach()
-    if result_flags['loss_required']:
-        loss = (w * (- log_q_f)).sum(0).mean()
-        metrics['loss'].append(loss.unsqueeze(0))
-    if result_flags['ess_required']:
-        ess = (1. / (w**2).sum(0))
-        metrics['ess'].append(ess.unsqueeze(0)) # 1-by-B tensor
-    if result_flags['mode_required']:
-        E_tau = (q_eta_z_f['precisions'].dist.concentration / q_eta_z_f['precisions'].dist.rate).mean(0).detach()
-        E_mu = q_eta_z_f['means'].dist.loc.mean(0).detach()
-        metrics['E_tau'].append(E_tau.unsqueeze(0))
-        metrics['E_mu'].append(E_mu.unsqueeze(0))
-    if result_flags['density_required']:
-        metrics['density'].append(log_p_f.unsqueeze(0)) # 1-by-B-length vector
     return log_w, q_eta_z_f, metrics
 
 def apg_update_z(enc_apg_z, generative, q_eta_z, x):
@@ -439,7 +406,8 @@ def train(objective, models, target, og, og2, data, assignments, num_epochs, sam
             for bix, b in enumerate(batches):
                 optimizer.zero_grad()
                 x = data[b*batch_size : (b+1)*batch_size].repeat(sample_size, 1, 1, 1)
-                loss, metrics = objective(enc_rws_eta=enc_rws_eta, enc_apg_z=enc_apg_z, enc_apg_eta=enc_apg_eta, generative=og2, og=og, x=x, sample_size=sample_size, num_sweeps=num_sweeps) # , compare=b == 0)
+
+                loss, metrics = objective(enc_rws_eta=enc_rws_eta, enc_apg_z=enc_apg_z, enc_apg_eta=enc_apg_eta, generative=og2, og=og, x=x, sample_size=sample_size, num_sweeps=num_sweeps)
 
                 loss.backward()
                 optimizer.step()
@@ -528,24 +496,45 @@ def main(is_smoketest, num_sweeps, simulate, objective):
 
 # ==================================================================================================================== #
 # ==================================================================================================================== #
-def oneshot_hao(enc_rws_eta, enc_apg_z, generative, x):
-    _q_eta_z_out = enc_rws_eta(x, prior_ng=generative.prior_ng)
-    _q_eta_z_out = enc_apg_z(_q_eta_z_out.trace, _q_eta_z_out.output, x=x, prior_ng=generative.prior_ng, ix='')
-    log_q = _q_eta_z_out.trace.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+def oneshot_hao(enc_rws_eta, enc_apg_z, generative, x, metrics):
+    """
+    One-shot for eta and z, like a normal RWS
+    """
+    q_eta_z = enc_rws_eta(x, prior_ng=generative.prior_ng)
+    q_eta_z = enc_apg_z(q_eta_z.trace, q_eta_z.output, x=x, prior_ng=generative.prior_ng, ix='')
+    log_q = q_eta_z.trace.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
 
-    p = generative.x_forward(_q_eta_z_out.trace, x)
-    log_p = p.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    p = generative.x_forward(q_eta_z.trace, x)
+    log_p = p.log_joint(sample_dims=0, batch_dim=1, reparameterized=False) ## it is annoying to repeat these same arguments every time I call .log_joint
+    log_q = q_eta_z.trace.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     log_w = (log_p - log_q).detach()
-    w = F.softmax(log_w, 0)
-    _loss = (w * (- log_q)).sum(0).mean()
-    return _loss, log_w, _q_eta_z_out
+    w = F.softmax(log_w, 0).detach()
+
+    if True: # result_flags['loss_required']:
+        loss = (w * (- log_q)).sum(0).mean()
+        metrics['loss'].append(loss.unsqueeze(0))
+    if True: # result_flags['ess_required']:
+        ess = (1. / (w**2).sum(0))
+        metrics['ess'].append(ess.unsqueeze(0))
+    if False: # result_flags['mode_required']:
+        E_tau = (q_eta_z['precisions'].dist.concentration / q_eta_z['precisions'].dist.rate).mean(0).detach()
+        E_mu = q_eta_z['means'].dist.loc.mean(0).detach()
+        E_z = q_eta_z['states'].dist.probs.mean(0).detach()
+        metrics['E_tau'].append(E_tau.unsqueeze(0))
+        metrics['E_mu'].append(E_mu.unsqueeze(0))
+        metrics['E_z'].append(E_z.unsqueeze(0))
+    if True: # result_flags['density_required']:
+        log_joint = log_p.detach()
+        metrics['density'].append(log_joint.unsqueeze(0))
+    return loss, log_w, q_eta_z, metrics
 
 def rws_objective_eager(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg_eta=None, compare=True, sample_size=None, num_sweeps=1):
     """ One-shot for eta and z, like a normal RWS """
+    metrics = {'loss' : [], 'ess' : [], 'E_tau' : [], 'E_mu' : [], 'E_z' : [], 'density' : []} ## a dictionary that tracks things needed during the sweeping
     assert num_sweeps == 1
     if compare:
         debug.seed(1)
-        _loss, _log_w, _q_eta_z_out = oneshot_hao(enc_rws_eta, enc_apg_z, og, x)
+        _loss, _log_w, _q_eta_z_out, _ = oneshot_hao(enc_rws_eta, enc_apg_z, og, x, metrics=metrics)
         debug.seed(1)
 
     # otherwise, eager combinators looks like:
@@ -564,9 +553,10 @@ def rws_objective_eager(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg_eta=N
 
 def rws_objective_declarative(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg_eta=None, compare=True, sample_size=None, num_sweeps=1):
     assert num_sweeps == 1
+    metrics = {'loss' : [], 'ess' : [], 'E_tau' : [], 'E_mu' : [], 'E_z' : [], 'density' : []} ## a dictionary that tracks things needed during the sweeping
     if compare:
         debug.seed(1)
-        _loss, _log_w, _q_eta_z_out = oneshot_hao(enc_rws_eta, enc_apg_z, og, x)
+        _loss, _log_w, _q_eta_z_out, _  = oneshot_hao(enc_rws_eta, enc_apg_z, og, x, metrics=metrics)
         debug.seed(1)
 
     def loss_fn(out, loss):
@@ -591,3 +581,46 @@ def test_rws_vae_eager():
 def test_rws_vae_declarative():
     main(objective=rws_objective_declarative, num_sweeps=1, is_smoketest=debug.is_smoketest(), simulate=False)
 
+def apg_objective_hao(models, x, result_flags, num_sweeps, resampler):
+    """
+    Amortized Population Gibbs objective in GMM problem
+    ==========
+    abbreviations:
+    K -- number of clusters
+    D -- data dimensions (D=2 in GMM)
+    S -- sample size
+    B -- batch size
+    N -- number of data points in one (GMM) dataset
+    ==========
+    variables:
+    ob : S * B * N * D, observations, as data points
+    tau: S * B * K * D, cluster precisions, as global variables
+    mu: S * B * K * D, cluster means, as global variables
+    eta := {tau, mu} global block
+    z : S * B * N * K, cluster assignments, as local variables
+    ==========
+    """
+    result_flags = {'loss_required' : True, 'ess_required' : True, 'mode_required' : False, 'density_required': True}
+    metrics = {'loss' : [], 'ess' : [], 'E_tau' : [], 'E_mu' : [], 'E_z' : [], 'density' : []} ## a dictionary that tracks things needed during the sweeping
+    (enc_rws_eta, enc_apg_z, enc_apg_eta, generative) = models
+    log_w, q_eta_z, metrics = oneshot_hao(enc_rws_eta, enc_apg_z, generative, x, metrics, result_flags)
+    q_eta_z_ = resample_variables(resampler, q_eta_z, log_weights=log_w)
+    breakpoint();
+
+    for m in range(num_sweeps-1):
+        log_w_eta, q_eta_z, metrics = apg_update_eta(enc_apg_eta, generative, q_eta_z, x, metrics, result_flags)
+        q_eta_z = resample_variables(resampler, q_eta_z, log_weights=log_w_eta)
+        log_w_z, q_eta_z, metrics = apg_update_z(enc_apg_z, generative, q_eta_z, x, metrics, result_flags)
+        q_eta_z = resample_variables(resampler, q_eta_z, log_weights=log_w_z)
+
+    if result_flags['loss_required']:
+        metrics['loss'] = torch.cat(metrics['loss'], 0)
+    if result_flags['ess_required']:
+        metrics['ess'] = torch.cat(metrics['ess'], 0)
+    if result_flags['density_required']:
+        metrics['density'] = torch.cat(metrics['density'], 0)  # (num_sweeps) * S * B
+
+    return metrics['loss'], metrics
+
+def test_apg_2sweep_eager():
+    main(objective=apg_objective_eager, num_sweeps=2, is_smoketest=debug.is_smoketest(), simulate=False)
