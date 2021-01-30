@@ -131,7 +131,7 @@ class Enc_apg_z(Kernel):
             nn.Tanh(),
             nn.Linear(num_hidden, 1))
 
-    def apply_kernel(self, trace, q_eta_z, q_output, x, prior_ng, ix=None):
+    def apply_kernel(self, trace, q_eta_z, q_output, x, ix=None):
         # (x, prior_ng) = q_output
         S, B, N, D = x.shape
         assert ix is not None
