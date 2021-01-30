@@ -15,8 +15,9 @@ import operator
 
 from combinators.types import check_passable_arg, check_passable_kwarg, get_shape_kwargs, Out
 from combinators.utils import dispatch
-from combinators.trace.utils import RequiresGrad, copytrace, mapvalues
+from combinators.trace.utils import RequiresGrad, copytrace, mapvalues, disteq
 from combinators.tensor.utils import autodevice, kw_autodevice
+import combinators.debug as debug
 import combinators.trace.utils as trace_utils
 import combinators.tensor.utils as tensor_utils
 from combinators.stochastic import Trace, ConditioningTrace
@@ -251,16 +252,37 @@ class Forward(KernelInf):
         self._run_kernel = _dispatch(permissive=True)(self.kernel)
         self._exclude = _exclude # really just for debugging APG
 
-    def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **program_kwargs) -> Out:
+    def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, _debug_extras=None, reparameterized=True, ix=None, **program_kwargs) -> Out:
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
 
         inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
 
+        debug.seed(1)
         program_state = self._run_program(*program_args, **inf_kwargs, **program_kwargs)
+        breakpoint();
 
+        debug.seed(2)
         kernel_state = self._run_kernel(program_state.trace, program_state.output, **inf_kwargs, **program_kwargs)
 
         log_omega = kernel_state.trace.log_joint(**shape_kwargs, nodes=set(kernel_state.trace.keys()) - self._exclude)
+        if _debug_extras is not None:
+            dtrace = _debug_extras['q_eta_z']
+            ctrace = trace_utils.copysubtrace(kernel_state.trace, {'precisions2', 'means2', 'states1'})
+            print(trace_utils.valeq(dtrace, ctrace))
+
+            print("p_v", torch.equal(ctrace['precisions2'].value,    dtrace['precisions1'].value))
+            print("p_d", disteq(     ctrace['precisions2'].dist,     dtrace['precisions1'].dist))
+            print("p_p", torch.equal(ctrace['precisions2'].log_prob, dtrace['precisions1'].log_prob))
+            print()
+            print("m_v", torch.equal(ctrace['means2'].value,    dtrace['means1'].value))
+            print("m_d", disteq(     ctrace['means2'].dist,     dtrace['means1'].dist))
+            print("m_p", torch.equal(ctrace['means2'].log_prob, dtrace['means1'].log_prob))
+            print()
+            print("s_v", torch.equal(ctrace['states1'].value,    dtrace['states1'].value))
+            print("s_d", disteq(     ctrace['states1'].dist,     dtrace['states1'].dist))
+            print("s_p", torch.equal(ctrace['states1'].log_prob, dtrace['states1'].log_prob))
+            breakpoint();
+            print()
 
         self._cache = Out(
             trace=kernel_state.trace,
@@ -290,14 +312,18 @@ class Propose(Conditionable, Inf):
         self.target = target
         self.proposal = proposal
 
-    def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
+    def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, _debug_extras=None, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         inf_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, ix=self.ix if self.ix is not None else ix)
 
         # proposal = Condition(self.proposal, trace=self._cond_trace, as_trace=False) if self._cond_trace is not None else self.proposal
         proposal_state = self.proposal(*shared_args, **inf_kwargs, **shared_kwargs)
 
+        if _debug and _debug_extras is not None:
+            breakpoint();
         conditioned_target = Condition(self.target, trace=proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and _doesn't_ need the whole trace?
         target_state = conditioned_target(*shared_args, **inf_kwargs,  **shared_kwargs)
+        breakpoint();
+
         lv = target_state.log_omega - proposal_state.log_omega
 
         self._cache = Out(

@@ -21,7 +21,7 @@ from combinators.traceable import TraceModule
 
 class Program(TraceModule):
     """ superclass of a program? """
-    def __init__(self, with_joint=False):
+    def __init__(self, with_joint=None):
         super().__init__()
         self._with_joint=with_joint
 
@@ -36,7 +36,7 @@ class Program(TraceModule):
 
         self.clear_cond_trace()   # closing bracket for a run, required if a user does not use the Condition combinator
 
-        log_joint = trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized) if self._with_joint else None
+        log_joint = trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, nodes=None if self._with_joint is None else self._with_joint)
 
         return Out(trace, log_joint, out, extras=dict(type=type(self).__name__))
 

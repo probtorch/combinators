@@ -5,7 +5,6 @@ import torch
 from torch import Tensor
 from torch import nn
 import torch.distributions as dist
-from combinators.inference import State
 from combinators.stochastic import Trace
 from typeguard import typechecked
 from typing import Callable
@@ -71,11 +70,6 @@ def print_grad(*args:nn.Module):
     for i, x in enumerate(*args):
         for j, param in enumerate(x.parameters()):
             print(i, j, param.grad)
-
-def excise_state(state:State) -> State:
-    tr = excise_trace(state.trace)
-    o = excise(state.output) if isinstance(state.output, Tensor) else state.output
-    return State(tr, o)
 
 def print_grads(learnables, bools_only=True):
     for i, k in enumerate(learnables):

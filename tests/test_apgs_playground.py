@@ -103,7 +103,7 @@ def apg_objective(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x, num_sw
     # ================================================================
     # sweep 1:
     debug.seed(1)
-    prp1 = Propose(ix=ix(fr=1,to=1),
+    prp1 = Propose(ix=ix(fr=0,to=1,block='is'),
             target=og, # og == original generator
             #          p(x,η_1,z_1)
             # ---------------------------------- [prp1]
@@ -143,7 +143,7 @@ def apg_objective(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x, num_sw
 
     debug.seed(4)
 
-    pro = Forward(enc_apg_eta, prp1, ix=ix(fr=1, to=2), _exclude={'lls'})
+    pro = Forward(enc_apg_eta, prp1, ix=ix(fr=1, to=2, block='eta'), _exclude={'lls'})
     of2 = pro(**kwargs)
 
     def compare(x, getter, expected):
@@ -163,7 +163,7 @@ def apg_objective(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x, num_sw
     # Need to confirm that: q(η_2 | z_1 x) p_{prp1}(x η_1 z_1)
     breakpoint();
 
-    tar = Condition(Reverse(og, enc_apg_eta, ix=ix(fr=2, to=1), trace=of2.trace, _exclude={'lls'}))
+    tar = Condition(Reverse(og, enc_apg_eta, ix=ix(fr=2, to=1, block='eta'), trace=of2.trace, _exclude={'lls'}))
     or2 = tar(**kwargs)
 
     # =======================================================================================
@@ -173,20 +173,20 @@ def apg_objective(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x, num_sw
     # =======================================================================================
 
     prp21 = Propose(
-        target=Reverse(og, enc_apg_eta, ix=sweepix(sweep=2, stage=1)),
+        target=Reverse(og, enc_apg_eta, ix=sweepix(sweep=2, stage=1, block='eta')),
         #       p(x η_2 z_1) q(η_1 | z_1 x)
         # --------------------------------------- [prp21]
         #    q(η_2 | z_1 x) p_{prp1}(x η_1 z_1)
-        proposal=Forward(enc_apg_eta, prp1, ix=sweepix(sweep=2, stage=2)))
+        proposal=Forward(enc_apg_eta, prp1, ix=sweepix(sweep=2, stage=2, block='eta')))
 
 
     prp22 = Propose(
-        ix=sweepix(sweep=2, stage=2),
-        target=Reverse(og, enc_apg_eta),
+        ix=sweepix(sweep=2, stage=2, block='z'),
+        target=Reverse(og, enc_apg_z),
         #       p(x η_2 z_2) q(z_1 | η_2 x)
         # --------------------------------------- [prp22]
         #    q(z_2 | η_2 x) p_{prp22}(x η_2 z_1)
-        proposal=Forward(enc_apg_eta, prp21))
+        proposal=Forward(enc_apg_z, prp21))
 
     def compare(x, getter):
         # print(torch.equal(getter(q_eta_z_f[x]), getter(of2.kernel.trace[x])))
@@ -264,21 +264,13 @@ def apg_objective(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x, num_sw
 
     return metrics
 
-def mk_metrics(loss, out, num_sweeps=1, ess_required=True, mode_required=True, density_required=True, mode_required_with_z=False, ix=None):
+def mk_metrics(loss, out, num_sweeps=1, ess_required=True, mode_required=True, density_required=True, mode_required_with_z=False):
     with torch.no_grad():
         metrics = dict()
         metrics['loss'] = loss.mean().cpu().item()
         if ess_required:
             w = F.softmax(out.log_omega.detach(), 0)
             metrics['ess'] = (1. / (w**2).sum(0)).mean().cpu().item()
-        if mode_required:
-            assert ix != None
-            q_eta_z = out.proposal.trace
-            metrics['E_tau'] = (q_eta_z[f'precisions{ix.to}'].dist.concentration / q_eta_z[f'precisions{ix.to}'].dist.rate).mean(0).detach().mean().cpu().item()
-            metrics['E_mu'] = q_eta_z[f'means{ix.to}'].dist.loc.mean(0).detach().mean().cpu().item()
-            if mode_required_with_z:
-                # this is stable at 1/3
-                metrics['E_z'] = q_eta_z[f'states{ix.to}'].dist.probs.mean(0).detach().mean().cpu().item()
         if density_required:
             metrics['density'] = out.target.log_omega.detach().mean().cpu().item()
 
@@ -418,8 +410,9 @@ def rws_objective_eager(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg_eta=N
         debug.seed(1)
 
     # otherwise, eager combinators looks like:
-    prp = Propose(proposal=Forward(enc_apg_z, enc_rws_eta), target=og, ix=ix(1,1))
+    prp = Propose(proposal=Forward(enc_apg_z, enc_rws_eta), target=og, ix=ix(sweep=1,rev=False,block='is'))
     out = prp(x=x, prior_ng=og.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
+    breakpoint();
 
     log_w = out.log_omega.detach()
     w = F.softmax(log_w, 0)
@@ -429,7 +422,7 @@ def rws_objective_eager(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg_eta=N
         assert torch.allclose(log_w, _log_w)
         assert trace_utils.valeq(out.trace, _q_eta_z_out.trace)
 
-    return loss, mk_metrics(loss, out, ix=ix(1,1))
+    return loss, mk_metrics(loss, out)
 
 def rws_objective_declarative(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg_eta=None, compare=True, sample_size=None, num_sweeps=1):
     assert num_sweeps == 1
@@ -445,7 +438,7 @@ def rws_objective_declarative(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg
         return (w * (- out.proposal.log_omega)).sum(0).mean() + loss
 
     # otherwise, eager combinators looks like:
-    prp = Propose(proposal=Forward(enc_apg_z, enc_rws_eta), target=og, ix=ix(1,1), loss_fn=loss_fn)
+    prp = Propose(proposal=Forward(enc_apg_z, enc_rws_eta, ix=ix(sweep=1,rev=False,block='is')), target=og, loss_fn=loss_fn)
     out = prp(x=x, prior_ng=og.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
 
     if compare:
@@ -453,7 +446,7 @@ def rws_objective_declarative(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg
         assert torch.allclose(out.log_omega, _log_w)
         assert trace_utils.valeq(out.trace, _q_eta_z_out.trace)
 
-    return out.loss, mk_metrics(out.loss, out, ix=ix(1,1))
+    return out.loss, mk_metrics(out.loss, out)
 
 def test_rws_vae_eager():
     main(objective=rws_objective_eager, num_sweeps=1, is_smoketest=debug.is_smoketest(), simulate=False)
@@ -462,16 +455,69 @@ def test_rws_vae_declarative():
     main(objective=rws_objective_declarative, num_sweeps=1, is_smoketest=debug.is_smoketest(), simulate=False)
 
 
-
 def apg_objective_eager(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x, sample_size, num_sweeps, compare=True):
+    assert num_sweeps == 2
     if compare:
-        assert num_sweeps == 2
+        debug.seed(1)
+        breakpoint();
+
         from combinators.resampling.strategies import APGSResamplerOriginal
         resampler = APGSResamplerOriginal(sample_size)
         sweeps, metrics = hao.apg_objective((enc_rws_eta, enc_apg_z, enc_apg_eta, og), x, num_sweeps, resampler)
+        debug.seed(1)
+
+    breakpoint();
+    jkwargs = dict(sample_dims=0, batch_dim=1, reparameterized=False)
+    kwargs = dict(x=x, prior_ng=og.prior_ng, **jkwargs)
+    prp1 = Propose(
+            target=og, # og == original generator
+            #          p(x,η_1,z_1)
+            # ---------------------------------- [prp1]
+            #          q(z_1 | η_1, x) q_0(η_1|x)
+            proposal=Forward(enc_apg_z, enc_rws_eta, ix=ix(sweep=1,rev=False,block='is')))
+
+    out1 = prp1(**kwargs)
+    log_w1 = out1.log_omega.detach()
+    loss1 = (F.softmax(log_w1, 0) * (- out1.proposal.log_omega)).sum(0).mean()
+
+    if compare:
+        assert torch.equal(loss1, sweeps[1]['metrics']['loss'][0])
+        assert torch.allclose(log_w1, sweeps[1]['log_w'])
+        assert trace_utils.valeq(out1.trace, sweeps[1]['q_eta_z'])
+        debug.seed(1)
+
+        print(sweeps[2][1]['q_eta_z'])
+        print(sweeps[2][1]['aux']['log_q_f'].sum(), sweeps[2][1]['aux']['log_q_f'].mean())
+
+    fwd21 = Forward(enc_apg_eta, prp1, ix=ix(sweep=2,rev=False,block='eta'), _exclude={'lls', 'means1', 'precisions1'})
+    fout21 = fwd21(**kwargs, _debug=True, _debug_extras=sweeps[2][1])
+
+    if compare:
+        print(fout21.log_omega.sum(), fout21.log_omega.mean())
+        debug.seed(1)
+
+    prp2 = Propose(
+            target=Reverse(og, enc_apg_eta, ix=ix(sweep=2,rev=True,block='eta')),
+            #          p(x,η_2,z) q(η_1 | z, x)
+            # ---------------------------------------
+            #          q(η_2 | z, x) prp_1(η_1,x,z)
+            proposal=Forward(enc_apg_eta, prp1, ix=ix(sweep=2,rev=False,block='eta')))
+
+    out2 = prp2(**kwargs, _debug=True, _debug_extras=out1)
+    log_w2 = out2.log_omega.detach()
+    loss2 = (F.softmax(log_w2, 0) * (- out2.proposal.log_omega)).sum(0).mean()
+
+    if compare:
         breakpoint();
 
-        return loss, metrics
+
+
+    debug.seed(4)
+
+    pro = Forward(enc_apg_eta, prp1, ix=ix(fr=1, to=2), _exclude={'lls'})
+    of2 = pro(**kwargs)
+
+    return loss, mk_metrics(loss, out, ix=ix(sweep=1,rev=True1))
 
 def test_apg_2sweep_eager():
     main(objective=apg_objective_eager, num_sweeps=2, is_smoketest=debug.is_smoketest(), simulate=False)

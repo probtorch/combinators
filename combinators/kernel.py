@@ -43,7 +43,6 @@ class Kernel(TraceModule):
         passable_kwargs = {k: v for k,v in check_kwargs.items() if check_passable_kwarg(k, self.apply_kernel)}
         out = self.apply_kernel(trace, cond_trace, cond_outs, **passable_kwargs)
 
-
         if validate and not trace_utils.valeq(cond_trace, trace):
             raise RuntimeError("RVs in trace are not correctly conditioned on the cond_trace")
 

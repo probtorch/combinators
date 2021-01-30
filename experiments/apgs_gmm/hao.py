@@ -10,7 +10,9 @@ def oneshot(enc_rws_eta, enc_apg_z, generative, x, metrics):
     """
     One-shot for eta and z, like a normal RWS
     """
-    q_eta_z = enc_rws_eta(x, prior_ng=generative.prior_ng)
+    debug.seed(1)
+    q_eta_z = enc_rws_eta(x, prior_ng=generative.prior_ng, ix='')
+    debug.seed(2)
     q_eta_z = enc_apg_z(q_eta_z.trace, q_eta_z.output, x=x, prior_ng=generative.prior_ng, ix='')
     log_q = q_eta_z.trace.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
 
@@ -179,7 +181,6 @@ def apg_objective(models, x, num_sweeps, resampler, resample=False):
     z : S * B * N * K, cluster assignments, as local variables
     ==========
     """
-    debug.seed(0)
     result_flags = {'loss_required' : True, 'ess_required' : True, 'mode_required' : False, 'density_required': True}
     metrics = {'loss' : [], 'ess' : [], 'E_tau' : [], 'E_mu' : [], 'E_z' : [], 'density' : []} ## a dictionary that tracks things needed during the sweeping
     (enc_rws_eta, enc_apg_z, enc_apg_eta, generative) = models
@@ -188,18 +189,21 @@ def apg_objective(models, x, num_sweeps, resampler, resample=False):
     if resample:
         q_eta_z_trace = resample_variables(resampler, q_eta_z, log_weights=log_w)
 
-    sweeps = [ dict(log_w=log_w, q_eta_z=q_eta_z, metrics=metrics) ]
+    # 1-index sweeps
+    sweeps = [None, dict(log_w=log_w, q_eta_z=q_eta_z.trace, metrics=metrics) ]
+
 
     for m in range(num_sweeps-1):
-        sweeps.append([dict(), dict()])
+        sweeps.append([None, dict(), dict()])
+        debug.seed(2)
         log_w_eta, q_eta_z, metrics, aux = apg_update_eta(enc_apg_eta, generative, q_eta_z_trace, x, metrics, result_flags)
         q_eta_z_trace = q_eta_z.trace
-        sweeps[-1][0] = dict(log_w_eta=log_w_eta, q_eta_z=q_eta_z_trace, metrics=metrics, aux=aux)
+        sweeps[-1][1] = dict(log_w_eta=log_w_eta, q_eta_z=q_eta_z_trace, metrics=metrics, aux=aux)
         if resample:
             q_eta_z_trace = resample_variables(resampler, q_eta_z_trace, log_weights=log_w_eta)
         log_w_z, q_eta_z, metrics, aux = apg_update_z(enc_apg_z, generative, q_eta_z_trace, x, metrics, result_flags)
         q_eta_z_trace = q_eta_z.trace
-        sweeps[-1][1] = dict(log_w_z=log_w_z, q_eta_z=q_eta_z, metrics=metrics, aux=aux)
+        sweeps[-1][2] = dict(log_w_z=log_w_z, q_eta_z=q_eta_z.trace, metrics=metrics, aux=aux)
         if resample:
             q_eta_z_trace = resample_variables(resampler, q_eta_z_trace, log_weights=log_w_z)
 
