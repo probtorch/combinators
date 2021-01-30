@@ -412,7 +412,6 @@ def rws_objective_eager(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg_eta=N
     # otherwise, eager combinators looks like:
     prp = Propose(proposal=Forward(enc_apg_z, enc_rws_eta), target=og, ix=ix(sweep=1,rev=False,block='is'))
     out = prp(x=x, prior_ng=og.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
-    breakpoint();
 
     log_w = out.log_omega.detach()
     w = F.softmax(log_w, 0)
@@ -438,7 +437,12 @@ def rws_objective_declarative(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg
         return (w * (- out.proposal.log_omega)).sum(0).mean() + loss
 
     # otherwise, eager combinators looks like:
-    prp = Propose(proposal=Forward(enc_apg_z, enc_rws_eta, ix=ix(sweep=1,rev=False,block='is')), target=og, loss_fn=loss_fn)
+    prp = Propose(
+        ix=ix(sweep=1,rev=False, block='is'),
+        loss_fn=loss_fn,
+        target=og,
+        proposal=Forward(enc_apg_z, enc_rws_eta),
+        )
     out = prp(x=x, prior_ng=og.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
 
     if compare:
