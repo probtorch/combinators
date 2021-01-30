@@ -243,7 +243,8 @@ class Trace(MutableMapping):
         for n in self:
             node = self[n]
             if isinstance(node, RandomVariable):
-                dname = type(node.dist).__name__
+                # dname = type(node.dist).__name__
+                dname = repr(node.dist)
             else:
                 dname = type(node).__name__
             if isinstance(node, Factor):
@@ -255,7 +256,7 @@ class Trace(MutableMapping):
                 is_scalar = len(node.value.size()) == 0
                 dsize = "1" if is_scalar else 'x'.join([str(d) for d in node.value.size()])
             val_repr = tensor_utils.show(node.log_prob if isinstance(node, Factor) else node.value) # "[%s of size %s]" % (dtype, dsize)
-            node_repr = "%s(%s)" % (dname, val_repr)
+            node_repr = "%s(value=%s)" % (dname, val_repr)
             item_reprs.append("%s: %s" % (repr(n), node_repr))
         return "Trace{%s}" % ", ".join(item_reprs)
 
