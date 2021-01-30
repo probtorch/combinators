@@ -29,7 +29,7 @@ class Kernel(TraceModule):
     def apply_kernel(self, trace: Trace, cond_trace: Trace, outs: Output, sample_dims:Optional[int]=None, batch_dims=None, **kwargs:Any): #, batch_dim:Optional[int]=None) -> Output:
         raise NotImplementedError()
 
-    def forward(self, cond_trace: Trace, cond_outs: Output, sample_dims:int=None, batch_dims:int=None, validate:bool=True, **kwargs) -> Out:
+    def forward(self, cond_trace: Trace, cond_outs: Output, sample_dims:int=None, batch_dims:int=None, validate:bool=True, _debug=False, **kwargs) -> Out:
         if not (isinstance(cond_trace, Trace) and
                 isinstance(sample_dims, (int, type(None))) and
                 isinstance(batch_dims, (int, type(None))) and
@@ -42,6 +42,7 @@ class Kernel(TraceModule):
         check_kwargs = dict(sample_dims=sample_dims, batch_dims=batch_dims, **kwargs)
         passable_kwargs = {k: v for k,v in check_kwargs.items() if check_passable_kwarg(k, self.apply_kernel)}
         out = self.apply_kernel(trace, cond_trace, cond_outs, **passable_kwargs)
+
 
         if validate and not trace_utils.valeq(cond_trace, trace):
             raise RuntimeError("RVs in trace are not correctly conditioned on the cond_trace")

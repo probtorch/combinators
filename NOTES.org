@@ -5,6 +5,12 @@
 ** DONE resample combinator
 ** DONE RWS-VAE on GMM
 ** TODO APGS on GMM
+*** DONE all nodes are indexed by ix.fr ix.to.
+*** TODO confirm that the traces are propogating as you would expect.
+**** NEXT confirm that 1step is correct
+**** TODO confirm 2step forward
+**** TODO confirm 2step reverse
+**** TODO Validate log_probs with hao's code
 ** TODO RWS-VAE on BMNIST
 ** TODO APGS on BMNIST
 * On Lazy observations

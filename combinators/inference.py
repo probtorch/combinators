@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod, abstractproperty
 import inspect
 import ast
 import weakref
-from typing import Iterable
+from typing import Iterable, NamedTuple
 import operator
 
 from combinators.types import check_passable_arg, check_passable_kwarg, get_shape_kwargs, Out
@@ -51,13 +51,13 @@ class Inf(ABC):
             loss_fn:Callable[[Tensor, Tensor], Tensor]=(lambda _, fin: fin),
             loss0=None,
             device=None,
-            _step=None,
+            ix:Union[Tuple[int], NamedTuple, None]=None,
             _debug=False,
             sample_dim=None,
             batch_dim=None):
         self.loss0 = torch.zeros(1, device=autodevice(device)) if loss0 is None else loss0.to(autodevice(device))
         self.foldl_loss = loss_fn
-        self._step = _step
+        self.ix = ix
         self._debug = _debug
         self._cache = Out(None, None, None)
         self.batch_dim = batch_dim
@@ -81,12 +81,12 @@ class Condition(Inf):
             detach:Set[str]=set(),
             as_trace=True,
             full_trace_return=True,
-            _step=None,
+            ix=None,
             _debug=False,
             loss_fn=(lambda x, fin: fin),
             loss0=None,
             device=None) -> None:
-        Inf.__init__(self, _step=_step, _debug=_debug, loss_fn=loss_fn, loss0=loss0, device=device)
+        Inf.__init__(self, ix=ix, _debug=_debug, loss_fn=loss_fn, loss0=loss0, device=device)
         assert trace is not None or program is not None
         self.process = process
         if trace is not None:
@@ -104,7 +104,7 @@ class Condition(Inf):
         if self.conditioning_trace is not None:
             conditioning_trace = self.conditioning_trace
         else:
-            cprog_out = self.conditioning_program(*args, _debug=_debug, **kwargs)
+            cprog_out = self.conditioning_program(*args, _debug=_debug, ix=self.ix, **kwargs)
             conditioning_trace = cprog_out.trace
             extras["conditioned_output"] = cprog_out
             raise RuntimeError("[wip] requires testing")
@@ -129,31 +129,36 @@ class Resample(Inf):
     """
     def __init__(
             self,
-            resample: Inf, # not Union[Program, Inf] because (@stites) is not computing log_joint for programs, (which I guess would be the joint?)
-            _step:Optional[int]=None,
+            program: Inf, # not Union[Program, Inf] because (@stites) is not computing log_joint for programs, (which I guess would be the joint?)
+            ix=None,
             _debug:bool=False,
-            strategy=rstrat.Systematic):
-        super().__init__(_step=_step, _debug=_debug)
-        self.resample = resample
-        self.strategy = strategy()
+            strategy=rstrat.Systematic()):
+        super().__init__(ix=ix, _debug=_debug)
+        self.program = program
+        self.strategy = strategy
 
-    def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, **shared_kwargs) -> Out:
-        resample_state = self.resample(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, **shared_kwargs)
-        # change_tr = mapvalues(resample_state.trace, mapper=lambda v: v.unsqueeze(1))
-        # change_lw = resample_state.log_weight.unsqueeze(1)
-        # tr, lw = resample_state.trace, resample_state.log_weight # aggregating state is currently a PITA
+    def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
+        inf_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        tr_, lw_ = self.strategy(resample_state.trace, resample_state.log_omega, sample_dim=sample_dims, batch_dim=batch_dim)
+        program_state = self.program(*shared_args, **inf_kwargs, **shared_kwargs)
+        # change_tr = mapvalues(program_state.trace, mapper=lambda v: v.unsqueeze(1))
+        # change_lw = program_state.log_weight.unsqueeze(1)
+        # tr, lw = program_state.trace, program_state.log_weight # aggregating state is currently a PITA
+        rkwargs = dict(sample_dim=sample_dims, batch_dim=batch_dim)
+
+        passable_kwargs = {k: v for k, v in rkwargs.items() if check_passable_kwarg(k, self.strategy)}
+
+        tr_, lw_ = self.strategy(program_state.trace, program_state.log_omega, **passable_kwargs)
 
         self._cache = Out(
             extras=dict(
-                resample=resample_state if self._debug or _debug else Out(*resample_state), # strip auxiliary traces
+                resample=program_state if self._debug or _debug else Out(*program_state), # strip auxiliary traces
                 type=type(self).__name__,
                 log_weight=lw_,
                 ),
             trace=tr_,
             log_omega=lw_,
-            output=resample_state.output)
+            output=program_state.output)
 
         return self._cache
 
@@ -163,10 +168,10 @@ class KernelInf(Conditionable, Inf):
             loss_fn=(lambda x, fin: fin),
             loss0=None,
             device=None,
-            _step=None,
+            ix=None,
             _debug=False):
         Conditionable.__init__(self)
-        Inf.__init__(self, _step=_step, _debug=_debug, loss_fn=loss_fn, loss0=loss0, device=device)
+        Inf.__init__(self, ix=ix, _debug=_debug, loss_fn=loss_fn, loss0=loss0, device=device)
         self._permissive_arguments = _permissive_arguments
 
     def _show_traces(self):
@@ -184,22 +189,29 @@ class Reverse(KernelInf):
             loss_fn=(lambda x, fin: fin),
             loss0=None,
             device=None,
-            _step=None,
+            ix=None,
             _debug=False,
+            _exclude=set(),
             _permissive=True) -> None:
-        super().__init__(_permissive, loss_fn=loss_fn, loss0=loss0, device=device, _step=_step, _debug=_debug)
+        super().__init__(_permissive, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
         self.program = program
         self.kernel = kernel
+        self._exclude = _exclude
 
-    def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, **program_kwargs:Any) -> Out:
+    def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **program_kwargs:Any) -> Out:
+        shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
+
+        inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
+
         program = Condition(self.program, trace=self._cond_trace, as_trace=False) if self._cond_trace is not None else self.program
 
-        program_state = _dispatch(permissive=True)(program)(*program_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, **program_kwargs)
+        program_state = _dispatch(permissive=True)(program)(*program_args, **inf_kwargs, **program_kwargs)
 
         kernel = Condition(self.kernel, trace=self._cond_trace) if self._cond_trace is not None else self.kernel
-        kernel_state = _dispatch(permissive=True)(kernel)(program_state.trace, program_state.output, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, **program_kwargs)
 
-        log_aux = kernel_state.trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
+        kernel_state = _dispatch(permissive=True)(kernel)(program_state.trace, program_state.output, **inf_kwargs, **program_kwargs)
+
+        log_aux = kernel_state.trace.log_joint(**shape_kwargs, nodes=set(kernel_state.trace.keys()) - self._exclude)
 
         out_trace = program_state.trace.as_trace(access_only=True) if isinstance(program_state.trace, ConditioningTrace) \
                         else program_state.trace
@@ -219,28 +231,35 @@ class Reverse(KernelInf):
         return self._cache
 
 class Forward(KernelInf):
-    def __init__(self,
+    def __init__(
+            self,
             kernel: Kernel,
-            program: Union[Program, KernelInf, Condition, Resample], # anything that isn't a propose
+            program: Union[Program, Condition, Resample, KernelInf, Inf],
             loss_fn=(lambda x, fin: fin),
             loss0=None,
             device=None,
-            _step=None,
+            ix=None,
             _debug=False,
-            _permissive=True) -> None:
-        super().__init__(_permissive, loss_fn=loss_fn, loss0=loss0, device=device, _step=_step, _debug=_debug)
+            _permissive=True,
+            _exclude=set(),
+    ) -> None:
+        super().__init__(_permissive, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
         self.program = program
         self.kernel = kernel
         self._run_program = _dispatch(permissive=True)(self.program)
         self._run_kernel = _dispatch(permissive=True)(self.kernel)
+        self._exclude = _exclude # really just for debugging APG
 
-    def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, **program_kwargs) -> Out:
+    def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **program_kwargs) -> Out:
+        shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
 
-        program_state = self._run_program(*program_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, **program_kwargs)
+        inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        kernel_state = self._run_kernel(program_state.trace, program_state.output, *program_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, **program_kwargs)
+        program_state = self._run_program(*program_args, **inf_kwargs, **program_kwargs)
 
-        log_omega = kernel_state.trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized) #, nodes=set(kernel_state.trace.keys()).intersection(set(program_state.trace.keys())))
+        kernel_state = self._run_kernel(program_state.trace, program_state.output, **inf_kwargs, **program_kwargs)
+
+        log_omega = kernel_state.trace.log_joint(**shape_kwargs, nodes=set(kernel_state.trace.keys()) - self._exclude)
 
         self._cache = Out(
             trace=kernel_state.trace,
@@ -257,24 +276,28 @@ class Forward(KernelInf):
         return self._cache
 
 
-class Propose(Inf):
+class Propose(Conditionable, Inf):
     def __init__(self,
             target: Union[Program, KernelInf],
             proposal: Union[Program, Inf],
             loss_fn=(lambda x, fin: fin),
             loss0=None,
             device=None,
-            _step:Optional[int]=None,
+            ix=None,
             _debug:bool=False):
-        super().__init__(loss_fn=loss_fn, loss0=loss0, device=device, _step=_step, _debug=_debug)
+        Conditionable.__init__(self)
+        Inf.__init__(self, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
         self.target = target
         self.proposal = proposal
 
-    def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, **shared_kwargs) -> Out:
-        proposal_state = self.proposal(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, **shared_kwargs)
+    def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
+        inf_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, ix=self.ix if self.ix is not None else ix)
+
+        # proposal = Condition(self.proposal, trace=self._cond_trace, as_trace=False) if self._cond_trace is not None else self.proposal
+        proposal_state = self.proposal(*shared_args, **inf_kwargs, **shared_kwargs)
 
         conditioned_target = Condition(self.target, trace=proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and _doesn't_ need the whole trace?
-        target_state = conditioned_target(*shared_args, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, **shared_kwargs)
+        target_state = conditioned_target(*shared_args, **inf_kwargs,  **shared_kwargs)
         lv = target_state.log_omega - proposal_state.log_omega
 
         self._cache = Out(

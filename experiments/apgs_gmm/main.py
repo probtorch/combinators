@@ -11,6 +11,8 @@ import math
 
 from typing import Tuple
 
+from collections import namedtuple
+from combinators.resampling.strategies import APGStrat
 from combinators.inference import _dispatch
 from combinators import Forward, Reverse, Propose, Condition, Resample, RequiresGrad
 from combinators.metrics import effective_sample_size, log_Z_hat
@@ -19,8 +21,7 @@ from combinators.stochastic import Trace
 import combinators.trace.utils as trace_utils
 import combinators.tensor.utils as tensor_utils
 import combinators.debug as debug
-from experiments.apgs_gmm.models import *
-from experiments.apgs_gmm.models import GenerativeLikelihoodV2, mk_target, Enc_rws_eta, Enc_apg_z, Enc_apg_eta, Generative, GenerativeOriginal
+from experiments.apgs_gmm.models import mk_target, Enc_rws_eta, Enc_apg_z, Enc_apg_eta, GenerativeOriginal
 from experiments.apgs_gmm.objectives import resample_variables, apg_update_z
 
 from torch.distributions.one_hot_categorical import OneHotCategorical as cat
@@ -32,53 +33,33 @@ else:
 
 def oneshot_hao(enc_rws_eta, enc_apg_z, og, x):
     _q_eta_z_out = enc_rws_eta(x, prior_ng=og.prior_ng)
-    _q_eta_z_out = enc_apg_z(_q_eta_z_out.trace, _q_eta_z_out.output, x=x, prior_ng=og.prior_ng)
+    _q_eta_z_out = enc_apg_z(_q_eta_z_out.trace, _q_eta_z_out.output, x=x, prior_ng=og.prior_ng, ix='')
     log_q = _q_eta_z_out.trace.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
 
     p = og.x_forward(_q_eta_z_out.trace, x)
     log_p = p.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-
     log_w = (log_p - log_q).detach()
     w = F.softmax(log_w, 0)
     _loss = (w * (- log_q)).sum(0).mean()
     return _loss, log_w, _q_eta_z_out
 
-def rws_objective_eager(enc_rws_eta, enc_apg_z, generative, og, x, compare=False, sample_size=None, num_sweeps=1):
+def xrws_objective_eager(enc_rws_eta, enc_apg_z, generative, og, x, compare=True, sample_size=None, num_sweeps=1):
     """ One-shot for eta and z, like a normal RWS """
     assert num_sweeps == 1
     if compare:
         debug.seed(1)
-        _loss, _log_w, _q_eta_z_out = oneshot_hao(enc_rws_eta, enc_apg_z, generative, og, x)
+        _loss, _log_w, _q_eta_z_out = oneshot_hao(enc_rws_eta, enc_apg_z, og, x)
         debug.seed(1)
 
     # otherwise, eager combinators looks like:
     prp = Propose(proposal=Forward(enc_apg_z, enc_rws_eta), target=og)
-    out = prp(x=x, prior_ng=generative.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
+    out = prp(x=x, prior_ng=og.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
 
     log_w = out.log_omega.detach()
     w = F.softmax(log_w, 0)
     loss = (w * (- out.proposal.log_omega)).sum(0).mean()
     if compare:
-        breakpoint();
-
-    return loss, mk_metrics(loss, w, out)
-
-def rws_objective_eager(enc_rws_eta, enc_apg_z, generative, og, x, compare=True, sample_size=None, num_sweeps=1):
-    """ One-shot for eta and z, like a normal RWS """
-    assert num_sweeps == 1
-    if compare:
-        debug.seed(1)
-        _loss, _log_w, _q_eta_z_out = oneshot_hao(enc_rws_eta, enc_apg_z, generative, og, x)
-        debug.seed(1)
-
-    # otherwise, eager combinators looks like:
-    prp = Propose(proposal=Forward(enc_apg_z, enc_rws_eta), target=og)
-    out = prp(x=x, prior_ng=generative.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
-
-    log_w = out.log_omega.detach()
-    w = F.softmax(log_w, 0)
-    loss = (w * (- out.proposal.log_omega)).sum(0).mean()
-    if compare:
+        print(torch.equal(log_w, _log_w))
         breakpoint();
 
     return loss, mk_metrics(loss, w, out)
@@ -143,8 +124,8 @@ def apg_update_z(enc_apg_z, generative, q_eta_z, x):
         metrics['density'].append(log_p_f.unsqueeze(0))
     return log_w, q_eta_z_f, metrics
 
-def resample_variables(resampler, q, log_omega):
-    ancestral_index = resampler.sample_ancestral_index(log_omega)
+def resample_variables(resampler, q, log_weights):
+    ancestral_index = resampler.sample_ancestral_index(log_weights)
     tau = q['precisions'].value
     tau_concentration = q['precisions'].dist.concentration
     tau_rate = q['precisions'].dist.rate
@@ -173,7 +154,7 @@ def resample_variables(resampler, q, log_omega):
     _ = q_resampled.variable(cat, probs=z_probs, value=z, name='states')
     return q_resampled
 
-def apg_objective(enc_rws_eta, enc_apg_z, generative, og, x, num_sweeps, sample_size, compare=True):
+def apg_objective(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x, num_sweeps, sample_size, compare=True):
     """
     Amortized Population Gibbs objective in GMM problem
     ==========
@@ -198,7 +179,7 @@ def apg_objective(enc_rws_eta, enc_apg_z, generative, og, x, num_sweeps, sample_
     # # #    _loss, _log_w, _q_eta_z_out = oneshot_hao(enc_rws_eta, enc_apg_z, generative, og, x)
     # # #
     # # #    from combinators.resampling.strategies import APGResampler
-    # # #    q_eta_z = resample_variables(resampler, _q_eta_z_out.trace, log_omega=_log_w)
+    # # #    q_eta_z = resample_variables(resampler, _q_eta_z_out.trace, log_weights=_log_w)
     # # #    debug.seed(1)
     # # #
     # # ## otherwise, eager combinators looks like:
@@ -217,57 +198,158 @@ def apg_objective(enc_rws_eta, enc_apg_z, generative, og, x, num_sweeps, sample_
     # ================================================================
     # sweep 1:
     debug.seed(1)
-    _loss, log_w, q_eta_z_out = oneshot_hao(enc_rws_eta, enc_apg_z, og, x)
-    q_eta_z = q_eta_z_out.trace
-    q_eta_z = resample_variables(resampler, q_eta_z, log_omega=log_w)
+    loss1, log_w1, q_eta_z_out1 = oneshot_hao(enc_rws_eta, enc_apg_z, og, x)
+    q_eta_z1 = q_eta_z_out1.trace
+    q_eta_z2 = q_eta_z1 # resample_variables(resampler, q_eta_z1, log_weights=log_w1)
+    log_wr2 = q_eta_z2.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     # ================================================================
     # sweep 2 (for m in range(num_sweeps-1)):
     # log_w_eta, q_eta_z, metrics = apg_update_eta(enc_apg_eta, generative, q_eta_z, x)
     # forward
-    q_eta_z_f = enc_apg_eta(q_eta_z, None, x=x, prior_ng=og.prior_ng) ## forward kernel
+    debug.seed(4)
+    q_eta_z_f = enc_apg_eta(q_eta_z2, None, x=x, prior_ng=og.prior_ng, ix="") ## forward kernel
     q_eta_z_f = q_eta_z_f.trace
+    print("q_eta_z_f.keys()", set(q_eta_z_f.keys()))
     p_f = og.x_forward(q_eta_z_f, x)
+    print("p_f.keys()", set(p_f.keys()))
     log_q_f = q_eta_z_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     log_p_f = p_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     log_w_f = log_p_f - log_q_f
-    print(tensor_utils.show(log_w_f))
+    print(tensor_utils.show(log_w1))
+    # print(tensor_utils.show(log_wr2))
+    # print(tensor_utils.show(log_w_f))
 
-    # <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
+    # <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
 
+    ix = namedtuple('sweepix', ['fr',#om
+                                'to'])
     # ================================================================
     # sweep 1:
     debug.seed(1)
-    prp1 = Resample(
-        Propose(
-            proposal=Forward(enc_apg_z, enc_rws_eta),
-            target=Reverse(og2, og2k)))
+    prp1 = Propose(ix=ix(fr=1,to=1),
+            target=og, # og == original generator
+            #          p(x,η_1,z_1)
+            # ---------------------------------- [prp1]
+            #          q(z_1 | η_1, x) q_0(η_1|x)
+            proposal=Forward(enc_apg_z, enc_rws_eta))
 
     out1 = prp1(**kwargs)
-    trace_utils.valeq(out1.trace, q_eta_z, strict=True)
+    try:
+        print(trace_utils.valeq(out1.trace, q_eta_z1))
+    except Exception as e:
+        print(e)
+    breakpoint();
+
+
+    print(torch.equal(out1.log_omega, log_w1))
+    print("out1 results ^^^^^")
+    import torch.nn.functional as F
 
     # ================================================================
     # sweep 2 (for m in range(num_sweeps-1)):
     # log_w_eta, q_eta_z, metrics = apg_update_eta(enc_apg_eta, generative, q_eta_z, x)
-    debug.seed(1)
-    prp1 = Resample(Propose(
-            proposal=Forward(enc_apg_z, enc_rws_eta),
-            target=Reverse(og2, og2k)))
+    # debug.seed(1)
+    # fwd2 = Forward(kernel=enc_apg_eta, program=Resample(prp1, strategy=APGStrat(sample_size)))
+    # prp2 = Propose(proposal=fwd2, target=Reverse(og2, og2k))
 
-    fwd2 = Forward(kernel=enc_apg_eta, program=prp1)
-    prp2 = Propose(proposal=fwd2, target=Reverse(og2, og2k))
+    # debug.seed(1)
+    print("1 still working?", torch.equal(out1.log_omega, log_w1))
+    # prp2 = Propose(
+    #         target=Reverse(og, enc_apg_eta), # og == original generator
+    #         #          p(x,η,z_2) q(η_1 | η, x)                 #
+    #         # ---------------------------------------
+    #         #          q(z_2 | η, x) prp_1(z_1,x,η)             # <<< (τ_prp1:{η,z})
+    #         proposal=Forward(enc_apg_eta, Condition(prp1, out1.proposal.trace)))
 
+    print("with z2s", q_eta_z_f)
+    print("lprobs", log_q_f.sum(), log_q_f.mean())
+
+    debug.seed(4)
+
+    pro = Forward(enc_apg_eta, prp1, ix=ix(fr=1, to=2), _exclude={'lls'})
+    of2 = pro(**kwargs)
+
+    def compare(x, getter, expected):
+        # print(torch.equal(getter(q_eta_z_f[x]), getter(of2.kernel.trace[x])))
+        print("GOT:", torch.equal(getter(out1.trace[x]), getter(of2.program.trace[x])), "EXPECTED:", expected)
+
+    # compare('states1', lambda x: x.dist.probs, True)
+    # compare('states1', lambda x: x.value, True)
+    # compare('lls', lambda x: x.value, True)
+    # compare('lls', lambda x: x.dist.loc, True)
+    # compare('lls', lambda x: x.dist.scale, True)
+    #
+    # print(tensor_utils.show(of2.trace['precisions'].dist.rate))
+    # compare('precisions', lambda x: x.dist.rate, False)
+    # print(tensor_utils.show(of2.trace['precisions'].dist.concentration))
+    # compare('precisions', lambda x: x.dist.concentration, False)
+    # Need to confirm that: q(η_2 | z_1 x) p_{prp1}(x η_1 z_1)
+    breakpoint();
+
+    tar = Condition(Reverse(og, enc_apg_eta, ix=ix(fr=2, to=1), trace=of2.trace, _exclude={'lls'}))
+    or2 = tar(**kwargs)
+
+    # =======================================================================================
+    # =======================================================================================
+    # =======================================================================================
+    # =======================================================================================
+    # =======================================================================================
+
+    prp21 = Propose(
+        target=Reverse(og, enc_apg_eta, ix=sweepix(sweep=2, stage=1)),
+        #       p(x η_2 z_1) q(η_1 | z_1 x)
+        # --------------------------------------- [prp21]
+        #    q(η_2 | z_1 x) p_{prp1}(x η_1 z_1)
+        proposal=Forward(enc_apg_eta, prp1, ix=sweepix(sweep=2, stage=2)))
+
+
+    prp22 = Propose(
+        ix=sweepix(sweep=2, stage=2),
+        target=Reverse(og, enc_apg_eta),
+        #       p(x η_2 z_2) q(z_1 | η_2 x)
+        # --------------------------------------- [prp22]
+        #    q(z_2 | η_2 x) p_{prp22}(x η_2 z_1)
+        proposal=Forward(enc_apg_eta, prp21))
+
+    def compare(x, getter):
+        # print(torch.equal(getter(q_eta_z_f[x]), getter(of2.kernel.trace[x])))
+        print(torch.equal(getter(out1.trace[x]), getter(of2.program.trace[x])))
+    compare('precisions', lambda x: x.dist.concentration)
+    compare('precisions', lambda x: x.dist.rate)
+    compare('precisions', lambda x: x.value)
+    compare('means',  lambda x: x.dist.loc)
+    compare('means',  lambda x: x.dist.scale)
+    compare('means',  lambda x: x.value)
+    compare('states', lambda x: x.dist.probs)
+    compare('states', lambda x: x.value)
+
+    print(torch.equal(q_eta_z_f['precisions'].dist.concentration, of2.program.trace['precisions'].dist.concentration))
+    print(log_q_f.sum(), log_q_f.mean())
+    print(of2.log_omega.sum(), of2.log_omega.mean())
+    # print(log_p_f.sum(), log_p_f.mean())
+    # print(of2.target.log_omega.sum(), of2.target.log_omega.mean())
+    # print(log_w_f.sum(), log_w_f.mean())
+    # print(of2.log_omega.sum(), of2.log_omega.mean())
+
+    breakpoint();
     out2 = prp2(**kwargs)
 
-    def debug_print(a, b):
+    def debug_print(desc, a, b):
         with torch.no_grad():
             eq = torch.equal(a, b)
-            print(eq, *[t.detach().sum().cpu().item() for t in [a, b] if not eq])
+            print(desc, eq, *[t.detach().sum().cpu().item() for t in [a, b] if not eq])
 
-    debug_print(log_q_f, out2.proposal.log_omega)
-    debug_print(log_p_f, out2.target.log_omega)
-    debug_print(log_w_f, out2.log_omega)
-
-    print(tensor_utils.show(log_w_f), tensor_utils.show(out2.log_omega))
+    print("(Proposal>Forward>Resample).trace == q_eta_z_f?", trace_utils.valeq(out2.proposal.program.trace, q_eta_z_f, strict=True))
+    print("log_wr2", log_wr2.sum())
+    debug_print("(Proposal>Forward>Resample).log_ω == log_q_f?", log_q_f, out2.proposal.program.log_omega) # log_q_f = q_eta_z_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    print("(Proposal>Forward>Resample).log_ω", out2.proposal.program.log_omega.sum())
+    print("(Proposal>Forward>EncAPG_η).log_ω", out2.proposal.kernel.log_omega.sum() if out2.proposal.kernel.log_omega is not None else None)
+    print("(Proposal>Forward).log_ω", out2.proposal.log_omega.sum())
+    print("log_q_f", log_q_f.sum())
+    # debug_print("(Proposal>Forward>Resample).log_ω == log_p_f?", log_p_f, out2.target.log_omega)
+    # debug_print("(Proposal).log_ω == log_w_f?", log_w_f, out2.log_omega)
+    #
+    # print(tensor_utils.show(log_w_f), tensor_utils.show(out2.log_omega))
     breakpoint();
 
     log_q_f = q_eta_z_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
@@ -299,9 +381,9 @@ def apg_objective(enc_rws_eta, enc_apg_z, generative, og, x, num_sweeps, sample_
     w = F.softmax(log_w, 0).detach()
     breakpoint();
     # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    q_eta_z = resample_variables(resampler, q_eta_z, log_omega=log_w_eta)
+    q_eta_z = resample_variables(resampler, q_eta_z, log_weights=log_w_eta)
     log_w_z, q_eta_z, metrics = apg_update_z(enc_apg_z, og, q_eta_z, x)
-    q_eta_z = resample_variables(resampler, q_eta_z, log_omega=log_w_z)
+    q_eta_z = resample_variables(resampler, q_eta_z, log_weights=log_w_z)
 
     return metrics
 
@@ -357,7 +439,7 @@ def train(objective, models, target, og, og2, data, assignments, num_epochs, sam
             for b in batches:
                 optimizer.zero_grad()
                 x = data[b*batch_size : (b+1)*batch_size].repeat(sample_size, 1, 1, 1)
-                loss, metrics = objective(enc_rws_eta=enc_rws_eta, enc_apg_z=enc_apg_z, generative=og2, og=og, x=x, sample_size=sample_size, num_sweeps=num_sweeps)
+                loss, metrics = objective(enc_rws_eta=enc_rws_eta, enc_apg_z=enc_apg_z, enc_apg_eta=enc_apg_eta, generative=og2, og=og, x=x, sample_size=sample_size, num_sweeps=num_sweeps)
 
                 loss.backward()
                 optimizer.step()
@@ -422,16 +504,16 @@ if __name__ == '__main__':
     enc_rws_eta = Enc_rws_eta(K, D)
     enc_apg_z = Enc_apg_z(K, D, num_hidden=30)
     enc_apg_eta = Enc_apg_eta(K, D)
-    generative = Generative(K, normal_gamma_priors)
+    # generative = Generative(K, normal_gamma_priors)
     og = GenerativeOriginal(K, D, False, 'cpu')
 
-    og2 = GenerativeV2(K, D, False, 'cpu')
-    og2k = GenerativeLikelihoodV2()
+    og2 = None
+    og2k = None
 
     train(
         objective=rws_objective_eager if num_sweeps == 1 else apg_objective,
         models=[enc_rws_eta, enc_apg_z, enc_apg_eta],
-        target=generative,
+        target=og,
         og=og,
         og2=(og2, og2k),
         data=data,
