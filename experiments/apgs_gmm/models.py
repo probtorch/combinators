@@ -20,6 +20,8 @@ from combinators.trace.utils import maybe_sample
 import torch
 from combinators.densities import RingGMM
 
+ix = namedtuple('sweepix', ['fr',#om
+                           'to'])
 
 def mk_target(normal_gamma_priors):
     return Generative(num_clusters=3, normal_gamma_priors=normal_gamma_priors)

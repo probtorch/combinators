@@ -1,12 +1,12 @@
 #+TITLE: Notes
 * TODOs
 ** DONE test whole-program conditioning
-*** DONE make sure the declartive annealing experiment didn't get messed up by not including whole-program conditioning.
+*** DONE make sure the declarative annealing experiment didn't get messed up by not including whole-program conditioning.
 ** DONE resample combinator
 ** DONE RWS-VAE on GMM
 ** TODO APGS on GMM
 *** DONE all nodes are indexed by ix.fr ix.to.
-*** TODO confirm that the traces are propogating as you would expect.
+*** TODO confirm that the traces are propagating as you would expect.
 **** NEXT confirm that 1step is correct
 **** TODO confirm 2step forward
 **** TODO confirm 2step reverse

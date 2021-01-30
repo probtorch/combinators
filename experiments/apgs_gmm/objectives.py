@@ -324,6 +324,7 @@ def resample_variables(resampler, q, log_weights):
     mu_scale = q['means'].dist.scale
     z = q['states'].value
     z_probs = q['states'].dist.probs
+
     tau = resampler.resample_4dims(var=tau, ancestral_index=ancestral_index)
     tau_concentration = resampler.resample_4dims(var=tau_concentration, ancestral_index=ancestral_index)
     tau_rate = resampler.resample_4dims(var=tau_rate, ancestral_index=ancestral_index)
