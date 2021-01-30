@@ -24,6 +24,7 @@ mach-nix.mkPython {
     "hydra-core"
     "hydra_colorlog"
     "jupyterlab"
+    "jedi==0.17.2"
   ];
 
   packagesExtra = [
@@ -43,6 +44,7 @@ mach-nix.mkPython {
     jupyterlab = "wheel";
     anyio = "wheel";
     mypy = "wheel"; # must be up-to-date
+    jedi = "wheel";
   } // {
     antlr4-python3-runtime = "nixpkgs";
     tornado = "nixpkgs";
