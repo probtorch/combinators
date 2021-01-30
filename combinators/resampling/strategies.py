@@ -2,6 +2,8 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 from typing import Tuple
+import math
+import torch.distributions as D
 from torch.distributions.categorical import Categorical
 from torch.distributions.uniform import Uniform
 from combinators.tensor.utils import kw_autodevice
@@ -64,7 +66,8 @@ class Systematic(Strategy):
                 raise NotImplementedError()
 
             new_trace.append(var, name=key)
-        log_weight = torch.logsumexp(log_weight - log_weight.shape[self.sample_dim], dim=self.sample_dim, keepdim=True).expand_as(log_weight)
+        # REVIEW NEW CODE
+        log_weight = torch.logsumexp(log_weight - math.log(log_weight.shape[self.sample_dim]), dim=self.sample_dim, keepdim=True).expand_as(log_weight)
         return new_trace, log_weight
 
     def _(self, trace, log_weight):
