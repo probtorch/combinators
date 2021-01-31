@@ -357,7 +357,7 @@ class Propose(Conditionable, Inf):
         proposal_state = self.proposal(*shared_args, **inf_kwargs, **shared_kwargs)
 
         conditioned_target = Condition(self.target, trace=proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and _doesn't_ need the whole trace?
-        target_state = conditioned_target(*shared_args, **inf_kwargs,  **shared_kwargs)
+        target_state = conditioned_target(proposal_state.output, *shared_args, **inf_kwargs,  **shared_kwargs)
 
         lv = target_state.log_prob - proposal_state.log_prob
 
@@ -375,6 +375,7 @@ class Propose(Conditionable, Inf):
             log_prob=target_state.log_prob,
             output=target_state.output,)
         self._cache['loss'] = self.foldl_loss(self._cache, maybe(proposal_state, 'loss', self.loss0))
+
         if ix is not None:
             self._cache['ix'] = ix
         return self._cache
