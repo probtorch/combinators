@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 import torch
 import torch.nn as nn
+from torch import Tensor
 from combinators.stochastic import Trace
 from typing import Callable, Any, Tuple, Optional, Set
 from copy import deepcopy
 from typeguard import typechecked
-from combinators.types import check_passable_kwarg
+from combinators.types import check_passable_kwarg, Out
+import combinators.tensor.utils as tensor_utils
+import combinators.trace.utils as trace_utils
 import inspect
 
 
@@ -25,7 +28,27 @@ def remains_pure(tr: Trace) -> Callable[[Trace], bool]:
 
     return check
 
-
+def ppr(a:Any, m=None):
+    if isinstance(a, Tensor):
+        print(tensor_utils.show(a))
+    elif isinstance(a, Trace):
+        if m is None:
+            print(trace_utils.showall(a, args=['value'], dists=True))
+        else:
+            args = []
+            kwargs = dict()
+            if 'v' in m:
+                args.append('value')
+            if 'p' in m:
+                args.append('log_prob')
+            if 'd' in m:
+                kwargs['dists'] = True
+            print(trace_utils.showall(a, args=args, **kwargs))
+    elif isinstance(a, Out):
+        print(f"got type {type(a)}, guessing you want the trace:")
+        ppr(a.trace)
+    else:
+        print(f"invalid type: {type(a)}")
 
 # FIXME: currently not used, but currying the annotations might be nice
 def curry(func):

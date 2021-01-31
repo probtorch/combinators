@@ -29,6 +29,7 @@ from inspect import signature
 import inspect
 from combinators.objectives import nvo_avo
 import combinators.resampling.strategies as rstrat
+from combinators.utils import ppr
 
 def maybe(obj, name, default, fn=(lambda x: x)):
     return fn(getattr(obj, name)) if hasattr(obj, name) else default
