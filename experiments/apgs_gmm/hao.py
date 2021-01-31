@@ -3,6 +3,7 @@
 from combinators.stochastic import Trace
 import torch.nn.functional as F
 import combinators.debug as debug
+import combinators.trace.utils as trace_utils
 import torch
 
 
@@ -54,13 +55,15 @@ def apg_update_eta(enc_apg_eta, generative, q_eta_z_trace, x, metrics, result_fl
     # forward
     q_eta_z_f = enc_apg_eta(q_eta_z_trace, cond_outs=None, x=x, prior_ng=generative.prior_ng, ix='') ## forward kernel
     p_f = generative.x_forward(q_eta_z_f.trace, x)
-    log_q_f = q_eta_z_f.trace.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    q_eta_z_f_trace = trace_utils.copysubtrace(q_eta_z_f.trace, {'means0', 'precisions0'})
+    log_q_f = q_eta_z_f_trace.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     log_p_f = p_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     log_w_f = log_p_f - log_q_f
     ## backward
     q_eta_z_b = enc_apg_eta(q_eta_z_trace, cond_outs=None, x=x, prior_ng=generative.prior_ng, ix='')
     p_b = generative.x_forward(q_eta_z_b.trace, x)
-    log_q_b = q_eta_z_b.trace.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    q_eta_z_b_trace = trace_utils.copysubtrace(q_eta_z_b.trace, {'means0', 'precisions0'})
+    log_q_b = q_eta_z_b_trace.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     log_p_b = p_b.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     log_w_b = log_p_b - log_q_b
     log_w = (log_w_f - log_w_b).detach()
@@ -84,13 +87,13 @@ def apg_update_eta(enc_apg_eta, generative, q_eta_z_trace, x, metrics, result_fl
         log_q_f = log_q_f,
         log_p_f = log_p_f,
         log_w_f = log_w_f,
-        q_eta_z_f = q_eta_z_f.trace,
+        q_eta_z_f = q_eta_z_f_trace,
         p_f = p_f,
 
         log_q_b = log_q_b,
         log_p_b = log_p_b,
         log_w_b = log_w_b,
-        q_eta_z_b = q_eta_z_b.trace,
+        q_eta_z_b = q_eta_z_b_trace,
         p_b = p_b,
         log_w = log_w
     )
