@@ -12,7 +12,6 @@ from typing import Tuple
 
 from functools import partial
 from collections import namedtuple
-from combinators.resampling.strategies import APGStrat
 from combinators.inference import _dispatch
 from combinators import Forward, Reverse, Propose, Condition, Resample, RequiresGrad
 from combinators.metrics import effective_sample_size, log_Z_hat
@@ -562,6 +561,7 @@ def apg_objective_eager(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x, 
         q_eta_z_f = trace_utils.copysubtrace(out21.proposal.kernel.trace, {'states1', 'means2', 'precisions2'})
         slog_q_f = hao21['log_q_f']
         log_q_fsub = q_eta_z_f.log_joint(**jkwargs)
+
         breakpoint();
 
         printequal("sweep 2 proposal.kernel (log_q_fsub) :", slog_q_f.detach(), log_q_fsub.detach(), allclose=True)
