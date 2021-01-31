@@ -38,7 +38,13 @@ def oneshot(enc_rws_eta, enc_apg_z, generative, x, metrics):
     if True: # result_flags['density_required']:
         log_joint = log_p.detach()
         metrics['density'].append(log_joint.unsqueeze(0))
-    return loss, log_w, q_eta_z, metrics
+    aux = dict(
+        q_eta_z=q_eta_z,
+        p = p,
+        log_p = log_p,
+        log_q = log_q,
+    )
+    return loss, log_w, q_eta_z, metrics, aux
 
 def apg_update_eta(enc_apg_eta, generative, q_eta_z_trace, x, metrics, result_flags):
     """
@@ -184,13 +190,13 @@ def apg_objective(models, x, num_sweeps, resampler, resample=False):
     result_flags = {'loss_required' : True, 'ess_required' : True, 'mode_required' : False, 'density_required': True}
     metrics = {'loss' : [], 'ess' : [], 'E_tau' : [], 'E_mu' : [], 'E_z' : [], 'density' : []} ## a dictionary that tracks things needed during the sweeping
     (enc_rws_eta, enc_apg_z, enc_apg_eta, generative) = models
-    _, log_w, q_eta_z, metrics = oneshot(enc_rws_eta, enc_apg_z, generative, x, metrics)
+    _, log_w, q_eta_z, metrics, aux = oneshot(enc_rws_eta, enc_apg_z, generative, x, metrics)
     q_eta_z_trace = q_eta_z.trace
     if resample:
         q_eta_z_trace = resample_variables(resampler, q_eta_z, log_weights=log_w)
 
     # 1-index sweeps
-    sweeps = [None, dict(log_w=log_w, q_eta_z=q_eta_z.trace, metrics=metrics) ]
+    sweeps = [None, dict(log_w=log_w, q_eta_z=q_eta_z.trace, metrics=metrics, aux=aux) ]
 
 
     for m in range(num_sweeps-1):
