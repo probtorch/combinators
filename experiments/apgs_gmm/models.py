@@ -20,7 +20,8 @@ from combinators.trace.utils import maybe_sample
 import torch
 from combinators.densities import RingGMM
 
-ix = namedtuple('ix', ['sweep', 'rev', 'block'])
+sweepix = namedtuple('sweepix', ['sweep', 'rev', 'block'])
+ix = sweepix
 
 getmap = lambda name: (lambda ix: (f'{name}{ix.sweep if ix.rev else ix.sweep-1}', f'{name}{ix.sweep-1 if ix.rev else ix.sweep}'))
 pmap = getmap('precisions')
@@ -107,9 +108,8 @@ class Enc_apg_eta(Kernel):
                 mu = Normal(q_mu, 1. / (q_nu * tau).sqrt()).sample()
                 q_eta_z_new.normal(q_mu, 1. / (q_nu * tau).sqrt(), value=mu, name='means0')
         else:
-            zfr, _ = smap(ix)
-
             # leave z's unmoved
+            zfr = 'states1' if ix.block == "is" else f'states{ix.sweep-1}'
             z = q_eta_z[zfr].value
             ob_z = torch.cat((x, z), -1) # concatenate observations and cluster asssignemnts
             q_alpha, q_beta, q_mu, q_nu = posterior_eta(self.apg_eta_ob(ob_z) , self.apg_eta_gamma(ob_z), prior_alpha, prior_beta, prior_mu, prior_nu)
@@ -129,6 +129,9 @@ class Enc_apg_eta(Kernel):
             provenance = Provenance.OBSERVED if mfr in q_eta_z else Provenance.SAMPLED
             # log_prob = q_eta_z[mto].log_prob if mfr in q_eta_z else None
             q_eta_z_new.append(RandomVariable(dist=normal, value=mu, provenance=provenance), name=mto) #, log_prob=log_prob))
+            if ix.block == 'eta' and ix.rev:
+                breakpoint()
+                print('here')
 
         return None
 
@@ -211,7 +214,6 @@ class Enc_apg_z(Kernel):
             log_prob = q_eta_z[zto].log_prob if zto in q_eta_z else None
             q_eta_z_new.append(RandomVariable(dist=ohcat, value=value, log_prob=log_prob), name=zto)
 
-            breakpoint();
             return None
 
 
@@ -262,10 +264,18 @@ class GenerativeOriginal(Program):
         assert ix is not None
         ptar, mtar, star = 'precisions0', 'means0', 'states0'
         llstar = "lls0"
+
+        n, nm1 = ix.sweep, ix.sweep - 1
         if ix.block == 'is':
             p, m, s = 'precisions1', 'means1', 'states1'
+        elif ix.rev:
+            breakpoint()
+            if ix.block == 'eta':
+                p, m, s = f'precisions{n}', f'means{n}', f'states{nm1}'
+            else:
+                p, m, s = f'precisions{nm1}', f'means{nm1}', f'states{n}'
         else:
-            breakpoint();
+            raise RuntimeError("impossible")
 
         assert p in trace and m in trace and s in trace
         provenance=Provenance.OBSERVED
