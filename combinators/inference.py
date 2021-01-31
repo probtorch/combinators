@@ -101,6 +101,7 @@ class Condition(Inf):
         self.full_trace_return = full_trace_return
 
     def __call__(self, *args:Any, _debug=False, **kwargs:Any) -> Out:
+        """ Condition """
         extras=dict(type=type(self).__name__ + "(" + type(self.process).__name__ + ")")
         if self.conditioning_trace is not None:
             conditioning_trace = self.conditioning_trace
@@ -119,7 +120,7 @@ class Condition(Inf):
             if k not in ['conditioned_output', 'trace', 'weight', 'output']:
                 extras[k] = v
         if self.as_trace and isinstance(trace, ConditioningTrace):
-            return Out(trace.as_trace(access_only=not self.full_trace_return), out.log_omega, out.output, extras=extras)
+            return Out(trace.as_trace(access_only=not self.full_trace_return), out.log_prob, out.output, extras=extras)
         else:
             return out
 
@@ -139,6 +140,7 @@ class Resample(Inf):
         self.strategy = strategy
 
     def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
+        """ Resample """
         inf_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
 
         program_state = self.program(*shared_args, **inf_kwargs, **shared_kwargs)
@@ -149,7 +151,7 @@ class Resample(Inf):
 
         passable_kwargs = {k: v for k, v in rkwargs.items() if check_passable_kwarg(k, self.strategy)}
 
-        tr_, lw_ = self.strategy(program_state.trace, program_state.log_omega, **passable_kwargs)
+        tr_, lw_ = self.strategy(program_state.trace, program_state.log_prob, **passable_kwargs)
 
         self._cache = Out(
             extras=dict(
@@ -158,7 +160,7 @@ class Resample(Inf):
                 log_weight=lw_,
                 ),
             trace=tr_,
-            log_omega=lw_,
+            log_prob=lw_,
             output=program_state.output)
         self._cache['loss'] = self.foldl_loss(self._cache, maybe(program_state, 'loss', self.loss0))
 
@@ -201,6 +203,7 @@ class Reverse(KernelInf):
         self._exclude = _exclude
 
     def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **program_kwargs:Any) -> Out:
+        """ Reverse """
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
 
         inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
@@ -220,7 +223,7 @@ class Reverse(KernelInf):
 
         self._cache = Out(
             trace=out_trace,
-            log_omega=log_aux,
+            log_prob=log_aux,
             output=program_state.output,
             extras=dict(
                 program=program_state,
@@ -253,40 +256,38 @@ class Forward(KernelInf):
         self._exclude = _exclude # really just for debugging APG
 
     def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, _debug_extras=None, reparameterized=True, ix=None, **program_kwargs) -> Out:
+        """ Forward """
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
 
         inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
 
         debug.seed(1)
         program_state = self._run_program(*program_args, **inf_kwargs, **program_kwargs)
-        breakpoint();
 
         debug.seed(2)
         kernel_state = self._run_kernel(program_state.trace, program_state.output, **inf_kwargs, **program_kwargs)
 
-        log_omega = kernel_state.trace.log_joint(**shape_kwargs, nodes=set(kernel_state.trace.keys()) - self._exclude)
+        log_prob = kernel_state.trace.log_joint(**shape_kwargs, nodes=set(kernel_state.trace.keys()) - self._exclude)
         if _debug_extras is not None:
             dtrace = _debug_extras['q_eta_z']
             ctrace = trace_utils.copysubtrace(kernel_state.trace, {'precisions2', 'means2', 'states1'})
-            print(trace_utils.valeq(dtrace, ctrace))
-
-            print("p_v", torch.equal(ctrace['precisions2'].value,    dtrace['precisions1'].value))
-            print("p_d", disteq(     ctrace['precisions2'].dist,     dtrace['precisions1'].dist))
-            print("p_p", torch.equal(ctrace['precisions2'].log_prob, dtrace['precisions1'].log_prob))
+            # print(trace_utils.valeq(dtrace, ctrace))
+            print("p_v", torch.equal(ctrace['precisions2'].value,    dtrace['precisions0'].value))
+            print("p_d", disteq(     ctrace['precisions2'].dist,     dtrace['precisions0'].dist))
+            print("p_p", torch.equal(ctrace['precisions2'].log_prob, dtrace['precisions0'].log_prob))
             print()
-            print("m_v", torch.equal(ctrace['means2'].value,    dtrace['means1'].value))
-            print("m_d", disteq(     ctrace['means2'].dist,     dtrace['means1'].dist))
-            print("m_p", torch.equal(ctrace['means2'].log_prob, dtrace['means1'].log_prob))
+            print("m_v", torch.equal(ctrace['means2'].value,              dtrace['means0'].value))
+            print("m_d", disteq(     ctrace['means2'].dist,               dtrace['means0'].dist))
+            print("m_p", torch.equal(ctrace['means2'].log_prob,           dtrace['means0'].log_prob))
             print()
-            print("s_v", torch.equal(ctrace['states1'].value,    dtrace['states1'].value))
-            print("s_d", disteq(     ctrace['states1'].dist,     dtrace['states1'].dist))
-            print("s_p", torch.equal(ctrace['states1'].log_prob, dtrace['states1'].log_prob))
-            breakpoint();
+            print("s_v", torch.equal(ctrace['states1'].value,            dtrace['states0'].value))
+            print("s_d", disteq(     ctrace['states1'].dist,             dtrace['states0'].dist))
+            print("s_p", torch.equal(ctrace['states1'].log_prob,         dtrace['states0'].log_prob))
             print()
 
         self._cache = Out(
             trace=kernel_state.trace,
-            log_omega=log_omega,
+            log_prob=log_prob,
             output=kernel_state.output,
             extras=dict(
                 program=program_state,
@@ -313,6 +314,7 @@ class Propose(Conditionable, Inf):
         self.proposal = proposal
 
     def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, _debug_extras=None, reparameterized=True, ix=None, **shared_kwargs) -> Out:
+        """ Proposal """
         inf_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, ix=self.ix if self.ix is not None else ix)
 
         # proposal = Condition(self.proposal, trace=self._cond_trace, as_trace=False) if self._cond_trace is not None else self.proposal
@@ -322,9 +324,8 @@ class Propose(Conditionable, Inf):
             breakpoint();
         conditioned_target = Condition(self.target, trace=proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and _doesn't_ need the whole trace?
         target_state = conditioned_target(*shared_args, **inf_kwargs,  **shared_kwargs)
-        breakpoint();
 
-        lv = target_state.log_omega - proposal_state.log_omega
+        lv = target_state.log_prob - proposal_state.log_prob
 
         self._cache = Out(
             extras=dict(
@@ -333,7 +334,7 @@ class Propose(Conditionable, Inf):
                 type=type(self).__name__,
                 ),
             trace=target_state.trace,
-            log_omega=lv,
+            log_prob=lv,
             output=target_state.output,)
         self._cache['loss'] = self.foldl_loss(self._cache, maybe(proposal_state, 'loss', self.loss0))
         return self._cache

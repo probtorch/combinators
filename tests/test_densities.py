@@ -72,11 +72,11 @@ def test_tempered_redundant_loop(seed, is_smoketest):
             loss = torch.zeros(1, **kw_autodevice())
             lw, lvs = torch.zeros(sample_shape, **kw_autodevice()), []
             for k, (fwd, rev, q, p) in enumerate(zip(forwards, reverses, targets[:-1], targets[1:])):
-                q_ext = Forward(fwd, Condition(q, p_prv_tr), _step=k)
-                p_ext = Reverse(p, rev, _step=k)
-                extend = Propose(target=p_ext, proposal=q_ext, _step=k)
+                q_ext = Forward(fwd, Condition(q, p_prv_tr), ix=k)
+                p_ext = Reverse(p, rev, ix=k)
+                extend = Propose(target=p_ext, proposal=q_ext, ix=k)
                 state = extend(sample_shape=sample_shape, sample_dims=0)
-                lv = state.log_omega
+                lv = state.log_prob
 
                 p_prv_tr = state.trace
 
@@ -139,7 +139,7 @@ def test_annealing_path_tempered_normals(seed, is_smoketest):
                 p_ext = Reverse(p, rev)
                 extend = Propose(target=p_ext, proposal=q_ext)
                 state = extend(sample_shape=sample_shape, sample_dims=0)
-                lv = state.log_omega
+                lv = state.log_prob
                 lvss.append(lv.detach())
 
                 # FIXME: because p_prv_tr is not eliminating the previous trace, the trace is cumulativee but removing grads leaves backprop unaffected
@@ -261,11 +261,11 @@ def test_annealing_path_8step_simple(seed):
             lw = torch.zeros(sample_shape)
 
             for k, (fwd, rev, q, p) in enumerate(zip(forwards, reverses, targets[:-1], targets[1:])):
-                q_ext = Forward(fwd, Condition(q, p_prv_tr), _step=k)
-                p_ext = Reverse(p, rev, _step=k)
-                extend = Propose(target=p_ext, proposal=q_ext, _step=k)
+                q_ext = Forward(fwd, Condition(q, p_prv_tr), ix=k)
+                p_ext = Reverse(p, rev, ix=k)
+                extend = Propose(target=p_ext, proposal=q_ext, ix=k)
                 state = extend(sample_shape=sample_shape, sample_dims=0)
-                lv = state.log_omega
+                lv = state.log_prob
 
                 # FIXME: because p_prv_tr is not eliminating the previous trace, the trace is cumulativee but removing grads leaves backprop unaffected
                 p_prv_tr = state.trace
@@ -506,12 +506,12 @@ def test_tempered_grad_check(seed):
             lw, lvss = torch.zeros(sample_shape, **kw_autodevice()), []
             for k, (fwd, rev, q, p) in enumerate(zip(forwards, reverses, targets[:-1], targets[1:])):
                 q.with_observations(trace_utils.copytrace(p_prv_tr, detach=p_prv_tr.keys()))
-                q_ext = Forward(fwd, q, _step=k)
-                p_ext = Reverse(p, rev, _step=k)
-                extend = Propose(target=p_ext, proposal=q_ext, _step=k)
+                q_ext = Forward(fwd, q, ix=k)
+                p_ext = Reverse(p, rev, ix=k)
+                extend = Propose(target=p_ext, proposal=q_ext, ix=k)
     #             breakpoint()
                 state = extend(sample_shape=sample_shape, sample_dims=0)
-                lv = state.log_omega
+                lv = state.log_prob
 
                 p_prv_tr = state.trace
                 p.clear_observations()

@@ -14,7 +14,7 @@ from typing import Optional, Callable
 from .utils import assert_empirical_marginal_mean_std, g
 import combinators.trace.utils as trace_utils
 import combinators.tensor.utils as tensor_utils
-from combinators.debug import propagate, excise_state, excise, empirical_marginal_mean_std
+from combinators.debug import propagate, excise, empirical_marginal_mean_std
 from combinators.objectives import nvo_avo
 from combinators.metrics import effective_sample_size, log_Z_hat, Z_hat
 from combinators.densities import Normal, MultivariateNormal
@@ -49,7 +49,7 @@ def test_excise_state_2step(scaffolding):
     p21 = Reverse(g2, r21)
     extend12 = Propose(target=p21, proposal=q12)
     state12 = extend12(sample_shape=(5,1))
-    lv12 = state12.log_omega
+    lv12 = state12.log_prob
     _state12q = excise_state(extend12.proposal._cache)
     _state12p = excise_state(extend12.target._cache)
 
@@ -104,7 +104,7 @@ def with_shape_test(scaffolding, sample_shape, sample_dims):
     p21 = Reverse(g2, r21)
     extend12 = Propose(target=p21, proposal=q12)
     state12 = extend12(sample_shape=sample_shape, sample_dims=sample_dims)
-    lv12 = state12.log_omega
+    lv12 = state12.log_prob
 
     assert lv12.shape == torch.Size([sample_shape[sample_dims]])
 
@@ -144,7 +144,7 @@ def test_disjoint_computation_graphs_if_backprop_on_step1(scaffolding):
     p21 = Reverse(g2, r21)
     extend12 = Propose(target=p21, proposal=q12)
 
-    lv12 = extend12(sample_shape=(5,1), sample_dims=0).log_omega
+    lv12 = extend12(sample_shape=(5,1), sample_dims=0).log_prob
     loss12 = nvo_avo(lv12)
 
     # Step 2
@@ -152,7 +152,7 @@ def test_disjoint_computation_graphs_if_backprop_on_step1(scaffolding):
     p32 = Reverse(g3, r32)
     extend23 = Propose(target=p32, proposal=q23)
 
-    lv23 = extend23(sample_shape=(5,1), sample_dims=0).log_omega
+    lv23 = extend23(sample_shape=(5,1), sample_dims=0).log_prob
     loss23 = nvo_avo(lv23, sample_dims=0).mean()
 
     # backward on step 1
@@ -197,14 +197,14 @@ def test_disjoint_computation_graphs_if_backprop_on_step2(scaffolding):
     q12 = Forward(f12, Condition(g1, g1_prv_tr, requires_grad=RequiresGrad.NO))
     p21 = Reverse(g2, r21)
     extend12 = Propose(target=p21, proposal=q12)
-    lv12 = extend12(sample_shape=(5,1), sample_dims=0).log_omega
+    lv12 = extend12(sample_shape=(5,1), sample_dims=0).log_prob
     loss12 = nvo_avo(lv12)
 
     # Step 2
     q23 = Forward(f23, g2)
     p32 = Reverse(g3, r32)
     extend23 = Propose(target=p32, proposal=q23)
-    lv23 = extend23(sample_shape=(5,1), sample_dims=0).log_omega
+    lv23 = extend23(sample_shape=(5,1), sample_dims=0).log_prob
     loss23 = nvo_avo(lv23, sample_dims=0).mean()
 
     # backward on step 2
@@ -260,7 +260,7 @@ def test_disjoint_computation_graphs_if_backprop_on_step2_in_run(scaffolding, is
                 p_ext = Reverse(p, rev)
                 extend = Propose(target=p_ext, proposal=q_ext)
                 state = extend(sample_shape=(num_samples, 1), sample_dims=0)
-                lv = state.log_omega
+                lv = state.log_prob
 
                 # setup for next step
                 p_prv_tr = state.trace
@@ -329,7 +329,7 @@ def test_training_run_full(scaffolding, is_smoketest):
                 p_ext = Reverse(p, rev)
                 extend_argument = Propose(target=p_ext, proposal=q_ext)
                 state = extend_argument(sample_shape=(num_samples, 1), sample_dims=0)
-                lv = state.log_omega
+                lv = state.log_prob
                 lvs.append(lv)
 
                 # setup for next step

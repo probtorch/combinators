@@ -129,11 +129,11 @@ def nvi_eager(i, targets, forwards, reverses, sample_shape):
     lw, lvss = torch.zeros(sample_shape, **kw_autodevice()), []
 
     for k, (fwd, rev, q, p) in enumerate(zip(forwards, reverses, targets[:-1], targets[1:])):
-        q_ext = Forward(fwd, Condition(q, p_prv_tr, requires_grad=RequiresGrad.NO), _step=k)
-        p_ext = Reverse(p, rev, _step=k)
-        extend = Propose(target=p_ext, proposal=q_ext, _step=k)
+        q_ext = Forward(fwd, Condition(q, p_prv_tr, requires_grad=RequiresGrad.NO), ix=k)
+        p_ext = Reverse(p, rev, ix=k)
+        extend = Propose(target=p_ext, proposal=q_ext, ix=k)
         state = extend(sample_shape=sample_shape, sample_dims=0)
-        lv = state.log_omega
+        lv = state.log_prob
 
         p_prv_tr = state.trace
 
@@ -155,12 +155,12 @@ def nvi_eager_resample(i, targets, forwards, reverses, sample_shape):
     lw, lvss = torch.zeros(sample_shape, **kw_autodevice()), []
 
     for k, (fwd, rev, q, p) in enumerate(zip(forwards, reverses, targets[:-1], targets[1:])):
-        q_ext = Forward(fwd, Condition(q, p_prv_tr, requires_grad=RequiresGrad.NO), _step=k)
-        p_ext = Reverse(p, rev, _step=k)
-        extend = Resample(Propose(target=p_ext, proposal=q_ext, _step=k))
+        q_ext = Forward(fwd, Condition(q, p_prv_tr, requires_grad=RequiresGrad.NO), ix=k)
+        p_ext = Reverse(p, rev, ix=k)
+        extend = Resample(Propose(target=p_ext, proposal=q_ext, ix=k))
 
         state = extend(sample_shape=sample_shape, sample_dims=0)
-        lv = state.log_omega
+        lv = state.log_prob
 
         p_prv_tr = state.trace
 
@@ -182,12 +182,12 @@ def test_annealing_eager_resample(is_smoketest):
     print("test_annealing_eager_resample")
     experiment_runner(is_smoketest, nvi_eager_resample)
 
-def _log_omega(out, ret=[])->[Tensor]:
-    _ret = ret + ([out.log_omega.detach().cpu()] if out.log_joint is not None else [])
+def _log_prob(out, ret=[])->[Tensor]:
+    _ret = ret + ([out.log_prob.detach().cpu()] if out.log_joint is not None else [])
     if 'proposal' not in out:
         return _ret
     else:
-        return _log_omega(out.proposal.program, _ret)
+        return _log_prob(out.proposal.program, _ret)
 
 
 def print_and_sum_loss(lv, loss):
@@ -198,9 +198,9 @@ def print_and_sum_loss(lv, loss):
 
 def nvi_declarative(i, targets, forwards, reverses, sample_shape):
     def mk_step(q, p, fwd, rev, k)->Propose:
-        q_ext = Forward(fwd, q)
-        p_ext = Reverse(p, rev)
-        return Propose(target=p_ext, proposal=q_ext, loss_fn=print_and_sum_loss, _debug=True, _step=k, loss0=torch.zeros(1, **kw_autodevice()))
+        return Propose(target=Reverse(p, rev),
+                       proposal=Forward(fwd, q),
+                       loss_fn=print_and_sum_loss, _debug=True, ix=k, loss0=torch.zeros(1, **kw_autodevice()))
 
     proposal = targets[0]
     for k, (fwd, rev, p) in enumerate(zip(forwards, reverses, targets[1:])):
@@ -208,7 +208,7 @@ def nvi_declarative(i, targets, forwards, reverses, sample_shape):
 
     out = proposal(sample_shape=sample_shape, sample_dims=0)
 
-    return _log_omega(out), out.loss
+    return _log_prob(out), out.loss
 
 @mark.skip("accumulation of gradient needs to be fixed")
 def test_annealing_declarative():
