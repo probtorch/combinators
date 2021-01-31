@@ -50,6 +50,7 @@ class Enc_rws_eta(Program):
             nn.Linear(D, D))
 
     def model(self, trace, x, prior_ng, ix=None):
+        """ Enc_rws_eta """
         assert ix is not None
         if ix == '':
             (prior_alpha, prior_beta, prior_mu, prior_nu) = prior_ng
@@ -59,6 +60,7 @@ class Enc_rws_eta(Program):
             mu = Normal(q_mu, 1. / (q_nu * trace['precisions0'].value).sqrt()).sample()
             trace.normal(q_mu, 1. / (q_nu * trace['precisions0'].value).sqrt(), # std = 1 / sqrt(nu * tau)
                     value=mu, name='means0')
+            return None
         else:
             (prior_alpha, prior_beta, prior_mu, prior_nu) = prior_ng
             q_alpha, q_beta, q_mu, q_nu = posterior_eta(self.rws_eta_ob(x) , self.rws_eta_gamma(x), prior_alpha, prior_beta, prior_mu, prior_nu)
@@ -67,7 +69,7 @@ class Enc_rws_eta(Program):
             mu = Normal(q_mu, 1. / (q_nu * trace['precisions1'].value).sqrt()).sample()
             trace.normal(q_mu, 1. / (q_nu * trace['precisions1'].value).sqrt(), # std = 1 / sqrt(nu * tau)
                     value=mu, name='means1')
-        return None
+            return dict(x=x, tau=tau, mu=mu, z=None)
 
 
 class Enc_apg_eta(Kernel):
@@ -83,6 +85,8 @@ class Enc_apg_eta(Kernel):
             nn.Linear(K+D, D))
 
     def apply_kernel(self, q_eta_z_new, q_eta_z, q_output, x, prior_ng, ix=None):
+        """ Enc_apg_eta """
+
         # Need to confirm that: q(η_2 | z_1 x) p_{prp1}(x η_1 z_1)
         assert ix is not None
         (prior_alpha, prior_beta, prior_mu, prior_nu) = prior_ng
@@ -98,38 +102,40 @@ class Enc_apg_eta(Kernel):
             # in "hao mode"
             ob_z = torch.cat((x, z), -1) # concatenate observations and cluster asssignemnts
             q_alpha, q_beta, q_mu, q_nu = posterior_eta(self.apg_eta_ob(ob_z) , self.apg_eta_gamma(ob_z), prior_alpha, prior_beta, prior_mu, prior_nu)
-            _ = q_eta_z_new.one_hot_categorical(probs=q_eta_z['states0'].dist.probs, value=q_eta_z['states0'].value, name='states0')
+            z = q_eta_z_new.one_hot_categorical(probs=q_eta_z['states0'].dist.probs, value=q_eta_z['states0'].value, name='states0')
             if 'means0' in q_eta_z.keys():
-                q_eta_z_new.gamma(q_alpha, q_beta, value=q_eta_z['precisions0'].value, name='precisions0')
-                q_eta_z_new.normal(q_mu, 1. / (q_nu * q_eta_z['precisions0'].value).sqrt(), value=q_eta_z['means0'].value, name='means0')
+                tau = q_eta_z_new.gamma(q_alpha, q_beta, value=q_eta_z['precisions0'].value, name='precisions0')
+                mu = q_eta_z_new.normal(q_mu, 1. / (q_nu * q_eta_z['precisions0'].value).sqrt(), value=q_eta_z['means0'].value, name='means0')
             else:
                 tau = Gamma(q_alpha, q_beta).sample()
                 q_eta_z_new.gamma(q_alpha, q_beta, value=tau, name='precisions0')
                 mu = Normal(q_mu, 1. / (q_nu * tau).sqrt()).sample()
                 q_eta_z_new.normal(q_mu, 1. / (q_nu * tau).sqrt(), value=mu, name='means0')
+            return None
         else:
+            z = q_output['z']
             # leave z's unmoved
             zfr = 'states1' if ix.block == "is" else f'states{ix.sweep-1}'
-            z = q_eta_z[zfr].value
+            # z = q_eta_z[zfr].value
             ob_z = torch.cat((x, z), -1) # concatenate observations and cluster asssignemnts
             q_alpha, q_beta, q_mu, q_nu = posterior_eta(self.apg_eta_ob(ob_z) , self.apg_eta_gamma(ob_z), prior_alpha, prior_beta, prior_mu, prior_nu)
-            _ = q_eta_z_new.one_hot_categorical(probs=q_eta_z[zfr].dist.probs, value=q_eta_z[zfr].value, name=zfr)
+
+            # del q_eta_z[zfr]
+            # _ = q_eta_z_new.one_hot_categorical(probs=q_eta_z[zfr].dist.probs, value=z, name=zfr)
 
             # move etas forward or backwards
             pfr, pto = pmap(ix)
             gamma = Gamma(q_alpha, q_beta)
             tau = q_eta_z[pfr].value if pfr in q_eta_z else gamma.sample()
             provenance = Provenance.OBSERVED if pfr in q_eta_z else Provenance.SAMPLED
-            # log_prob = q_eta_z[pto].log_prob if pfr in q_eta_z else None
             q_eta_z_new.append(RandomVariable(dist=gamma, value=tau, provenance=provenance), name=pto) #, log_prob=log_prob))
 
             mfr, mto = mmap(ix)
             normal = Normal(q_mu, 1. / (q_nu * tau).sqrt())
             mu = q_eta_z[mfr].value if mfr in q_eta_z else normal.sample()
             provenance = Provenance.OBSERVED if mfr in q_eta_z else Provenance.SAMPLED
-            # log_prob = q_eta_z[mto].log_prob if mfr in q_eta_z else None
             q_eta_z_new.append(RandomVariable(dist=normal, value=mu, provenance=provenance), name=mto) #, log_prob=log_prob))
-        return None
+            return dict(x=x, tau=tau, mu=mu, z=z)
 
 
 class Enc_apg_z(Kernel):
@@ -144,7 +150,7 @@ class Enc_apg_z(Kernel):
             nn.Linear(num_hidden, 1))
 
     def apply_kernel(self, trace, q_eta_z, q_output, x, ix=None):
-        # (x, prior_ng) = q_output
+        """ Enc_apg_z """
         S, B, N, D = x.shape
         assert ix is not None
         if ix == '':
@@ -180,18 +186,21 @@ class Enc_apg_z(Kernel):
                 _ = q_eta_z_new.one_hot_categorical(probs=q_probs, name='states0')
             return None
         else:
+            mu, tau = [q_output[k] for k in ['mu', 'tau']]
             pfr, _ = pmap(ix)
             mfr, _ = mmap(ix)
             if ix.block == 'is':
                 pfr, mfr = 'precisions1', 'means1'
             assert pfr in q_eta_z
 
-            tau = q_eta_z[pfr].value
-            mu = q_eta_z[mfr].value
+            # tau = q_eta_z[pfr].value
+            # mu = q_eta_z[mfr].value
 
             q_eta_z_new = trace
-            q_eta_z_new.gamma(q_eta_z[pfr].dist.concentration, q_eta_z[pfr].dist.rate, value=tau, name=pfr)
-            q_eta_z_new.normal(q_eta_z[mfr].dist.loc, q_eta_z[mfr].dist.scale, value=mu, name=mfr)
+            # del q_eta_z_new[pfr]
+            # del q_eta_z_new[mfr]
+            # q_eta_z_new.gamma(q_eta_z[pfr].dist.concentration, q_eta_z[pfr].dist.rate, value=tau, name=pfr)
+            # q_eta_z_new.normal(q_eta_z[mfr].dist.loc, q_eta_z[mfr].dist.scale, value=mu, name=mfr)
 
             # ===================================
             K = mu.shape[-2]
@@ -206,11 +215,11 @@ class Enc_apg_z(Kernel):
             _, zto = smap(ix)
 
             ohcat = Dist.OneHotCategorical(probs=q_probs)
-            value = q_eta_z[zto].value if zto in q_eta_z else ohcat.sample()
+            zs = q_eta_z[zto].value if zto in q_eta_z else ohcat.sample()
             log_prob = q_eta_z[zto].log_prob if zto in q_eta_z else None
-            q_eta_z_new.append(RandomVariable(dist=ohcat, value=value, log_prob=log_prob), name=zto)
+            q_eta_z_new.append(RandomVariable(dist=ohcat, value=zs, log_prob=log_prob), name=zto)
 
-            return None
+            return dict(x=x, tau=tau, mu=mu, z=zs)
 
 
 class GenerativeOriginal(Program):
@@ -255,11 +264,12 @@ class GenerativeOriginal(Program):
         p.normal(mu_expand, sigma_expand, value=x, name='lls0')
         return p
 
-    def model(self, trace, x, reparameterized=False, ix=None):
+    def model(self, trace, model_output, x, ix=None):
         """ evaluate the log joint i.e. log p (x, z, tau, mu) """
         assert ix is not None
         ptar, mtar, star = 'precisions0', 'means0', 'states0'
         llstar = "lls"
+        mu, tau, z = [model_output[k] for k in ['mu', 'tau', 'z']]
 
         n, nm1 = ix.sweep, ix.sweep - 1
         if ix.block == 'is':
@@ -276,18 +286,18 @@ class GenerativeOriginal(Program):
         provenance=Provenance.OBSERVED
 
         gamma = D.Gamma(self.prior_alpha, self.prior_beta)
-        tau = trace[p].value
-        del trace._nodes[p]
+        #tau = trace[p].value
+        #del trace._nodes[p]
         trace.append(RandomVariable(dist=gamma, value=tau, provenance=provenance), name=p) # ptar)
 
         normal = D.Normal(self.prior_mu, 1. / (self.prior_nu * tau).sqrt())
-        mu = trace[m].value
-        del trace._nodes[m]
+        # mu = trace[m].value
+        # del trace._nodes[m]
         trace.append(RandomVariable(dist=normal, value=mu, provenance=provenance), name=m) #tar)
 
         oh_cat = D.OneHotCategorical(probs=self.prior_pi)
-        z = trace[s].value
-        del trace._nodes[s]
+        # z = trace[s].value
+        # del trace._nodes[s]
         trace.append(RandomVariable(dist=oh_cat, value=z, provenance=provenance), name=s) #tar)
 
         labels_flat = z.argmax(-1).unsqueeze(-1).repeat(1, 1, 1, x.shape[-1])
@@ -295,5 +305,4 @@ class GenerativeOriginal(Program):
         sigma_expand = torch.gather(1. / tau.sqrt(), 2, labels_flat)
         trace.normal(mu_expand, sigma_expand, value=x, name=llstar)
 
-        return None
-
+        return dict(x=x, tau=tau, mu=mu, z=z)
