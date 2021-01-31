@@ -54,10 +54,17 @@ def show_nest(p:property_dict, nest_level=0, indent_len:Optional[int]=None, pd_h
     _max_len = max(map(len, p.keys()))
     max_len = _max_len + nest_level * (_max_len if indent_len is None else indent_len)
     delimiter = "\n  "
+    def showitem(v):
+        if isinstance(v, Tensor):
+            return tensor_utils.show(v)
+        elif isinstance(v, dict):
+            return "dict({})".format(", ".join(["{}={}".format(k, showitem(v)) for k, v in v.items()]))
+        else:
+            return repr(v)
 
     unnested = dict(filter(lambda kv: not isinstance(kv[1], property_dict), p.items()))
     unnested_str = delimiter.join([
-        *[("{:>"+ str(max_len)+ "}: {}").format(k, tensor_utils.show(v) if isinstance(v, Tensor) else v) for k, v in unnested.items()
+        *[("{:>"+ str(max_len)+ "}: {}").format(k, showitem(v)) for k, v in unnested.items()
          ]
     ])
 
