@@ -24,20 +24,21 @@ def oneshot(enc_rws_eta, enc_apg_z, generative, x, metrics):
 
     if True: # result_flags['loss_required']:
         loss = (w * (- log_q)).sum(0).mean()
-        metrics['loss'].append(loss.unsqueeze(0))
+        metrics['loss'].append(loss)
+        metrics['iloss'].append(loss)
     if True: # result_flags['ess_required']:
         ess = (1. / (w**2).sum(0))
-        metrics['ess'].append(ess.unsqueeze(0))
+        metrics['ess'].append(ess)
     if False: # result_flags['mode_required']:
         E_tau = (q_eta_z['precisions'].dist.concentration / q_eta_z['precisions'].dist.rate).mean(0).detach()
         E_mu = q_eta_z['means'].dist.loc.mean(0).detach()
         E_z = q_eta_z['states'].dist.probs.mean(0).detach()
-        metrics['E_tau'].append(E_tau.unsqueeze(0))
-        metrics['E_mu'].append(E_mu.unsqueeze(0))
-        metrics['E_z'].append(E_z.unsqueeze(0))
+        metrics['E_tau'].append(E_tau)
+        metrics['E_mu'].append(E_mu)
+        metrics['E_z'].append(E_z)
     if True: # result_flags['density_required']:
         log_joint = log_p.detach()
-        metrics['density'].append(log_joint.unsqueeze(0))
+        metrics['density'].append(log_joint)
     aux = dict(
         q_eta_z=q_eta_z,
         p = p,
@@ -67,17 +68,18 @@ def apg_update_eta(enc_apg_eta, generative, q_eta_z_trace, x, metrics, result_fl
 
     if result_flags['loss_required']:
         loss = (w * (- log_q_f)).sum(0).mean()
-        metrics['loss'].append(loss.unsqueeze(0))
+        metrics['loss'].append(loss)
+        metrics['iloss'].append(loss)
     if result_flags['ess_required']:
         ess = (1. / (w**2).sum(0))
-        metrics['ess'].append(ess.unsqueeze(0)) # 1-by-B tensor
+        metrics['ess'].append(ess) # 1-by-B tensor
     if result_flags['mode_required']:
         E_tau = (q_eta_z_f['precisions'].dist.concentration / q_eta_z_f['precisions'].dist.rate).mean(0).detach()
         E_mu = q_eta_z_f['means'].dist.loc.mean(0).detach()
-        metrics['E_tau'].append(E_tau.unsqueeze(0))
-        metrics['E_mu'].append(E_mu.unsqueeze(0))
+        metrics['E_tau'].append(E_tau)
+        metrics['E_mu'].append(E_mu)
     if result_flags['density_required']:
-        metrics['density'].append(log_p_f.unsqueeze(0)) # 1-by-B-length vector
+        metrics['density'].append(log_p_f) # 1-by-B-length vector
     aux = dict(
         log_q_f = log_q_f,
         log_p_f = log_p_f,
@@ -90,6 +92,7 @@ def apg_update_eta(enc_apg_eta, generative, q_eta_z_trace, x, metrics, result_fl
         log_w_b = log_w_b,
         q_eta_z_b = q_eta_z_b.trace,
         p_b = p_b,
+        log_w = log_w
     )
     return log_w, q_eta_z_f, metrics, aux
 
@@ -116,6 +119,7 @@ def apg_update_z(enc_apg_z, generative, q_eta_z_trace, x, metrics, result_flags)
     if result_flags['loss_required']:
         loss = (w * (- log_q_f)).sum(0).sum(-1).mean()
         metrics['loss'][-1] = metrics['loss'][-1] + loss.unsqueeze(0)
+        metrics['iloss'].append(loss)
     if result_flags['mode_required']:
         E_z = q_eta_z_f['states'].dist.probs.mean(0).detach()
         metrics['E_z'].append(E_z.unsqueeze(0))
@@ -188,7 +192,8 @@ def apg_objective(models, x, num_sweeps, resampler, resample=False):
     ==========
     """
     result_flags = {'loss_required' : True, 'ess_required' : True, 'mode_required' : False, 'density_required': True}
-    metrics = {'loss' : [], 'ess' : [], 'E_tau' : [], 'E_mu' : [], 'E_z' : [], 'density' : []} ## a dictionary that tracks things needed during the sweeping
+    # metrics = {'loss' : [], 'ess' : [], 'E_tau' : [], 'E_mu' : [], 'E_z' : [], 'density' : []} ## a dictionary that tracks things needed during the sweeping
+    metrics = dict(loss=[], iloss=[], ess=[], density=[])
     (enc_rws_eta, enc_apg_z, enc_apg_eta, generative) = models
     _, log_w, q_eta_z, metrics, aux = oneshot(enc_rws_eta, enc_apg_z, generative, x, metrics)
     q_eta_z_trace = q_eta_z.trace
@@ -212,13 +217,5 @@ def apg_objective(models, x, num_sweeps, resampler, resample=False):
         sweeps[-1][2] = dict(log_w_z=log_w_z, q_eta_z=q_eta_z.trace, metrics=metrics, aux=aux)
         if resample:
             q_eta_z_trace = resample_variables(resampler, q_eta_z_trace, log_weights=log_w_z)
-
-
-    if result_flags['loss_required']:
-        metrics['loss'] = torch.cat(metrics['loss'], 0)
-    if result_flags['ess_required']:
-        metrics['ess'] = torch.cat(metrics['ess'], 0)
-    if result_flags['density_required']:
-        metrics['density'] = torch.cat(metrics['density'], 0)  # (num_sweeps) * S * B
 
     return sweeps, metrics

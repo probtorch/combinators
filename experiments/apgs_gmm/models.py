@@ -129,10 +129,6 @@ class Enc_apg_eta(Kernel):
             provenance = Provenance.OBSERVED if mfr in q_eta_z else Provenance.SAMPLED
             # log_prob = q_eta_z[mto].log_prob if mfr in q_eta_z else None
             q_eta_z_new.append(RandomVariable(dist=normal, value=mu, provenance=provenance), name=mto) #, log_prob=log_prob))
-            if ix.block == 'eta' and ix.rev:
-                breakpoint()
-                print('here')
-
         return None
 
 
@@ -219,10 +215,10 @@ class Enc_apg_z(Kernel):
 
 class GenerativeOriginal(Program):
     """
-    The generative model of GMM
+    The generative model of GMM. The problem with this model is that it isn't a _program_ it's just a log_density function 
     """
     def __init__(self, K, D, CUDA, device):
-        super().__init__(with_joint={'precisions0', 'means0', 'states0', 'lls0'})
+        super().__init__() #with_joint={'precisions0', 'means0', 'states0', 'lls0'})
         self.K = K
         self.prior_mu = torch.zeros((K, D))
         self.prior_nu = torch.ones((K, D)) * 0.1
@@ -263,13 +259,12 @@ class GenerativeOriginal(Program):
         """ evaluate the log joint i.e. log p (x, z, tau, mu) """
         assert ix is not None
         ptar, mtar, star = 'precisions0', 'means0', 'states0'
-        llstar = "lls0"
+        llstar = "lls"
 
         n, nm1 = ix.sweep, ix.sweep - 1
         if ix.block == 'is':
             p, m, s = 'precisions1', 'means1', 'states1'
         elif ix.rev:
-            breakpoint()
             if ix.block == 'eta':
                 p, m, s = f'precisions{n}', f'means{n}', f'states{nm1}'
             else:
@@ -282,14 +277,18 @@ class GenerativeOriginal(Program):
 
         gamma = D.Gamma(self.prior_alpha, self.prior_beta)
         tau = trace[p].value
-        trace.append(RandomVariable(dist=gamma, value=tau, provenance=provenance), name=ptar)
+        del trace._nodes[p]
+        trace.append(RandomVariable(dist=gamma, value=tau, provenance=provenance), name=p) # ptar)
 
         normal = D.Normal(self.prior_mu, 1. / (self.prior_nu * tau).sqrt())
         mu = trace[m].value
-        trace.append(RandomVariable(dist=normal, value=mu, provenance=provenance), name=mtar)
+        del trace._nodes[m]
+        trace.append(RandomVariable(dist=normal, value=mu, provenance=provenance), name=m) #tar)
+
         oh_cat = D.OneHotCategorical(probs=self.prior_pi)
         z = trace[s].value
-        trace.append(RandomVariable(dist=oh_cat, value=z, provenance=provenance), name=star)
+        del trace._nodes[s]
+        trace.append(RandomVariable(dist=oh_cat, value=z, provenance=provenance), name=s) #tar)
 
         labels_flat = z.argmax(-1).unsqueeze(-1).repeat(1, 1, 1, x.shape[-1])
         mu_expand = torch.gather(mu, 2, labels_flat)

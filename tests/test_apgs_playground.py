@@ -10,6 +10,7 @@ import math
 
 from typing import Tuple
 
+from functools import partial
 from collections import namedtuple
 from combinators.resampling.strategies import APGStrat
 from combinators.inference import _dispatch
@@ -21,6 +22,7 @@ import combinators.trace.utils as trace_utils
 import combinators.tensor.utils as tensor_utils
 import combinators.debug as debug
 import experiments.apgs_gmm.hao as hao
+from combinators.trace.utils import RequiresGrad, copysubtrace, copytrace, mapvalues, disteq
 from experiments.apgs_gmm.models import mk_target, Enc_rws_eta, Enc_apg_z, Enc_apg_eta, GenerativeOriginal, ix
 from experiments.apgs_gmm.objectives import resample_variables, apg_update_z
 
@@ -413,7 +415,7 @@ def rws_objective_eager(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg_eta=N
     prp = Propose(proposal=Forward(enc_apg_z, enc_rws_eta), target=og, ix=ix(sweep=1,rev=False,block='is'))
     out = prp(x=x, prior_ng=og.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
 
-    log_w = out.log_prob.detach()
+    log_w = out.log_iweight.detach()
     w = F.softmax(log_w, 0)
     loss = (w * (- out.proposal.log_prob)).sum(0).mean()
     if compare:
@@ -479,14 +481,38 @@ def apg_objective_eager(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x, 
             proposal=Forward(enc_apg_z, enc_rws_eta))
 
     out1 = prp1(**kwargs)
-    log_w1 = out1.log_prob.detach()
+    log_w1 = out1.log_cweight.detach()
     loss1 = (F.softmax(log_w1, 0) * (- out1.proposal.log_prob)).sum(0).mean()
 
+    def printequal(desc, l, r, allclose=False, atol=1e-3, assertion=True):
+        l, r = l.detach(), r.detach()
+        tequal = partial(torch.allclose, atol=atol) if allclose else torch.equal
+        if not tequal(l.detach(), r.detach()):
+            print(desc, l.mean(), r.mean(), l.sum(), r.sum())
+        elif not assertion:
+            print(desc, "OK")
+
+        if assertion:
+            assert tequal(l.detach(), r.detach())
+
     if compare:
-        assert torch.equal(loss1, sweeps[1]['metrics']['loss'][0])
-        assert torch.allclose(log_w1, sweeps[1]['log_w'])
+        hao1 = sweeps[1]
+        mas = lambda t: (t.detach().mean(), t.detach().sum())
+        lj = lambda tr: mas(tr.log_joint(**jkwargs))
+        print()
+        printequal("sweep 1: target log_prob (log_p)", out1.target.log_prob, hao1['aux']['log_p'], assertion=False)
+        printequal("sweep 1: propos log_prob (log_q)", out1.proposal.log_prob, hao1['aux']['log_q'], assertion=False)
+
+        printequal("sweep 1: log_weight (log_w)     ", out1.log_cweight, hao1['log_w'], assertion=False)
+        breakpoint();
+
+        assert torch.equal(out1.target.log_prob, hao1['aux']['log_p'])
+        assert torch.equal(out1.proposal.log_prob, hao1['aux']['log_q'])
+
+        assert torch.equal(log_w1, hao1['log_w'])
+        assert torch.equal(loss1, hao1['metrics']['iloss'][0])
         print("sweep1 log_w", log_w1.mean())
-        assert trace_utils.valeq(out1.trace, sweeps[1]['q_eta_z'])
+        assert trace_utils.valeq(out1.trace, hao1['q_eta_z'])
         debug.seed(1)
         print("=================================")
         print("===       IS cleared          ===")
@@ -496,7 +522,7 @@ def apg_objective_eager(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x, 
         print(sweeps[2][1]['aux']['log_q_f'].sum(), sweeps[2][1]['aux']['log_q_f'].mean())
         print("=================================")
 
-    fwd21 = Forward(enc_apg_eta, prp1, ix=ix(sweep=2,rev=False,block='eta'), _exclude={'lls0'})
+    fwd21 = Forward(enc_apg_eta, prp1, ix=ix(sweep=2,rev=False,block='eta'), exclude={'lls'})
     fout21 = fwd21(**kwargs, _debug=True, _debug_extras=sweeps[2][1])
 
     if compare:
@@ -504,39 +530,69 @@ def apg_objective_eager(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x, 
         debug.seed(1)
 
     prp21 = Propose(
-            target=Reverse(og, enc_apg_eta, ix=ix(sweep=2,rev=True,block='eta'), _exclude={'lls0'}),
+            target=Reverse(og, enc_apg_eta, ix=ix(sweep=2,rev=True,block='eta'), exclude={'lls'}),
             #          p(x,η_2,z) q(η_1 | z, x)
             # ---------------------------------------
             #          q(η_2 | z, x) prp_1(η_1,x,z)
-            proposal=Forward(enc_apg_eta, prp1, ix=ix(sweep=2,rev=False,block='eta'), _exclude={'lls0'}))
+            proposal=Forward(enc_apg_eta, prp1, ix=ix(sweep=2,rev=False,block='eta'), exclude={'lls'}))
 
     out21 = prp21(**kwargs, _debug=True, _debug_extras=out1)
-    log_w21 = out21.log_prob.detach()
-    loss21 = (F.softmax(log_w21, 0) * (- out21.proposal.log_prob)).sum(0).mean()
+
 
     if compare:
-        slog_p = sweeps[1]['aux']['log_p'].mean()
-        log_p = out21.proposal.program.target.log_prob.mean()
-        assert torch.equal(slog_p, log_p)
+        slog_q = sweeps[1]['aux']['log_q']
+        log_q = out21.proposal.program.proposal.log_prob
+        printequal("sweep 1: log_q", slog_q.detach(), log_q.detach())
 
-        slog_w = sweeps[1]['log_w'].mean()
-        log_w = out21.proposal.program.log_prob.mean()
-        assert torch.equal(slog_w, log_w)
+        slog_p = sweeps[1]['aux']['log_p']
+        log_p = out21.proposal.program.target.log_prob
+        printequal("sweep 1: log_p", slog_p.detach(), log_p.detach())
 
-        slog_p_b = sweeps[2][1]['aux']['log_p_b'].mean()
-        log_p = out21.proposal.program.target.log_prob.mean()
+        slog_w = sweeps[1]['log_w']
+        log_w = out21.proposal.program.log_cweight
+        printequal("sweep 1: log_w", slog_w.detach(), log_w.detach())
+        # =============================================== #
+        hao21 = sweeps[2][1]['aux']
 
-        log_q_f = trace_utils.copysubtrace(out21.proposal.trace, {'states1', 'means2', 'precisions2'}).log_joint(**jkwargs).mean()
-        log_p_f = out21.target.program.log_prob.mean()
-        log_q_b = trace_utils.copysubtrace(out21.target.kernel.trace, {'states1', 'means1', 'precisions1'}).log_joint(**jkwargs).mean()
-        # print(sweeps[2][1]['aux']['log_w_f'].sum(), sweeps[2][1]['aux']['log_w_f'].mean())
-        # print(out21.proposal.log_prob.sum(), sweeps[2][1]['aux']['log_w_f'].mean())
+        slog_p_b = hao21['log_p_b']
+        log_p = out21.proposal.program.log_prob
+        printequal("sweep 2 proposal.program (log_p_b):", slog_p_b.detach(), log_p.detach())
+
+        sq_eta_z_f = hao21['q_eta_z_f']
+        q_eta_z_f = trace_utils.copysubtrace(out21.proposal.kernel.trace, {'states1', 'means2', 'precisions2'})
+        slog_q_f = hao21['log_q_f']
+        log_q_fsub = q_eta_z_f.log_joint(**jkwargs)
         breakpoint();
-        print("current")
+
+        printequal("sweep 2 proposal.kernel (log_q_fsub) :", slog_q_f.detach(), log_q_fsub.detach(), allclose=True)
+
+        log_q_f = out21.proposal.log_prob
+        printequal("sweep 2 proposal.kernel (log_q_f + log_p_b) :", slog_p_b.detach() + slog_q_f.detach(), log_q_f.detach())
+
+        slog_p_f = hao21['log_p_f']
+        log_p_f = out21.target.program.log_prob
+        printequal("sweep 2 target.program (log_p_f)  :", slog_p_f.detach(), log_p_f.detach())
+
+        slog_q_b = hao21['log_q_b']
+        log_q_b = trace_utils.copysubtrace(out21.target.kernel.trace, {'states1', 'means1', 'precisions1'}).log_joint(**jkwargs)
+        printequal("sweep 2 target.kernel (log_q_b)   :", slog_q_b.detach(), log_q_b.detach())
+
+        slog_w = hao21['log_w']
+        log_w = out21.log_iweight
+        assert torch.allclose(slog_w.detach(), log_w.detach(), atol=1e-3)
+
+        sloss21 = sweeps[2][1]['metrics']['iloss'][1]
+        log_w21 = out21.log_iweight.detach()
+        w21 = F.softmax(log_w21, 0)
+        pix = out21.proposal.ix
+        forward_marginal21 = trace_utils.copysubtrace(out21.proposal.trace, {f'means{pix.sweep}', f'precisions{pix.sweep}', f'states{pix.sweep-1}'})
+        q_fwd21 = forward_marginal21.log_joint(**jkwargs)
+        loss21 = (w21 * (- q_fwd21)).sum(0).mean()
+        assert torch.allclose(loss21, sloss21, atol=1) # precisions is starting to destabilize
+        breakpoint();
 
 
-
-    debug.seed(4)
+        debug.seed(1)
 
     pro = Forward(enc_apg_eta, prp1, ix=ix(fr=1, to=2), _exclude={'lls'})
     of2 = pro(**kwargs)

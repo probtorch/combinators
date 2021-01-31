@@ -4,7 +4,7 @@ from torch import Tensor
 from combinators.stochastic import Trace, Provenance, RandomVariable, ImproperRandomVariable
 from torch import distributions as D
 from combinators.types import TraceLike
-from typing import Callable, Any, Tuple, Optional, Set, Union, Dict
+from typing import Callable, Any, Tuple, Optional, Set, Union, Dict, List
 from copy import deepcopy
 from typeguard import typechecked
 from itertools import chain
@@ -12,6 +12,12 @@ import combinators.tensor.utils as tensor_utils
 from enum import Enum, auto
 from combinators.types import check_passable_kwarg
 import inspect
+
+def distprops(dist):
+    return [
+        p for p in (set(inspect.getfullargspec(dist.__init__).args) - {'self'})
+            if hasattr(dist, p)
+    ]
 
 @typechecked
 def maybe_sample(trace:Trace, sample_shape:Union[Tuple[int], None, tuple]) -> Callable[[D.Distribution, str], Tuple[Tensor, Provenance]]:
@@ -46,7 +52,7 @@ def assert_valid_subtrace(tr1:Trace, tr2:Trace) -> None:
 
 
 @typechecked
-def valeq(t1:Trace, t2:Trace, nodes:Optional[Dict[str, Any]]=None, check_exist:bool=True, strict:bool=False)->bool:
+def valeq(t1:Trace, t2:Trace, nodes:Union[Dict[str, Any], List[Tuple[str, str]], None]=None, check_exist:bool=True, strict:bool=False)->bool:
     """
     Two traces are value-equivalent for a set of names iff the values of the corresponding names in both traces exist
     and are mutually equal.
@@ -58,6 +64,8 @@ def valeq(t1:Trace, t2:Trace, nodes:Optional[Dict[str, Any]]=None, check_exist:b
     t2nodes:Set[str] = set(t2._nodes.keys())
     if nodes is None:
         _nodes = t1nodes.union(t2nodes) if strict else t1nodes.intersection(t2nodes)
+    elif isinstance(nodes, list) and len(nodes) > 0 and isinstance(nodes[0], tuple) and len(nodes[0]) == 2:
+        raise NotImplementedError('pairing tuples not supported yet')
     else:
         _nodes = nodes
 
@@ -81,6 +89,39 @@ def show(tr:TraceLike, fix_width=False):
     get_value = lambda v: v if isinstance(v, Tensor) else v.value
     ten_show = lambda v: tensor_utils.show(get_value(v), fix_width=fix_width)
     return "{" + "; ".join([f"'{k}'-➢{ten_show(v)}" for k, v in tr.items()]) + "}"
+
+@typechecked
+def showdists(tr:Trace, delim="; ", pretty=True, mlen=0):
+    def showone(dist):
+        props = distprops(dist)
+        sattrs = [f'{p}:{tensor_utils.show(getattr(dist, p))}' for p in props]
+        return type(dist).__name__ + "(" +", ".join(sattrs)+ ")"
+    if pretty:
+        mlen = max(map(len, tr.keys()))
+        delim = "\n,"
+    return "{" + delim.join([("{:>"+str(mlen)+"}-➢{}").format(k, showone(v.dist)) for k, v in tr.items()]) + "}"
+
+@typechecked
+def showprobs(tr:Trace, delim="; ", pretty=True, mlen=0):
+    def showone(dist, probs):
+        props = distprops(dist)
+        sattrs = [f'{p}:{tensor_utils.show(getattr(dist, p))}' for p in props]
+        return type(dist).__name__ + "(log_prob=" +tensor_utils.show(probs) + ")"
+    if pretty:
+        mlen = max(map(len, tr.keys()))
+        delim = "\n,"
+    return "{" + delim.join([("{:>"+str(mlen)+"}-➢{}").format(k, showone(v.dist, v.log_prob)) for k, v in tr.items()]) + "}"
+
+@typechecked
+def showvals(tr:Trace, delim="; ", pretty=True, mlen=0):
+    def showone(dist, probs):
+        props = distprops(dist)
+        sattrs = [f'{p}:{tensor_utils.show(getattr(dist, p))}' for p in props]
+        return type(dist).__name__ + "(value=" +tensor_utils.show(probs) + ")"
+    if pretty:
+        mlen = max(map(len, tr.keys()))
+        delim = "\n,"
+    return "{" + delim.join([("{:>"+str(mlen)+"}-➢{}").format(k, showone(v.dist, v.value)) for k, v in tr.items()]) + "}"
 
 @typechecked
 def trace_eq(t0:Trace, t1:Trace, name:str):
@@ -182,11 +223,6 @@ def mapvalues(*traces: Trace, mapper=None, **kwargs):
 
     return copytraces(*traces, mapper=rvmapper, **kwargs)
 
-def distprops(dist):
-    return [
-        p for p in (set(inspect.getfullargspec(dist.__init__).args) - {'self'})
-            if hasattr(dist, p)
-    ]
 
 def disteq(d1, d2, return_invalid=False, allclose=False):
     if type(d1) != type(d1):

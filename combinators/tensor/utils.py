@@ -39,11 +39,13 @@ def thash(aten:Tensor, length:int=8, with_ref=False, no_grad_char:str=" ")->str:
         v = _hash(save_ref.cpu().numpy(), length)
         return f'#{g}{v}'
 
+def prettyshape(size):
+    return "[]" if len(size) == 0 else f"[{'×'.join(map(str, size))}]"
+
 @typechecked
 def show(aten:Tensor, fix_width:bool=True)->str:
     t = str(aten.dtype).split(".")[-1]
-    s = "×".join(map(str, aten.shape))
-    return f"{t}[{s}]{thash(aten)}"
+    return f"{t}{prettyshape(aten.size())}{thash(aten)}"
 
 @typechecked
 def copy(aten:Tensor, requires_grad=False, deepcopy=False)->Tensor:

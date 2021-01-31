@@ -55,6 +55,8 @@ class Inf(ABC):
             ix:Union[Tuple[int], NamedTuple, None]=None,
             _debug=False,
             sample_dim=None,
+            exclude=None,
+            include=None,
             batch_dim=None):
         self.loss0 = torch.zeros(1, device=autodevice(device)) if loss0 is None else loss0.to(autodevice(device))
         self.foldl_loss = loss_fn
@@ -63,6 +65,9 @@ class Inf(ABC):
         self._cache = Out(None, None, None)
         self.batch_dim = batch_dim
         self.sample_dim = sample_dim
+        assert not (exclude is not None and include is not None)
+        self.exclude = exclude
+        self.include = include
 
     def __call__(self, *args:Any, _debug=False, **kwargs:Any) -> Out:
         raise NotImplementedError("@abstractproperty but type system doesn't understand it")
@@ -173,9 +178,11 @@ class KernelInf(Conditionable, Inf):
             loss0=None,
             device=None,
             ix=None,
+            exclude=None,
+            include=None,
             _debug=False):
         Conditionable.__init__(self)
-        Inf.__init__(self, ix=ix, _debug=_debug, loss_fn=loss_fn, loss0=loss0, device=device)
+        Inf.__init__(self, ix=ix, _debug=_debug, loss_fn=loss_fn, loss0=loss0, device=device, exclude=exclude, include=include)
         self._permissive_arguments = _permissive_arguments
 
     def _show_traces(self):
@@ -195,18 +202,19 @@ class Reverse(KernelInf):
             device=None,
             ix=None,
             _debug=False,
-            _exclude=set(),
+            exclude=None,
+            include=None,
             _permissive=True) -> None:
-        super().__init__(_permissive, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
+        super().__init__(_permissive, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug, exclude=exclude, include=include)
         self.program = program
         self.kernel = kernel
-        self._exclude = _exclude
 
     def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **program_kwargs:Any) -> Out:
         """ Reverse """
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
 
-        inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
+        ix = self.ix if self.ix is not None else ix
+        inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
         program = Condition(self.program, trace=self._cond_trace, as_trace=False) if self._cond_trace is not None else self.program
 
@@ -216,7 +224,15 @@ class Reverse(KernelInf):
 
         kernel_state = _dispatch(permissive=True)(kernel)(program_state.trace, program_state.output, **inf_kwargs, **program_kwargs)
 
-        log_aux = kernel_state.trace.log_joint(**shape_kwargs, nodes=set(kernel_state.trace.keys()) - self._exclude)
+        knodes = set(kernel_state.trace.keys())
+        if self.exclude is not None:
+            nodes = knodes - self.exclude
+        elif self.include is not None:
+            assert len(self.include - knodes) == 0
+            nodes = self.include
+        else:
+            nodes = None
+        log_aux = kernel_state.trace.log_joint(**shape_kwargs, nodes=nodes)
 
         out_trace = program_state.trace.as_trace(access_only=True) if isinstance(program_state.trace, ConditioningTrace) \
                         else program_state.trace
@@ -231,7 +247,11 @@ class Reverse(KernelInf):
                 type=type(self).__name__,
                 log_weight=maybe(program_state, 'log_weight', 0),
                 ))
-        self._cache['loss'] = self.foldl_loss(self._cache, maybe(kernel_state, 'loss', self.loss0))
+
+        if 'log_cweight' in program_state:
+            self._cache['log_cweight'] = program_state['log_cweight']
+        if ix is not None:
+            self._cache['ix'] = ix
 
         return self._cache
 
@@ -246,20 +266,21 @@ class Forward(KernelInf):
             ix=None,
             _debug=False,
             _permissive=True,
-            _exclude=set(),
+            exclude=None,
+            include=None,
     ) -> None:
-        super().__init__(_permissive, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
+        super().__init__(_permissive, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug, exclude=exclude, include=include)
         self.program = program
         self.kernel = kernel
         self._run_program = _dispatch(permissive=True)(self.program)
         self._run_kernel = _dispatch(permissive=True)(self.kernel)
-        self._exclude = _exclude # really just for debugging APG
 
     def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, _debug_extras=None, reparameterized=True, ix=None, **program_kwargs) -> Out:
         """ Forward """
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
 
-        inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
+        ix = self.ix if self.ix is not None else ix
+        inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
         debug.seed(1)
         program_state = self._run_program(*program_args, **inf_kwargs, **program_kwargs)
@@ -267,7 +288,16 @@ class Forward(KernelInf):
         debug.seed(2)
         kernel_state = self._run_kernel(program_state.trace, program_state.output, **inf_kwargs, **program_kwargs)
 
-        log_prob = kernel_state.trace.log_joint(**shape_kwargs, nodes=set(kernel_state.trace.keys()) - self._exclude)
+        knodes = set(kernel_state.trace.keys())
+        if self.exclude is not None:
+            nodes = knodes - self.exclude
+        elif self.include is not None:
+            assert len(self.include - knodes) == 0
+            nodes = self.include
+        else:
+            nodes = None
+        log_prob = kernel_state.trace.log_joint(**shape_kwargs, nodes=nodes)
+
         if _debug_extras is not None:
             dtrace = _debug_extras['q_eta_z']
             ctrace = trace_utils.copysubtrace(kernel_state.trace, {'precisions2', 'means2', 'states1'})
@@ -296,6 +326,10 @@ class Forward(KernelInf):
                 ))
 
         self._cache['loss'] = self.foldl_loss(self._cache, maybe(kernel_state, 'loss', self.loss0))
+        if 'log_cweight' in program_state:
+            self._cache['log_cweight'] = program_state['log_cweight']
+        if ix is not None:
+            self._cache['ix'] = ix
         return self._cache
 
 
@@ -315,13 +349,12 @@ class Propose(Conditionable, Inf):
 
     def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, _debug_extras=None, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Proposal """
-        inf_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, ix=self.ix if self.ix is not None else ix)
+        ix = self.ix if self.ix is not None else ix
+        inf_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, ix=ix)
 
         # proposal = Condition(self.proposal, trace=self._cond_trace, as_trace=False) if self._cond_trace is not None else self.proposal
         proposal_state = self.proposal(*shared_args, **inf_kwargs, **shared_kwargs)
 
-        if _debug and _debug_extras is not None:
-            breakpoint();
         conditioned_target = Condition(self.target, trace=proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and _doesn't_ need the whole trace?
         target_state = conditioned_target(*shared_args, **inf_kwargs,  **shared_kwargs)
 
@@ -332,9 +365,15 @@ class Propose(Conditionable, Inf):
                 proposal=proposal_state if self._debug or _debug else Out(*proposal_state), # strip auxiliary traces
                 target=target_state if self._debug  or _debug else Out(*target_state), # strip auxiliary traces
                 type=type(self).__name__,
+
+                # only way this happens if we are recursively defining propose statements.
+                log_iweight=lv,
+                log_cweight=lv if 'log_cweight' not in proposal_state else lv + proposal_state.log_cweight
                 ),
             trace=target_state.trace,
-            log_prob=lv,
+            log_prob=target_state.log_prob,
             output=target_state.output,)
         self._cache['loss'] = self.foldl_loss(self._cache, maybe(proposal_state, 'loss', self.loss0))
+        if ix is not None:
+            self._cache['ix'] = ix
         return self._cache

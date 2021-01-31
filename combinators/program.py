@@ -31,12 +31,17 @@ class Program(TraceModule):
 
     def forward(self, *args:Any, sample_dims=None, batch_dim=None, reparameterized=True, **kwargs:Any):
         trace = self.get_trace()  # allows Condition to hook into this process
+        skwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim)
 
-        out = self.model(trace, *args, **get_shape_kwargs(self.model, sample_dims=sample_dims, batch_dim=batch_dim), **kwargs)
+        out = self.model(trace, *args, **get_shape_kwargs(self.model, **skwargs), **kwargs)
 
         self.clear_cond_trace()   # closing bracket for a run, required if a user does not use the Condition combinator
 
-        log_joint = trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, nodes=None if self._with_joint is None else self._with_joint)
+        jkwargs = dict(reparameterized=reparameterized, **skwargs)
+
+        # TODO: there is some precision error when using nodes, so:
+        log_joint = trace_utils.copysubtrace(trace, self._with_joint).log_joint(**jkwargs) \
+            if self._with_joint is not None else trace.log_joint(**jkwargs)
 
         return Out(trace, log_joint, out, extras=dict(type=type(self).__name__))
 
