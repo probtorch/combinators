@@ -20,7 +20,7 @@ from combinators.stochastic import Trace
 import combinators.trace.utils as trace_utils
 import combinators.tensor.utils as tensor_utils
 import combinators.debug as debug
-from combinators.utils import ppr
+from combinators.utils import ppr, curry
 import experiments.apgs_gmm.hao as hao
 from combinators.trace.utils import RequiresGrad, copysubtrace, copytrace, mapvalues, disteq
 from experiments.apgs_gmm.models import mk_target, Enc_rws_eta, Enc_apg_z, Enc_apg_eta, GenerativeOriginal, ix
@@ -33,238 +33,28 @@ if debug.runtime() == 'jupyter':
 else:
     from tqdm import trange, tqdm
 
+def printequal(desc, l, r, quiet=False, atol=1e-3, assertion=True):
+    l, r = l.detach(), r.detach()
+    eq = torch.equal(l, r)
+    if eq:
+        if quiet:
+            return
+        else:
+            print(desc, "[ OK ]")
+            return
+    if not assertion:
+        print(desc, "not equal")
 
-def apg_objective(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x, num_sweeps, sample_size, compare=True):
-    """
-    Amortized Population Gibbs objective in GMM problem
-    ==========
-    abbreviations:
-    K -- number of clusters
-    D -- data dimensions (D=2 in GMM)
-    S -- sample size
-    B -- batch size
-    N -- number of data points in one (GMM) dataset
-    ==========
-    variables:
-    ob  :  S * B * N * D, observations, as data points
-    tau :  S * B * K * D, cluster precisions, as global variables
-    mu  :  S * B * K * D, cluster means, as global variables
-    eta : ={tau, mu} global block
-    z   :  S * B * N * K, cluster assignments, as local variables
-    ==========
-    """
-    # # ##(enc_rws_eta, enc_apg_z, enc_apg_eta, generative) = models
-    # # #if compare:
-    # # #    debug.seed(1)
-    # # #    _loss, _log_w, _q_eta_z_out = oneshot_hao(enc_rws_eta, enc_apg_z, generative, og, x)
-    # # #
-    # # #    from combinators.resampling.strategies import APGResampler
-    # # #    q_eta_z = resample_variables(resampler, _q_eta_z_out.trace, log_weights=_log_w)
-    # # #    debug.seed(1)
-    # # #
-    # # ## otherwise, eager combinators looks like:
-    # # #prp  = Propose(proposal=Forward(enc_apg_z, enc_rws_eta), target=og)
-    # # #out = prp(x, prior_ng=generative.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
-    # # #
-    # # #log_w = out.log_prob.detach()
-    # # #w = F.softmax(log_w, 0)
-    # # #loss = (w * (- out.proposal.weights)).sum(0).mean()
-    og2, og2k = generative
-    kwargs = dict(x=x, prior_ng=og.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False, _debug=True)
+    close = torch.allclose(l, r, atol=atol)
+    if close:
+        if not quiet:
+            print(desc, "[WARNING] => close, not equal")
+    else:
+        if assertion:
+            assert False, desc
+        else:
+            print(desc, "[ERROR] => not equal!!!!!")
 
-    assert num_sweeps == 2
-    from combinators.resampling.strategies import APGSResamplerOriginal
-    resampler = APGSResamplerOriginal(sample_size)
-    # ================================================================
-    # sweep 1:
-    debug.seed(1)
-    loss1, log_w1, q_eta_z_out1 = hao.oneshot(enc_rws_eta, enc_apg_z, og, x)
-    q_eta_z1 = q_eta_z_out1.trace
-    q_eta_z2 = q_eta_z1 # resample_variables(resampler, q_eta_z1, log_weights=log_w1)
-    log_wr2 = q_eta_z2.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    # ================================================================
-    # sweep 2 (for m in range(num_sweeps-1)):
-    # log_w_eta, q_eta_z, metrics = apg_update_eta(enc_apg_eta, generative, q_eta_z, x)
-    # forward
-    debug.seed(4)
-    q_eta_z_f = enc_apg_eta(q_eta_z2, None, x=x, prior_ng=og.prior_ng, ix="") ## forward kernel
-    q_eta_z_f = q_eta_z_f.trace
-    print("q_eta_z_f.keys()", set(q_eta_z_f.keys()))
-    p_f = og.x_forward(q_eta_z_f, x)
-    print("p_f.keys()", set(p_f.keys()))
-    log_q_f = q_eta_z_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    log_p_f = p_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    log_w_f = log_p_f - log_q_f
-    print(tensor_utils.show(log_w1))
-    # print(tensor_utils.show(log_wr2))
-    # print(tensor_utils.show(log_w_f))
-
-    # <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
-
-
-    # ================================================================
-    # sweep 1:
-    debug.seed(1)
-    prp1 = Propose(ix=ix(fr=0,to=1,block='is'),
-            target=og, # og == original generator
-            #          p(x,η_1,z_1)
-            # ---------------------------------- [prp1]
-            #          q(z_1 | η_1, x) q_0(η_1|x)
-            proposal=Forward(enc_apg_z, enc_rws_eta))
-
-    out1 = prp1(**kwargs)
-    try:
-        print(trace_utils.valeq(out1.trace, q_eta_z1))
-    except Exception as e:
-        print(e)
-    breakpoint();
-
-
-    print(torch.equal(out1.log_prob, log_w1))
-    print("out1 results ^^^^^")
-    import torch.nn.functional as F
-
-    # ================================================================
-    # sweep 2 (for m in range(num_sweeps-1)):
-    # log_w_eta, q_eta_z, metrics = apg_update_eta(enc_apg_eta, generative, q_eta_z, x)
-    # debug.seed(1)
-    # fwd2 = Forward(kernel=enc_apg_eta, program=Resample(prp1, strategy=APGStrat(sample_size)))
-    # prp2 = Propose(proposal=fwd2, target=Reverse(og2, og2k))
-
-    # debug.seed(1)
-    print("1 still working?", torch.equal(out1.log_prob, log_w1))
-    # prp2 = Propose(
-    #         target=Reverse(og, enc_apg_eta), # og == original generator
-    #         #          p(x,η,z_2) q(η_1 | η, x)                 #
-    #         # ---------------------------------------
-    #         #          q(z_2 | η, x) prp_1(z_1,x,η)             # <<< (τ_prp1:{η,z})
-    #         proposal=Forward(enc_apg_eta, Condition(prp1, out1.proposal.trace)))
-
-    print("with z2s", q_eta_z_f)
-    print("lprobs", log_q_f.sum(), log_q_f.mean())
-
-    debug.seed(4)
-
-    pro = Forward(enc_apg_eta, prp1, ix=ix(fr=1, to=2, block='eta'), _exclude={'lls'})
-    of2 = pro(**kwargs)
-
-    def compare(x, getter, expected):
-        # print(torch.equal(getter(q_eta_z_f[x]), getter(of2.kernel.trace[x])))
-        print("GOT:", torch.equal(getter(out1.trace[x]), getter(of2.program.trace[x])), "EXPECTED:", expected)
-
-    # compare('states1', lambda x: x.dist.probs, True)
-    # compare('states1', lambda x: x.value, True)
-    # compare('lls', lambda x: x.value, True)
-    # compare('lls', lambda x: x.dist.loc, True)
-    # compare('lls', lambda x: x.dist.scale, True)
-    #
-    # print(tensor_utils.show(of2.trace['precisions'].dist.rate))
-    # compare('precisions', lambda x: x.dist.rate, False)
-    # print(tensor_utils.show(of2.trace['precisions'].dist.concentration))
-    # compare('precisions', lambda x: x.dist.concentration, False)
-    # Need to confirm that: q(η_2 | z_1 x) p_{prp1}(x η_1 z_1)
-    breakpoint();
-
-    tar = Condition(Reverse(og, enc_apg_eta, ix=ix(fr=2, to=1, block='eta'), trace=of2.trace, _exclude={'lls'}))
-    or2 = tar(**kwargs)
-
-    # =======================================================================================
-    # =======================================================================================
-    # =======================================================================================
-    # =======================================================================================
-    # =======================================================================================
-
-    prp21 = Propose(
-        target=Reverse(og, enc_apg_eta, ix=sweepix(sweep=2, stage=1, block='eta')),
-        #       p(x η_2 z_1) q(η_1 | z_1 x)
-        # --------------------------------------- [prp21]
-        #    q(η_2 | z_1 x) p_{prp1}(x η_1 z_1)
-        proposal=Forward(enc_apg_eta, prp1, ix=sweepix(sweep=2, stage=2, block='eta')))
-
-
-    prp22 = Propose(
-        ix=sweepix(sweep=2, stage=2, block='z'),
-        target=Reverse(og, enc_apg_z),
-        #       p(x η_2 z_2) q(z_1 | η_2 x)
-        # --------------------------------------- [prp22]
-        #    q(z_2 | η_2 x) p_{prp22}(x η_2 z_1)
-        proposal=Forward(enc_apg_z, prp21))
-
-    def compare(x, getter):
-        # print(torch.equal(getter(q_eta_z_f[x]), getter(of2.kernel.trace[x])))
-        print(torch.equal(getter(out1.trace[x]), getter(of2.program.trace[x])))
-    compare('precisions', lambda x: x.dist.concentration)
-    compare('precisions', lambda x: x.dist.rate)
-    compare('precisions', lambda x: x.value)
-    compare('means',  lambda x: x.dist.loc)
-    compare('means',  lambda x: x.dist.scale)
-    compare('means',  lambda x: x.value)
-    compare('states', lambda x: x.dist.probs)
-    compare('states', lambda x: x.value)
-
-    print(torch.equal(q_eta_z_f['precisions'].dist.concentration, of2.program.trace['precisions'].dist.concentration))
-    print(log_q_f.sum(), log_q_f.mean())
-    print(of2.log_prob.sum(), of2.log_prob.mean())
-    # print(log_p_f.sum(), log_p_f.mean())
-    # print(of2.target.log_prob.sum(), of2.target.log_prob.mean())
-    # print(log_w_f.sum(), log_w_f.mean())
-    # print(of2.log_prob.sum(), of2.log_prob.mean())
-
-    breakpoint();
-    out2 = prp2(**kwargs)
-
-    def debug_print(desc, a, b):
-        with torch.no_grad():
-            eq = torch.equal(a, b)
-            print(desc, eq, *[t.detach().sum().cpu().item() for t in [a, b] if not eq])
-
-    print("(Proposal>Forward>Resample).trace == q_eta_z_f?", trace_utils.valeq(out2.proposal.program.trace, q_eta_z_f, strict=True))
-    print("log_wr2", log_wr2.sum())
-    debug_print("(Proposal>Forward>Resample).log_ω == log_q_f?", log_q_f, out2.proposal.program.log_prob) # log_q_f = q_eta_z_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    print("(Proposal>Forward>Resample).log_ω", out2.proposal.program.log_prob.sum())
-    print("(Proposal>Forward>EncAPG_η).log_ω", out2.proposal.kernel.log_prob.sum() if out2.proposal.kernel.log_prob is not None else None)
-    print("(Proposal>Forward).log_ω", out2.proposal.log_prob.sum())
-    print("log_q_f", log_q_f.sum())
-    # debug_print("(Proposal>Forward>Resample).log_ω == log_p_f?", log_p_f, out2.target.log_prob)
-    # debug_print("(Proposal).log_ω == log_w_f?", log_w_f, out2.log_prob)
-    #
-    # print(tensor_utils.show(log_w_f), tensor_utils.show(out2.log_prob))
-    breakpoint();
-
-    log_q_f = q_eta_z_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    log_p_f = p_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    log_w_f = log_p_f - log_q_f
-
-    breakpoint();
-
-    debug.seed(2)
-    # ================================================================
-    # sweep 2 (for m in range(num_sweeps-1)):
-    # log_w_eta, q_eta_z, metrics = apg_update_eta(enc_apg_eta, generative, q_eta_z, x)
-    # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    # forward
-    q_eta_z_f = enc_apg_eta(q_eta_z, None, x=x, prior_ng=generative.prior_ng) ## forward kernel
-    q_eta_z_f = q_eta_z_f.trace
-    p_f = og.x_forward(q_eta_z_f, x)
-    log_q_f = q_eta_z_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    log_p_f = p_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    log_w_f = log_p_f - log_q_f
-    ## backward
-    q_eta_z_b = enc_apg_eta(q_eta_z, None, x=x, prior_ng=generative.prior_ng)
-    q_eta_z_b = q_eta_z_b.trace
-    p_b = og.x_forward(q_eta_z_b, x)
-    log_q_b = q_eta_z_b.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    log_p_b = p_b.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    log_w_b = log_p_b - log_q_b
-    log_w = (log_w_f - log_w_b).detach()
-    w = F.softmax(log_w, 0).detach()
-    breakpoint();
-    # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    q_eta_z = resample_variables(resampler, q_eta_z, log_weights=log_w_eta)
-    log_w_z, q_eta_z, metrics = apg_update_z(enc_apg_z, og, q_eta_z, x)
-    q_eta_z = resample_variables(resampler, q_eta_z, log_weights=log_w_z)
-
-    return metrics
 
 def mk_metrics(loss, out, num_sweeps=1, ess_required=True, mode_required=True, density_required=True, mode_required_with_z=False):
     with torch.no_grad():
@@ -289,7 +79,7 @@ def mk_metrics(loss, out, num_sweeps=1, ess_required=True, mode_required=True, d
             #     metrics['exc_kl'] = exc_kl
         return metrics
 
-def train(objective, models, target, og, og2, data, assignments, num_epochs, sample_size, batch_size, normal_gamma_priors, with_tensorboard=False, lr=1e-3, seed=1, eval_break=50, is_smoketest=False, num_sweeps=None):
+def train(objective, models, target, data, assignments, num_epochs, sample_size, batch_size, normal_gamma_priors, with_tensorboard=False, lr=1e-3, seed=1, eval_break=50, is_smoketest=False, num_sweeps=None):
     # (num_clusters, data_dim, normal_gamma_priors, num_iterations=10000, num_samples = 600batches=50)
     """ data size  S * B * N * 2 """
     # Setup
@@ -313,7 +103,7 @@ def train(objective, models, target, og, og2, data, assignments, num_epochs, sam
                 optimizer.zero_grad()
                 x = data[b*batch_size : (b+1)*batch_size].repeat(sample_size, 1, 1, 1)
 
-                loss, metrics = objective(enc_rws_eta=enc_rws_eta, enc_apg_z=enc_apg_z, enc_apg_eta=enc_apg_eta, generative=og2, og=og, x=x, sample_size=sample_size, num_sweeps=num_sweeps, compare=bix==0 or bix==num_batches-1)
+                loss, metrics = objective(enc_rws_eta=enc_rws_eta, enc_apg_z=enc_apg_z, enc_apg_eta=enc_apg_eta, generative=generative, x=x, sample_size=sample_size, num_sweeps=num_sweeps, compare=bix==0 or bix==num_batches-1)
 
                 loss.backward()
                 optimizer.step()
@@ -380,19 +170,14 @@ def main(is_smoketest, num_sweeps, simulate, objective):
     enc_apg_z = Enc_apg_z(K, D, num_hidden=num_hidden)
     enc_apg_eta = Enc_apg_eta(K, D)
     # generative = Generative(K, normal_gamma_priors)
-    og = GenerativeOriginal(K, D, False, 'cpu')
-
-    og2 = None
-    og2k = None
+    generative = GenerativeOriginal(K, D, False, 'cpu')
 
     config = dict(objective=objective, num_sweeps=num_sweeps, num_epochs=num_epochs, batch_size=batch_size, sample_size=sample_size, is_smoketest=is_smoketest)
     print(";".join([f'{k}={v}' for k, v in config.items()]))
 
     train(
         models=[enc_rws_eta, enc_apg_z, enc_apg_eta],
-        target=og,
-        og=og,
-        og2=(og2, og2k),
+        target=generative,
         data=data,
         assignments=assignments,
         normal_gamma_priors=normal_gamma_priors,
@@ -659,6 +444,189 @@ def apg_objective_eager2(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x,
 
 def test_apg_2sweep_eager():
     main(objective=apg_objective_eager2, num_sweeps=2, is_smoketest=debug.is_smoketest(), simulate=False)
+
+
+def apg_objective_declarative(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, x, sample_size, num_sweeps, compare=True):
+    assert num_sweeps == 2
+    if compare:
+        debug.seed(1)
+        from combinators.resampling.strategies import APGSResamplerOriginal
+        resampler = APGSResamplerOriginal(sample_size)
+        sweeps, metrics = hao.apg_objective((enc_rws_eta, enc_apg_z, enc_apg_eta, generative), x, num_sweeps, resampler)
+        debug.seed(1)
+
+    def loss_fn(step, total_loss):
+        log_w = step.log_iweight.detach()
+        w = F.softmax(log_w, 0)
+        log_forward_marginal = step.proposal.log_prob - step.proposal.program.trace.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+        loss = (w * (- log_forward_marginal)).sum(0).sum(-1).mean()
+        return loss + total_loss
+
+    propose = Propose(
+        ix=ix(sweep=1,rev=False,block='is'),
+        target=generative,
+        proposal=Forward(enc_apg_z, enc_rws_eta))
+
+    for sweep in range(2, num_sweeps+1):
+        mkix = lambda block: (ix(sweep, True, block), ix(sweep, False, block))
+        rix, fix = mkix('eta')
+        propose_eta = Propose(loss_fn=loss_fn,
+            target=Reverse(generative, enc_apg_eta, ix=rix),
+            proposal=Forward(enc_apg_eta, propose, ix=fix))
+
+        rix, fix = mkix('z')
+        propose_z = Propose(loss_fn=loss_fn,
+            target=Reverse(generative, enc_apg_z, ix=rix),
+            proposal=Forward(enc_apg_z, propose_eta, ix=fix))
+
+        propose = propose_z
+
+    breakpoint();
+    out = propose(x=x, prior_ng=generative.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False, _debug=compare)
+    breakpoint();
+
+
+    if compare:
+        hao1 = sweeps[1]
+        mas = lambda t: (t.detach().mean(), t.detach().sum())
+        lj = lambda tr: mas(tr.log_joint(**jkwargs))
+        print()
+        printequal("sweep 1: target log_prob (log_p)", out1.target.log_prob, hao1['aux']['log_p'], quiet=True)
+        printequal("sweep 1: propos log_prob (log_q)", out1.proposal.log_prob, hao1['aux']['log_q'], quiet=True)
+        printequal("sweep 1: log_weight (log_w)     ", out1.log_cweight, hao1['log_w'], quiet=True)
+
+        assert torch.equal(out1.target.log_prob, hao1['aux']['log_p'])
+        assert torch.equal(out1.proposal.log_prob, hao1['aux']['log_q'])
+
+        assert torch.equal(log_w1, hao1['log_w'])
+        assert torch.equal(loss1, hao1['metrics']['iloss'][0])
+        print("sweep1 log_w", log_w1.mean())
+        assert trace_utils.valeq(out1.trace, hao1['q_eta_z'])
+        debug.seed(1)
+        print("=================================")
+        print("===       IS cleared          ===")
+        print("=================================")
+        print(sweeps[2][1]['q_eta_z'])
+        print()
+        print(sweeps[2][1]['aux']['log_q_f'].sum(), sweeps[2][1]['aux']['log_q_f'].mean())
+        assert set(out1.target.trace.keys()) == set(out1.trace.keys())
+        dlist = list(set(out1.trace.keys()) - set(out1.proposal.trace.keys()))
+        assert len(dlist) == 1 and dlist[0][:3] == 'lls'
+        debug.seed(1)
+
+
+    out21 = prp21(**kwargs, _debug=True, _debug_extras=out1)
+
+    log_w21 = out21.log_iweight.detach()
+    w21 = F.softmax(log_w21, 0)
+    log_q_fwd21_copied = trace_utils.copysubtrace(out21.proposal.kernel.trace, set(out21.proposal.trace.keys()) - set(out21.proposal.program.trace.keys())).log_joint(**jkwargs)
+    loss21_copied = (w21 * (- log_q_fwd21_copied)).sum(0).mean()
+
+    log_q_fwd21_computed = out21.proposal.log_prob - out21.proposal.program.log_prob
+    loss21 = (w21 * (- log_q_fwd21_computed)).sum(0).mean()
+
+    if compare:
+        print("=================================")
+        print("===     Sweep 2 Block Eta     ===")
+        print("=================================")
+        slog_q = sweeps[1]['aux']['log_q']
+        log_q = out21.proposal.program.proposal.log_prob
+        printequal("- sweep 1: log_q", slog_q.detach(), log_q.detach())
+
+        slog_p = sweeps[1]['aux']['log_p']
+        log_p = out21.proposal.program.target.log_prob
+        printequal("- sweep 1: log_p", slog_p.detach(), log_p.detach())
+
+        slog_w = sweeps[1]['log_w']
+        log_w = out21.proposal.program.log_cweight
+        printequal("- sweep 1: log_w", slog_w.detach(), log_w.detach())
+        print("- IS step unchanged...     [ OK ]")
+        eta2s = { 'means2', 'precisions2' }
+        eta1s = { 'means1', 'precisions1' }
+        lls = { 'lls' }
+        z1s = { 'states1' }
+        dset = set(out21.proposal.trace.keys()) - set(out21.proposal.program.trace.keys())
+        assert dset == eta2s
+        assert (eta2s | lls | z1s) == set(out21.target.program.trace.keys())
+        assert (eta2s | eta1s | lls | z1s) == set(out21.target.kernel.trace.keys())
+        assert (eta2s | lls | z1s) == set(out21.target.trace.keys())
+        print("- traces are expected...   [ OK ]")
+
+        # =============================================== #
+        sweeps2eta = sweeps[2][1]
+        hao21 = sweeps2eta['aux']
+        # log_qp_fwd_sub = trace_utils.copysubtrace(out21.proposal.trace, eta2s | lls | z1s | eta1s).log_joint(**jkwargs)
+        # print(log_qp_fwd_sub.mean())
+        # slog_qp_b = hao21['log_q_f'] + hao21['log_p_b']
+        # print(slog_qp_b.mean())
+        # print(out21.proposal.log_prob.mean())
+        # print(set(out21.proposal.trace.keys()) - (eta2s | lls | z1s | eta1s))
+        proposal21 = out21.proposal
+        target21   = out21.target
+        printequal("- proposal log probs (program)...           ", hao21['log_p_b'], proposal21.program.log_prob)
+        printequal("- proposal log probs (full)...              ", hao21['log_q_f'] + hao21['log_p_b'], proposal21.log_prob)
+        printequal("- proposal log probs (kernel, algebraic)... ", hao21['log_q_f'], proposal21.log_prob - proposal21.program.log_prob)
+        printequal("- proposal log probs (kernel, copied)...    ", hao21['log_q_f'], trace_utils.copysubtrace(proposal21.kernel.trace, set(proposal21.kernel.trace.keys()) - set(proposal21.program.trace.keys())).log_joint(**jkwargs))
+        printequal("- target log probs (program)...             ", hao21['log_p_f'], target21.program.log_prob)
+        printequal("- target log probs (full)...                ", hao21['log_p_f'] + hao21['log_q_b'], target21.log_prob)
+        printequal("- target log probs (kernel, algebraic)...   ", hao21['log_q_b'], target21.log_prob - target21.program.log_prob)
+        printequal("- target log probs (kernel, copied)...      ", hao21['log_q_b'], trace_utils.copysubtrace(target21.kernel.trace, set(target21.kernel.trace.keys()) - set(target21.program.trace.keys())).log_joint(**jkwargs))
+        printequal("- incremental weight...                     ", hao21['log_w'], out21.log_iweight)
+
+        loss21_hao = sweeps[2][1]['metrics']['iloss'][1]
+        printequal("- sweep 2 loss (kernel copied)...   ", loss21_hao, loss21_copied)
+        printequal("- sweep 2 loss (kernel computed)... ", loss21_hao, loss21)
+        debug.seed(1)
+
+    prp22 = Propose(
+            target=Reverse(og, enc_apg_z, ix=ix(sweep=2,rev=True, block='z')),
+            #          p(x η_2 z_2) q( z_1 | η_2 x)
+            # ---------------------------------------
+            #          q(z_2 | η_2 x) prp_1(η_2 x z_1)
+            proposal=Forward(enc_apg_z, prp21, ix=ix(sweep=2,rev=False, block='z')))
+
+    out22 = prp22(**kwargs, _debug=True, _debug_extras=out1)
+    log_w22 = out22.log_iweight.detach()
+    w22 = F.softmax(log_w22, 0)
+    log_q_fwd22 = out22.proposal.log_prob - out22.proposal.program.trace.log_joint(**jkwargs)
+    loss22 = (w22 * (- log_q_fwd22)).sum(0).sum(-1).mean()
+
+    if compare:
+        print("=================================")
+        print("===     Sweep 2 Block Z       ===")
+        print("=================================")
+        proposal21 = out22.proposal.program.proposal
+        target21   = out22.proposal.program.target
+        printequal("- (block-eta) proposal log probs (program)...           ", hao21['log_p_b'],                    proposal21.program.log_prob)
+        printequal("- (block-eta) proposal log probs (full)...              ", hao21['log_q_f'] + hao21['log_p_b'], proposal21.log_prob)
+        printequal("- (block-eta) proposal log probs (kernel, algebraic)... ", hao21['log_q_f'],                    proposal21.log_prob - proposal21.program.log_prob)
+        printequal("- (block-eta) proposal log probs (kernel, copied)...    ", hao21['log_q_f'],                    trace_utils.copysubtrace(proposal21.kernel.trace, set(proposal21.kernel.trace.keys()) - set(proposal21.program.trace.keys())).log_joint(**jkwargs))
+        printequal("- (block-eta) target log probs (program)...             ", hao21['log_p_f'],                    target21.program.log_prob)
+        printequal("- (block-eta) target log probs (full)...                ", hao21['log_p_f'] + hao21['log_q_b'], target21.log_prob)
+        printequal("- (block-eta) target log probs (kernel, algebraic)...   ", hao21['log_q_b'],                    target21.log_prob - target21.program.log_prob)
+        printequal("- (block-eta) target log probs (kernel, copied)...      ", hao21['log_q_b'],                    trace_utils.copysubtrace(target21.kernel.trace, set(target21.kernel.trace.keys()) - set(target21.program.trace.keys())).log_joint(**jkwargs))
+        printequal("- (block-eta) incremental weight...                     ", sweeps2eta['log_w_eta'], out22.proposal.program.log_iweight)
+
+        sweeps2z   = sweeps[2][2]
+        hao22 = sweeps2z['aux']
+        proposal22 = out22.proposal
+        target22   = out22.target
+        printequal("- (block-z) proposal log probs (program, computed)...          ", hao22['log_p_b'],                    proposal22.program.trace.log_joint(**jkwargs))
+        printequal("- (block-z) proposal log probs (full)...                       ", hao22['log_q_f'] + hao22['log_p_b'], proposal22.log_prob)
+        printequal("- (block-z) proposal log probs (kernel, copied)...             ", hao22['log_q_f'],                    trace_utils.copysubtrace(proposal22.kernel.trace, set(proposal22.kernel.trace.keys()) - set(proposal22.program.trace.keys())).log_joint(**jkwargs))
+        printequal("- (block-z) proposal log probs (kernel, computed+algebraic)... ", hao22['log_q_f'],                    proposal22.log_prob - proposal22.program.trace.log_joint(**jkwargs))
+
+        printequal("- (block-z) target log probs (program)...             ", hao22['log_p_f'],                    target22.program.log_prob)
+        printequal("- (block-z) target log probs (full)...                ", hao22['log_p_f'] + hao22['log_q_b'], target22.log_prob)
+        printequal("- (block-z) target log probs (kernel, algebraic)...   ", hao22['log_q_b'],                    target22.log_prob - target22.program.log_prob)
+        printequal("- (block-z) target log probs (kernel, copied)...      ", hao22['log_q_b'],                    trace_utils.copysubtrace(target22.kernel.trace, set(target22.kernel.trace.keys()) - set(target22.program.trace.keys())).log_joint(**jkwargs))
+        printequal("- (block-z) incremental weight...                     ", sweeps2z['log_w_z'], out22.log_iweight)
+        printequal("- (block-z) loss...                                   ", sweeps2z['metrics']['iloss'][2], loss22)
+        debug.seed(1)
+
+    loss = loss1 + loss21 + loss22
+
+    return loss, dict(loss1=loss1, loss21=loss21, loss22=loss22)
 
 def test_apg_2sweep_declarative():
     main(objective=apg_objective_declarative, num_sweeps=2, is_smoketest=debug.is_smoketest(), simulate=False)
