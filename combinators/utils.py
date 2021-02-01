@@ -2,7 +2,8 @@
 import torch
 import torch.nn as nn
 from torch import Tensor
-from combinators.stochastic import Trace
+import torch.distributions as D
+from combinators.stochastic import Trace, RandomVariable
 from typing import Callable, Any, Tuple, Optional, Set
 from copy import deepcopy
 from typeguard import typechecked
@@ -28,27 +29,39 @@ def remains_pure(tr: Trace) -> Callable[[Trace], bool]:
 
     return check
 
-def ppr(a:Any, m=None):
+def ppr_show(a:Any, m='a', debug=False):
+    if debug:
+        print(type(a))
     if isinstance(a, Tensor):
-        print(tensor_utils.show(a))
-    elif isinstance(a, Trace):
-        if m is None:
-            print(trace_utils.showall(a, args=['value'], dists=True))
-        else:
-            args = []
-            kwargs = dict()
-            if 'v' in m:
+        return tensor_utils.show(a)
+    elif isinstance(a, D.Distribution):
+        return trace_utils.showDist(a)
+    elif isinstance(a, (Trace, RandomVariable)):
+        args = []
+        kwargs = dict()
+        if m is not None:
+            if 'v' in m or m == 'a':
                 args.append('value')
-            if 'p' in m:
+            if 'p' in m or m == 'a':
                 args.append('log_prob')
-            if 'd' in m:
+            if 'd' in m or m == 'a':
                 kwargs['dists'] = True
-            print(trace_utils.showall(a, args=args, **kwargs))
+        showinstance = trace_utils.showall if isinstance(a, Trace) else trace_utils.showRV
+        if debug:
+            print("showinstance", showinstance)
+            print("args", args)
+            print("kwargs", kwargs)
+        return showinstance(a, args=args, **kwargs)
     elif isinstance(a, Out):
         print(f"got type {type(a)}, guessing you want the trace:")
-        ppr(a.trace)
+        return ppr_show(a.trace)
+    elif isinstance(a, dict):
+        return repr({k: ppr_show(v) for k, v in a.items()})
     else:
-        print(f"invalid type: {type(a)}")
+        return f"invalid type: {type(a)}"
+
+def ppr(a:Any, m='a', debug=False):
+    print(ppr_show(a, m=m, debug=debug))
 
 # FIXME: currently not used, but currying the annotations might be nice
 def curry(func):

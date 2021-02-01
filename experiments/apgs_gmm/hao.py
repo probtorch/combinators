@@ -11,9 +11,7 @@ def oneshot(enc_rws_eta, enc_apg_z, generative, x, metrics):
     """
     One-shot for eta and z, like a normal RWS
     """
-    debug.seed(1)
     q_eta_z = enc_rws_eta(x, prior_ng=generative.prior_ng, ix='')
-    debug.seed(2)
     q_eta_z = enc_apg_z(q_eta_z.trace, q_eta_z.output, x=x, prior_ng=generative.prior_ng, ix='')
     log_q = q_eta_z.trace.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
 
@@ -107,14 +105,14 @@ def apg_update_z(enc_apg_z, generative, q_eta_z_trace, x, metrics, result_flags)
     assert isinstance(q_eta_z_trace, Trace)
     # forward
     q_eta_z_f = enc_apg_z(q_eta_z_trace, cond_outs=None, x=x, ix='')
+    log_q_f = trace_utils.copysubtrace(q_eta_z_f.trace, {'states0'}).log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     p_f = generative.x_forward(q_eta_z_f.trace, x)
-    log_q_f = q_eta_z_f.trace.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     log_p_f = p_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     log_w_f = log_p_f - log_q_f
     ## backward
     q_eta_z_b = enc_apg_z(q_eta_z_trace, cond_outs=None, x=x, ix='')
     p_b = generative.x_forward(q_eta_z_b.trace, x)
-    log_q_b = q_eta_z_b.trace.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    log_q_b = trace_utils.copysubtrace(q_eta_z_b.trace, {'states0'}).log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     log_p_b = p_b.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     log_w_b = log_p_b - log_q_b
     log_w = (log_w_f - log_w_b).detach()
@@ -209,7 +207,6 @@ def apg_objective(models, x, num_sweeps, resampler, resample=False):
 
     for m in range(num_sweeps-1):
         sweeps.append([None, dict(), dict()])
-        debug.seed(2)
         log_w_eta, q_eta_z, metrics, aux = apg_update_eta(enc_apg_eta, generative, q_eta_z_trace, x, metrics, result_flags)
         q_eta_z_trace = q_eta_z.trace
         sweeps[-1][1] = dict(log_w_eta=log_w_eta, q_eta_z=q_eta_z_trace, metrics=metrics, aux=aux)

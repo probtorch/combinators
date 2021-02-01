@@ -181,7 +181,7 @@ class Enc_apg_z(Kernel):
                                name='means0')
 
             if 'states0' in q_eta_z.keys():
-                _ = q_eta_z_new.one_hot_categorical(probs=q_probs, value=q_eta_z['states0'].value, name='states1')
+                _ = q_eta_z_new.one_hot_categorical(probs=q_probs, value=q_eta_z['states0'].value, name='states0')
             else:
                 _ = q_eta_z_new.one_hot_categorical(probs=q_probs, name='states0')
             return None
@@ -191,7 +191,6 @@ class Enc_apg_z(Kernel):
             mfr, _ = mmap(ix)
             if ix.block == 'is':
                 pfr, mfr = 'precisions1', 'means1'
-            assert pfr in q_eta_z
 
             # tau = q_eta_z[pfr].value
             # mu = q_eta_z[mfr].value
@@ -212,12 +211,13 @@ class Enc_apg_z(Kernel):
 
             gamma_list = self.pi_log_prob(var).squeeze(-1)
             q_probs = F.softmax(gamma_list, -1)
-            _, zto = smap(ix)
+            zfr, zto = smap(ix)
 
             ohcat = Dist.OneHotCategorical(probs=q_probs)
-            zs = q_eta_z[zto].value if zto in q_eta_z else ohcat.sample()
-            log_prob = q_eta_z[zto].log_prob if zto in q_eta_z else None
-            q_eta_z_new.append(RandomVariable(dist=ohcat, value=zs, log_prob=log_prob), name=zto)
+            zs = q_eta_z[zfr].value if zfr in q_eta_z else ohcat.sample()
+            # log_prob = q_eta_z[zfr].log_prob if zfr in q_eta_z else None
+            # q_eta_z_new.append(RandomVariable(dist=ohcat, value=zs, log_prob=log_prob), name=zto)
+            q_eta_z_new.append(RandomVariable(dist=ohcat, value=zs), name=zto)
 
             return dict(x=x, tau=tau, mu=mu, z=zs)
 
@@ -282,7 +282,7 @@ class GenerativeOriginal(Program):
         else:
             raise RuntimeError("impossible")
 
-        assert p in trace and m in trace and s in trace
+        # assert p in trace and m in trace and s in trace
         provenance=Provenance.OBSERVED
 
         gamma = D.Gamma(self.prior_alpha, self.prior_beta)

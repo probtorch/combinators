@@ -90,53 +90,33 @@ def show(tr:TraceLike, fix_width=False):
     ten_show = lambda v: tensor_utils.show(get_value(v), fix_width=fix_width)
     return "{" + "; ".join([f"'{k}'-➢{ten_show(v)}" for k, v in tr.items()]) + "}"
 
-@typechecked
-def showdists(tr:Trace, delim="; ", pretty=True, mlen=0, sort=True):
-    def showone(dist):
-        props = distprops(dist)
-        sattrs = [f'{p}:{tensor_utils.show(getattr(dist, p))}' for p in props]
-        return type(dist).__name__ + "(" +", ".join(sattrs)+ ")"
-    if pretty:
-        mlen = max(map(len, tr.keys()))
-        delim = "\n,"
-    items = list(tr.items())
-    if sort:
-        items = items.sort()
-    return "{" + delim.join([("{:>"+str(mlen)+"}-➢{}").format(k, showone(v.dist)) for k, v in items]) + "}"
+def showDist(dist):
+    props = distprops(dist)
+    sattrs = [f'{p}:{tensor_utils.show(getattr(dist, p))}' for p in props]
+    return type(dist).__name__ + "(" +", ".join(sattrs)+ ")"
 
-@typechecked
-def showprobs(tr:Trace, delim="; ", pretty=True, mlen=0, sort=True):
-    def showone(dist, probs):
-        props = distprops(dist)
-        sattrs = [f'{p}:{tensor_utils.show(getattr(dist, p))}' for p in props]
-        return type(dist).__name__ + "(log_prob=" +tensor_utils.show(probs) + ")"
-    if pretty:
-        mlen = max(map(len, tr.keys()))
-        delim = "\n,"
-    items = list(tr.items())
-    if sort:
-        items = items.sort()
-    return "{" + delim.join([("{:>"+str(mlen)+"}-➢{}").format(k, showone(v.dist, v.log_prob)) for k, v in items]) + "}"
+def showRV(v, args=[], dists=False):
+    if len(args) == 0 and not dists:
+        print("[WARNING] asked to show a RV, but no arguments passed")
+    name = ""
+    arglist = [f'{a}={tensor_utils.show(getattr(v, a))}' for a in args]
+    if dists:
+        name = type(v.dist).__name__ + "("
+        props = distprops(v.dist)
+        sattrs = [f'{p}={tensor_utils.show(getattr(v.dist, p))}' for p in props]
+        arglist.append('dist=' + name + "(" + ", ".join(sattrs) + ")")
+    breakpoint();
+    return name + ", ".join(arglist)
 
 @typechecked
 def showall(tr:Trace, delim="; ", pretty=True, mlen=0, sort=True, args=[], dists=False):
-    def showone(v):
-        name = ""
-        arglist = [f'{a}={tensor_utils.show(getattr(v, a))}' for a in args]
-        if dists:
-            name = type(v.dist).__name__ + "("
-            props = distprops(v.dist)
-            sattrs = [f'{p}={tensor_utils.show(getattr(v.dist, p))}' for p in props]
-            arglist.append('dist=' + name + "(" + ", ".join(sattrs) + ")")
-        return name + ", ".join(arglist)
-
     if pretty:
         mlen = max(map(len, tr.keys()))
         delim = "\n,"
     items = list(tr.items())
     if sort:
         items.sort()
-    return "{" + delim.join([("{:>"+str(mlen)+"}-➢{}").format(k, showone(v)) for k, v in items]) + "}"
+    return "{" + delim.join([("{:>"+str(mlen)+"}-➢{}").format(k, showRV(v, args=args, dists=dists)) for k, v in items]) + "}"
 
 @typechecked
 def showvals(tr:Trace, delim="; ", pretty=True, mlen=0, sort=True):

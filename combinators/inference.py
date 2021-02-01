@@ -73,6 +73,17 @@ class Inf(ABC):
     def __call__(self, *args:Any, _debug=False, **kwargs:Any) -> Out:
         raise NotImplementedError("@abstractproperty but type system doesn't understand it")
 
+    def joint_set(self, trace):
+        tnodes = set(trace.keys())
+        if self.exclude is not None:
+            nodes = tnodes - self.exclude
+        elif self.include is not None:
+            assert len(self.include - tnodes) == 0
+            nodes = self.include
+        else:
+            nodes = None
+        return nodes
+
 
 class Condition(Inf):
     """
@@ -225,15 +236,7 @@ class Reverse(KernelInf):
 
         kernel_state = _dispatch(permissive=True)(kernel)(program_state.trace, program_state.output, **inf_kwargs, **program_kwargs)
 
-        knodes = set(kernel_state.trace.keys())
-        if self.exclude is not None:
-            nodes = knodes - self.exclude
-        elif self.include is not None:
-            assert len(self.include - knodes) == 0
-            nodes = self.include
-        else:
-            nodes = None
-        log_aux = kernel_state.trace.log_joint(**shape_kwargs, nodes=nodes)
+        log_aux = kernel_state.trace.log_joint(**shape_kwargs, nodes=self.joint_set(kernel_state.trace))
 
         out_trace = program_state.trace.as_trace(access_only=True) if isinstance(program_state.trace, ConditioningTrace) \
                         else program_state.trace
@@ -283,38 +286,11 @@ class Forward(KernelInf):
         ix = self.ix if self.ix is not None else ix
         inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
-        debug.seed(1)
         program_state = self._run_program(*program_args, **inf_kwargs, **program_kwargs)
 
-        debug.seed(2)
         kernel_state = self._run_kernel(program_state.trace, program_state.output, **inf_kwargs, **program_kwargs)
 
-        knodes = set(kernel_state.trace.keys())
-        if self.exclude is not None:
-            nodes = knodes - self.exclude
-        elif self.include is not None:
-            assert len(self.include - knodes) == 0
-            nodes = self.include
-        else:
-            nodes = None
-        log_prob = kernel_state.trace.log_joint(**shape_kwargs, nodes=nodes)
-
-        if _debug_extras is not None:
-            dtrace = _debug_extras['q_eta_z']
-            ctrace = trace_utils.copysubtrace(kernel_state.trace, {'precisions2', 'means2', 'states1'})
-            # print(trace_utils.valeq(dtrace, ctrace))
-            print("p_v", torch.equal(ctrace['precisions2'].value,    dtrace['precisions0'].value))
-            print("p_d", disteq(     ctrace['precisions2'].dist,     dtrace['precisions0'].dist))
-            print("p_p", torch.equal(ctrace['precisions2'].log_prob, dtrace['precisions0'].log_prob))
-            print()
-            print("m_v", torch.equal(ctrace['means2'].value,              dtrace['means0'].value))
-            print("m_d", disteq(     ctrace['means2'].dist,               dtrace['means0'].dist))
-            print("m_p", torch.equal(ctrace['means2'].log_prob,           dtrace['means0'].log_prob))
-            print()
-            print("s_v", torch.equal(ctrace['states1'].value,            dtrace['states0'].value))
-            print("s_d", disteq(     ctrace['states1'].dist,             dtrace['states0'].dist))
-            print("s_p", torch.equal(ctrace['states1'].log_prob,         dtrace['states0'].log_prob))
-            print()
+        log_prob = kernel_state.trace.log_joint(**shape_kwargs, nodes=self.joint_set(kernel_state.trace))
 
         self._cache = Out(
             trace=kernel_state.trace,
@@ -356,8 +332,8 @@ class Propose(Conditionable, Inf):
         # proposal = Condition(self.proposal, trace=self._cond_trace, as_trace=False) if self._cond_trace is not None else self.proposal
         proposal_state = self.proposal(*shared_args, **inf_kwargs, **shared_kwargs)
 
-        conditioned_target = Condition(self.target, trace=proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and _doesn't_ need the whole trace?
-        target_state = conditioned_target(proposal_state.output, *shared_args, **inf_kwargs,  **shared_kwargs)
+        # conditioned_target = Condition(self.target, trace=proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and _doesn't_ need the whole trace?
+        target_state = _dispatch(True)(self.target)(proposal_state.output, *shared_args, **inf_kwargs,  **shared_kwargs)
 
         lv = target_state.log_prob - proposal_state.log_prob
 
