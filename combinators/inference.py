@@ -60,7 +60,7 @@ class Inf(ABC):
             include=None,
             batch_dim=None):
         self.loss0 = torch.zeros(1, device=autodevice(device)) if loss0 is None else loss0.to(autodevice(device))
-        self.foldl_loss = loss_fn
+        self.foldr_loss = loss_fn
         self.ix = ix
         self._debug = _debug
         self._cache = Out(None, None, None)
@@ -179,7 +179,7 @@ class Resample(Inf):
             trace=tr_,
             log_prob=lw_,
             output=program_state.output)
-        self._cache['loss'] = self.foldl_loss(self._cache, maybe(program_state, 'loss', self.loss0))
+        self._cache['loss'] = self.foldr_loss(self._cache, maybe(program_state, 'loss', self.loss0))
 
         return self._cache
 
@@ -256,6 +256,7 @@ class Reverse(KernelInf):
             self._cache['log_cweight'] = program_state['log_cweight']
         if ix is not None:
             self._cache['ix'] = ix
+        self._cache['loss'] = self.foldr_loss(self._cache, maybe(program_state, 'loss', self.loss0))
 
         return self._cache
 
@@ -302,11 +303,11 @@ class Forward(KernelInf):
                 type=type(self).__name__,
                 ))
 
-        self._cache['loss'] = self.foldl_loss(self._cache, maybe(kernel_state, 'loss', self.loss0))
-        if 'log_cweight' in program_state:
-            self._cache['log_cweight'] = program_state['log_cweight']
         if ix is not None:
             self._cache['ix'] = ix
+        if 'log_cweight' in program_state:
+            self._cache['log_cweight'] = program_state['log_cweight']
+        self._cache['loss'] = self.foldr_loss(self._cache, maybe(program_state, 'loss', self.loss0))
         return self._cache
 
 
@@ -344,14 +345,16 @@ class Propose(Conditionable, Inf):
                 type=type(self).__name__,
 
                 # only way this happens if we are recursively defining propose statements.
-                log_iweight=lv,
+                log_weight=lv,
                 log_cweight=lv if 'log_cweight' not in proposal_state else lv + proposal_state.log_cweight
                 ),
             trace=target_state.trace,
             log_prob=target_state.log_prob,
             output=target_state.output,)
-        self._cache['loss'] = self.foldl_loss(self._cache, maybe(proposal_state, 'loss', self.loss0))
 
         if ix is not None:
             self._cache['ix'] = ix
+
+        self._cache['loss'] = self.foldr_loss(self._cache, maybe(proposal_state, 'loss', self.loss0))
+
         return self._cache

@@ -94,5 +94,11 @@ class Out(PropertyDict):
             self[k] = v
 
     def __iter__(self):
-        for x in [self.trace, self.log_prob, self.output]:
+        optionals = ['ix', 'program', 'kernel', 'proposal']
+        extras = dict()
+        for o in optionals:
+            if hasattr(self, o):
+                extras[o] = getattr(self, o)
+
+        for x in [self.trace, self.log_prob, self.output, extras]:
             yield x
