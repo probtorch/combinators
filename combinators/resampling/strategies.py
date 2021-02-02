@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from torch import Tensor
+from torch import Tensor, nn
 from typing import Tuple
 import math
 import torch.distributions as D
@@ -135,7 +135,7 @@ from torch.distributions.uniform import Uniform
 import torch.nn.functional as F
 
 
-class APGSResamplerOriginal():
+class APGSResamplerOriginal(nn.Module):
     def __init__(self, sample_size):
         self.strategy = 'systematic'
         self.uniformer = Uniform(low=torch.Tensor([0.0]), high=torch.Tensor([1.0]))
