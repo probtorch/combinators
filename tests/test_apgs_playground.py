@@ -548,5 +548,3 @@ def test_apg_2sweep_declarative():
 
 def test_apg_4sweep_declarative():
     main(objective=apg_objective_declarative, num_sweeps=4, is_smoketest=False, simulate=False)
-
-
