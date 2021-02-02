@@ -143,3 +143,4 @@ nix/hydra.nix
 runs/
 *.bk
 data/
+/.dir-locals.el

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
+import os
 import torch
 import torch.nn as nn
-from torch import Tensor
+from torch import Tensor, optim
 import torch.distributions as D
 from combinators.stochastic import Trace, RandomVariable
 from typing import Callable, Any, Tuple, Optional, Set
@@ -28,6 +29,23 @@ def remains_pure(tr: Trace) -> Callable[[Trace], bool]:
             raise RuntimeError("You can only perform this check once per operation")
 
     return check
+
+def save_models(models, filename, weights_dir="./weights"):
+    checkpoint = {k: v.state_dict() for k, v in models.items()}
+
+    if not os.path.exists(weights_dir):
+        os.makedirs(weights_dir)
+
+    torch.save(checkpoint, f'{weights_dir}/{filename}')
+
+def load_models(model, filename, weights_dir="./weights"):
+
+    checkpoint = torch.load(f'{weights_dir}/{filename}')
+
+    return {k: v.state_dict(checkpoint[k]) for k, v in model.items()}
+
+def adam(models, **kwargs):
+    return optim.Adam([dict(params=x.parameters()) for x in models], **kwargs)
 
 def ppr_show(a:Any, m='a', debug=False):
     if debug:
