@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import subprocess
 import torch
 import torch.nn as nn
 from torch import Tensor, optim
@@ -46,6 +47,9 @@ def load_models(model, filename, weights_dir="./weights"):
 
 def adam(models, **kwargs):
     return optim.Adam([dict(params=x.parameters()) for x in models], **kwargs)
+
+def git_root():
+    return subprocess.check_output('git rev-parse --show-toplevel', shell=True).decode("utf-8").rstrip()
 
 def ppr_show(a:Any, m='a', debug=False):
     if debug:

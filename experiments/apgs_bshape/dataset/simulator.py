@@ -9,6 +9,7 @@ import matplotlib.gridspec as gridspec
 import torch
 from torch.distributions.uniform import Uniform
 from torch.nn.functional import affine_grid, grid_sample
+from combinators.utils import git_root
 
 
 """
@@ -246,7 +247,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser('Bouncing Shapes')
     parser.add_argument('--num_instances', default=10000, type=int)
-    parser.add_argument('--data_path', default='../../data/bshape/')
+    parser.add_argument('--data_path', default=f'{git_root()}/data/bshape/')
     parser.add_argument('--timesteps', default=10, help='number of video frames in one video')
     parser.add_argument('--num_objects', default=3, help='number of objects in one video')
     parser.add_argument('--dv', default=0.3, help='constant velocity of the digits')
