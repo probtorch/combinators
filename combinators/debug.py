@@ -64,7 +64,7 @@ def seed(s=42):
 
 def is_smoketest():
     env_var = os.getenv('SMOKE')
-    return env_var is not None or env_var == 'true'
+    return env_var is not None and env_var == 'true'
 
 def print_grad(*args:nn.Module):
     for i, x in enumerate(*args):

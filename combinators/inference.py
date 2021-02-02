@@ -158,7 +158,8 @@ class Resample(Inf):
 
     def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Resample """
-        inf_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
+        shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
+        inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
 
         program_state = self.program(*shared_args, **inf_kwargs, **shared_kwargs)
         # change_tr = mapvalues(program_state.trace, mapper=lambda v: v.unsqueeze(1))

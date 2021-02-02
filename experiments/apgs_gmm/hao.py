@@ -2,6 +2,7 @@
 
 from combinators.stochastic import Trace
 import torch.nn.functional as F
+from torch.distributions.one_hot_categorical import OneHotCategorical as cat
 import combinators.debug as debug
 import combinators.trace.utils as trace_utils
 import torch
@@ -145,14 +146,14 @@ def apg_update_z(enc_apg_z, generative, q_eta_z_trace, x, metrics, result_flags)
 
 def resample_variables(resampler, q, log_weights):
     ancestral_index = resampler.sample_ancestral_index(log_weights)
-    tau = q['precisions'].value
-    tau_concentration = q['precisions'].dist.concentration
-    tau_rate = q['precisions'].dist.rate
-    mu = q['means'].value
-    mu_loc = q['means'].dist.loc
-    mu_scale = q['means'].dist.scale
-    z = q['states'].value
-    z_probs = q['states'].dist.probs
+    tau = q['precisions0'].value
+    tau_concentration = q['precisions0'].dist.concentration
+    tau_rate = q['precisions0'].dist.rate
+    mu = q['means0'].value
+    mu_loc = q['means0'].dist.loc
+    mu_scale = q['means0'].dist.scale
+    z = q['states0'].value
+    z_probs = q['states0'].dist.probs
     tau = resampler.resample_4dims(var=tau, ancestral_index=ancestral_index)
     tau_concentration = resampler.resample_4dims(var=tau_concentration, ancestral_index=ancestral_index)
     tau_rate = resampler.resample_4dims(var=tau_rate, ancestral_index=ancestral_index)
@@ -165,12 +166,12 @@ def resample_variables(resampler, q, log_weights):
     q_resampled.gamma(tau_concentration,
                       tau_rate,
                       value=tau,
-                      name='precisions')
+                      name='precisions0')
     q_resampled.normal(mu_loc,
                        mu_scale,
                        value=mu,
-                       name='means')
-    _ = q_resampled.variable(cat, probs=z_probs, value=z, name='states')
+                       name='means0')
+    _ = q_resampled.variable(cat, probs=z_probs, value=z, name='states0')
     return q_resampled
 
 def apg_objective(models, x, num_sweeps, resampler, resample=False):
@@ -199,7 +200,7 @@ def apg_objective(models, x, num_sweeps, resampler, resample=False):
     _, log_w, q_eta_z, metrics, aux = oneshot(enc_rws_eta, enc_apg_z, generative, x, metrics)
     q_eta_z_trace = q_eta_z.trace
     if resample:
-        q_eta_z_trace = resample_variables(resampler, q_eta_z, log_weights=log_w)
+        q_eta_z_trace = resample_variables(resampler, q_eta_z_trace, log_weights=log_w)
 
     # 1-index sweeps
     sweeps = [None, dict(log_w=log_w, q_eta_z=q_eta_z.trace, metrics=metrics, aux=aux) ]

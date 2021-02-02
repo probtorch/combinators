@@ -170,3 +170,41 @@ class APGSResamplerOriginal():
         sample_dim, batch_dim, dim3, dim4, dim5 = var.shape
         gather_index = ancestral_index.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).repeat(1, 1, dim3, dim4, dim5)
         return torch.gather(var, 0, gather_index)
+
+class APG(Strategy):
+    def __init__(self, sample_size):
+        super(Strategy).__init__()
+        self.strategy = APGSResamplerOriginal(sample_size)
+
+    def __call__(self, trace, log_weight, sample_dim=0, batch_dim=1)->Tuple[Trace, Tensor]:
+        q, log_weights, resampler = trace, log_weight, self.strategy
+        ancestral_index = resampler.sample_ancestral_index(log_weights)
+        tau = q['precisions0'].value
+        tau_concentration = q['precisions0'].dist.concentration
+        tau_rate = q['precisions0'].dist.rate
+        mu = q['means0'].value
+        mu_loc = q['means0'].dist.loc
+        mu_scale = q['means0'].dist.scale
+        z = q['states0'].value
+        z_probs = q['states0'].dist.probs
+        tau = resampler.resample_4dims(var=tau, ancestral_index=ancestral_index)
+        tau_concentration = resampler.resample_4dims(var=tau_concentration, ancestral_index=ancestral_index)
+        tau_rate = resampler.resample_4dims(var=tau_rate, ancestral_index=ancestral_index)
+        mu = resampler.resample_4dims(var=mu, ancestral_index=ancestral_index)
+        mu_loc = resampler.resample_4dims(var=mu_loc, ancestral_index=ancestral_index)
+        mu_scale = resampler.resample_4dims(var=mu_scale, ancestral_index=ancestral_index)
+        z = resampler.resample_4dims(var=z, ancestral_index=ancestral_index)
+        z_probs = resampler.resample_4dims(var=z_probs, ancestral_index=ancestral_index)
+        q_resampled = Trace()
+        breakpoint();
+        q_resampled.gamma(tau_concentration,
+                          tau_rate,
+                          value=tau,
+                          name='precisions0')
+        q_resampled.normal(mu_loc,
+                           mu_scale,
+                           value=mu,
+                           name='means0')
+        _ = q_resampled.variable(cat, probs=z_probs, value=z, name='states0')
+
+        return q_resampled

@@ -15,7 +15,7 @@ from itertools import accumulate
 from functools import partial
 from collections import namedtuple
 from combinators.inference import _dispatch
-from combinators import Forward, Reverse, Propose, Condition, Resample, RequiresGrad
+from combinators import Forward, Reverse, Propose, Condition, Resample, RequiresGrad, Program
 from combinators.metrics import effective_sample_size, log_Z_hat
 from combinators.tensor.utils import autodevice, kw_autodevice
 from combinators.stochastic import Trace
@@ -200,7 +200,7 @@ def rws_objective_eager(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg_eta=N
 
     # otherwise, eager combinators looks like:
     prp = Propose(proposal=Forward(enc_apg_z, enc_rws_eta), target=og, ix=ix(sweep=1,rev=False,block='is'))
-    out = prp(x=x, prior_ng=og.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
+    out = prp(x=x, prior_ng=generative.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
 
     log_w = out.log_weight.detach()
     w = F.softmax(log_w, 0)
@@ -232,7 +232,7 @@ def rws_objective_declarative(enc_rws_eta, enc_apg_z, generative, og, x, enc_apg
         target=og,
         proposal=Forward(enc_apg_z, enc_rws_eta),
         )
-    out = prp(x=x, prior_ng=og.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
+    out = prp(x=x, prior_ng=generative.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False)
 
     if compare:
         assert torch.allclose(out.loss, _loss)
@@ -248,20 +248,21 @@ def test_rws_vae_declarative():
     main(objective=rws_objective_declarative, num_sweeps=1, is_smoketest=debug.is_smoketest(), simulate=False)
 
 
-def apg_objective_eager2(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x, sample_size, num_sweeps, compare=True):
+def apg_objective_eager2(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, x, sample_size, num_sweeps, compare=True):
     assert num_sweeps == 2
+    resample=True
     if compare:
         debug.seed(1)
 
         from combinators.resampling.strategies import APGSResamplerOriginal
         resampler = APGSResamplerOriginal(sample_size)
-        sweeps, metrics = hao.apg_objective((enc_rws_eta, enc_apg_z, enc_apg_eta, og), x, num_sweeps, resampler)
+        sweeps, metrics = hao.apg_objective((enc_rws_eta, enc_apg_z, enc_apg_eta, generative), x, num_sweeps, resampler, resample=resample)
         debug.seed(1)
 
     jkwargs = dict(sample_dims=0, batch_dim=1, reparameterized=False)
-    kwargs = dict(x=x, prior_ng=og.prior_ng, **jkwargs)
+    kwargs = dict(x=x, prior_ng=generative.prior_ng, **jkwargs)
     prp1 = Propose(ix=ix(sweep=1,rev=False,block='is'),
-            target=og, # og == original generator
+            target=generative, # generative == original generator
             #          p(x,η_1,z_1)
             # ---------------------------------- [prp1]
             #          q(z_1 | η_1, x) q_0(η_1|x)
@@ -323,12 +324,12 @@ def apg_objective_eager2(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x,
         debug.seed(1)
 
     prp21 = Propose(
-            target=Reverse(og, enc_apg_eta, ix=ix(sweep=2,rev=True,block='eta')), # , exclude={'lls'}),
+            target=Reverse(generative, enc_apg_eta, ix=ix(sweep=2,rev=True,block='eta')), # , exclude={'lls'}),
             # target=Reverse(og, enc_apg_eta, ix=ix(sweep=2,rev=True,block='eta'), exclude={'lls'}),
             #          p(x,η_2,z) q(η_1 | z, x)
             # ---------------------------------------
             #          q(η_2 | z, x) prp_1(η_1,x,z)
-            proposal=Forward(enc_apg_eta, prp1, ix=ix(sweep=2,rev=False,block='eta'))) # , exclude={'lls'}))
+            proposal=Forward(enc_apg_eta, Resample(prp1), ix=ix(sweep=2,rev=False,block='eta'))) # , exclude={'lls'}))
             # proposal=Forward(enc_apg_eta, prp1, ix=ix(sweep=2,rev=False,block='eta'), exclude={'lls'}))
 
     out21 = prp21(**kwargs, _debug=True, _debug_extras=out1)
@@ -342,20 +343,26 @@ def apg_objective_eager2(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x,
     loss21 = (w21 * (- log_q_fwd21_computed)).sum(0).mean()
 
     if compare:
+
         print("=================================")
         print("===     Sweep 2 Block Eta     ===")
         print("=================================")
+        proposal21 = out21.proposal.program
+        if resample:
+            proposal21 = proposal21.program
+
         slog_q = sweeps[1]['aux']['log_q']
-        log_q = out21.proposal.program.proposal.log_prob
+        log_q = proposal21.proposal.log_prob
         printequal("- sweep 1: log_q", slog_q.detach(), log_q.detach())
 
         slog_p = sweeps[1]['aux']['log_p']
-        log_p = out21.proposal.program.target.log_prob
+        log_p = proposal21.target.log_prob
         printequal("- sweep 1: log_p", slog_p.detach(), log_p.detach())
 
-        slog_w = sweeps[1]['log_w']
-        log_w = out21.proposal.program.log_cweight
-        printequal("- sweep 1: log_w", slog_w.detach(), log_w.detach())
+        if not resample:
+            slog_w = sweeps[1]['log_w']
+            log_w = proposal21.log_cweight
+            printequal("- sweep 1: log_w", slog_w.detach(), log_w.detach())
         print("- IS step unchanged...     [ OK ]")
         eta2s = { 'means2', 'precisions2' }
         eta1s = { 'means1', 'precisions1' }
@@ -395,7 +402,7 @@ def apg_objective_eager2(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, og, x,
         debug.seed(1)
 
     prp22 = Propose(
-            target=Reverse(og, enc_apg_z, ix=ix(sweep=2,rev=True, block='z')),
+            target=Reverse(generative, enc_apg_z, ix=ix(sweep=2,rev=True, block='z')),
             #          p(x η_2 z_2) q( z_1 | η_2 x)
             # ---------------------------------------
             #          q(z_2 | η_2 x) prp_1(η_2 x z_1)
@@ -449,7 +456,7 @@ def test_apg_2sweep_eager():
 
 
 def apg_objective_declarative(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, x, sample_size, num_sweeps, compare=True):
-    assert num_sweeps == 2
+    compare = False
     if compare:
         debug.seed(1)
         from combinators.resampling.strategies import APGSResamplerOriginal
@@ -471,9 +478,9 @@ def apg_objective_declarative(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, x
         if ix.block == 'z':
             batch_loss = batch_loss.sum(-1) # account for one-hot encoding
         return batch_loss.mean() + total_loss
-
+    # xs ::  T * S * B * K * D
     isix = ix(sweep=1,rev=False,block='is')
-    propose = Propose(
+    is_step = Propose(
         loss_fn=loss_fn,
         target=generative, ix=isix,
         #                   p(x,η_1,z_1)
@@ -481,15 +488,18 @@ def apg_objective_declarative(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, x
         #            q(z_1 | η_1 x) q_rws(η_1 | x)
         proposal=Forward(enc_apg_z, enc_rws_eta, ix=isix))
 
+    propose = Resample(is_step)
+
     for sweep in range(2, num_sweeps+1):
         mkix = lambda block: (ix(sweep, True, block), ix(sweep, False, block))
         rix, fix = mkix('eta')
+
         propose_eta = Propose(loss_fn=loss_fn,
-            target=Reverse(generative, enc_apg_eta, ix=rix),
+            target=Reverse(propose, enc_apg_eta, ix=rix),
             #                p(x η_2 z_1) q(η_1 | z_1 x)
             #           --------------------------------------
-            #              q(η_2 | z_1 x) p(η_1,x,z_1)
-            proposal=Forward(enc_apg_eta, propose, ix=fix))
+            #                 q(η_2 | z_1 x) p(η_1,x,z_1)
+            proposal=Resample(Forward(enc_apg_eta, propose, ix=fix), strategy=APGResampler))
 
         rix, fix = mkix('z')
         propose_z = Propose(loss_fn=loss_fn,
@@ -497,37 +507,46 @@ def apg_objective_declarative(enc_rws_eta, enc_apg_z, enc_apg_eta, generative, x
             #             p(x η_2 z_2) q( z_1 | η_2 x)
             #        ----------------------------------------
             #            q(z_2 | η_2 x) p(η_2 x z_1)
-            proposal=Forward(enc_apg_z, propose_eta, ix=fix))
+            proposal=Resample(Forward(enc_apg_z, propose_eta)), ix=fix)
 
         propose = propose_z
-
     out = propose(x=x, prior_ng=generative.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False, _debug=compare)
 
     def traverse(out, getter):
         current = out
         returns = []
         while True:
-            try:
+            if current.type == "Propose":
                 returns.append(getter(current))
-            except:
-                break
-            if current.type != "Propose":
-                break
+                if isinstance(propose.target, Program):
+                    returns.reverse()
+                    return returns
+                current = current.proposal
+            elif current.type in ["Resample", "Forward", "Reverse"]:
+                current = current.program
             else:
-                current = current.proposal.program
+                break
 
         returns.reverse()
         return returns
 
-    losses = traverse(out, lambda p: p.loss.squeeze())
+    losses = [out.loss] # traverse(out, lambda p: p.loss.squeeze())
     if compare:
         losses_hao = list(accumulate(sweeps[1]['metrics']['iloss'], operator.add))
         assert len(losses) == len(losses_hao)
         mismatch_losses = list(filter(lambda xs: not torch.equal(*xs), zip(losses, losses_hao)))
-        assert len(mismatch_losses) == 0
+        if len(mismatch_losses) > 0:
+            for l, r in mismatch_losses:
+                print(l, "!=", r)
+            assert False
 
 
     return out.loss, {f"loss{i}":v.detach().cpu().item() for i, v in enumerate(losses)}
 
 def test_apg_2sweep_declarative():
     main(objective=apg_objective_declarative, num_sweeps=2, is_smoketest=debug.is_smoketest(), simulate=False)
+
+def test_apg_4sweep_declarative():
+    main(objective=apg_objective_declarative, num_sweeps=4, is_smoketest=False, simulate=False)
+
+
