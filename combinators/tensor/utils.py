@@ -24,7 +24,7 @@ def autodevice(preference:Union[int, str, None, torch.device]=None)->torch.devic
         return torch.device(devstr)
 
 @typechecked
-def kw_autodevice(preference:Union[int, str, None]=None)->Dict[str, Optional[str]]:
+def kw_autodevice(preference:Union[int, str, None]=None)->Dict[str, torch.device]:
     return dict(device=autodevice(preference))
 
 def _hash(t:Tensor, length:int):
