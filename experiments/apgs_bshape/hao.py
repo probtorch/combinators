@@ -26,15 +26,38 @@ def apg_objective(models, AT1, AT2, frames, K, result_flags, num_sweeps, resampl
     Amortized Population Gibbs objective in Bouncing Shapes problem
     """
     metrics = {'loss_phi' : [], 'loss_theta' : [], 'ess' : [], 'E_where' : [], 'E_recon' : [], 'density' : []}
-    log_w, q, metrics = oneshot(models, frames, mean_shape, metrics, result_flags)
-    q = resample_variables(resampler, q, log_weights=log_w)
+    log_w, q, metrics, propose_IS = oneshot(models, frames, mean_shape, metrics, result_flags)
+    # q = resample_variables(resampler, q, log_weights=log_w)
+    # propose = Resample(propose_IS)
+    propose = propose_IS
     T = frames.shape[2]
+    (enc_coor2, dec_coor2,enc_digit2, dec_digit2) = [models[k] for k in ["enc_coor2", "dec_coor2", "enc_digit2", "dec_digit2"]]
+
     for m in range(num_sweeps-1):
         for t in range(T):
             log_w, q, metrics = apg_where_t(models, frames, q, t, metrics, result_flags)
             q = resample_variables(resampler, q, log_weights=log_w)
         log_w, q, metrics = apg_what(models, frames, q, metrics, result_flags)
         q = resample_variables(resampler, q, log_weights=log_w)
+
+    for sweep in range(num_sweeps-1):
+        mkix = lambda block: (ix(sweep, True, block, t=sweep+T+1, recon_level="unknown"), ix(sweep, False, block, t=sweep+T+1, recon_level="unknown"))
+
+        rix, fix = mkix('where')
+        for t in range(T):
+            propose = Propose(
+                target=Reverse(dec_coor2, enc_coor2, ix=rix),
+                proposal=Forward(enc_coor2, propose, ix=fix))
+            propose = Resample(propose)
+
+        rix, fix = mkix('what')
+        propose = Propose(
+            target=Reverse(dec_digit2, enc_digit2, ix=rix),
+            proposal=Forward(enc_digit2, propose, ix=rix),
+        )
+        propose = Resample(propose)
+
+    # out = propose(x=x, prior_ng=generative.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False, _debug=compare)
 
     if result_flags['loss_required']:
         metrics['loss_phi'] = torch.cat(metrics['loss_phi'], 0)
@@ -94,7 +117,6 @@ def oneshot(models, frames, conv_kernel, metrics, result_flags):
 
     out = propose_IS(dict(frames=frames, conv_kernel=conv_kernel, z_where_T=[]), sample_dims=0, batch_dim=1, reparameterized=False)
     ppr(out.trace, m='v')
-    sys.exit(0)
 
 
     # forward kernel shape
@@ -128,7 +150,6 @@ def oneshot(models, frames, conv_kernel, metrics, result_flags):
     print('--------------------')
     w = F.softmax(log_w, 0).detach()
     print('onestep done')
-    sys.exit(0)
 
     if result_flags['loss_required']:
         loss_phi = (w * (- log_q)).sum(0).mean()
@@ -147,12 +168,12 @@ def oneshot(models, frames, conv_kernel, metrics, result_flags):
         metrics['E_recon'].append(p['recon'].dist.probs.mean(0).unsqueeze(0).cpu().detach()) # 1 * B * T * FP * FP
     if result_flags['density_required']:
         metrics['density'].append(log_p.detach().unsqueeze(0))
-    return log_w, q, metrics
+    return log_w, q, metrics, propose_IS
 
 def apg_where_t(models, frames, q, timestep, metrics, result_flags):
     T = frames.shape[2]
     (enc_coor, dec_coor, enc_digit, dec_digit) = [models[k] for k in ["enc_coor", "dec_coor", "enc_digit", "dec_digit"]]
-    conv_kernel = dec_digit(q=q, p=None, frames=frames, recon_level='object')
+    conv_kernel = dec_digit(q=q, p=None, frames=frames, timestep=timestep, recon_level='object')
     # forward
     q_f = enc_coor(q, frames, timestep, conv_kernel, extend_dir='forward')
     p_f = probtorch.Trace()
@@ -190,15 +211,15 @@ def apg_where_t(models, frames, q, timestep, metrics, result_flags):
 def apg_what(models, frames, q, metrics, result_flags):
     T = frames.shape[2]
     (enc_coor, dec_coor, enc_digit, dec_digit) = [models[k] for k in ["enc_coor", "dec_coor", "enc_digit", "dec_digit"]]
-    q_f = enc_digit(q, frames, extend_dir='forward')
+    q_f = enc_digit(q, frames, timestep=T+1, extend_dir='forward')
     p_f = probtorch.Trace()
-    p_f = dec_digit(q_f, p_f, frames, recon_level='frames')
+    p_f = dec_digit(q_f, p_f, frames, timestep=T+1, recon_level='frames')
     log_p_f = p_f.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     log_q_f = q_f['z_what'].log_prob.sum(-1).sum(-1)
     log_w_f = log_p_f - log_q_f
-    q_b = enc_digit(q, frames, extend_dir='backward')
+    q_b = enc_digit(q, frames, timestep=T+1, extend_dir='backward')
     p_b = probtorch.Trace()
-    p_b = dec_digit(q_b, p_b, frames, recon_level='frames')
+    p_b = dec_digit(q_b, p_b, frames, timestep=T+1, recon_level='frames')
     log_p_b = p_b.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
     log_q_b = q_b['z_what'].log_prob.sum(-1).sum(-1)
     log_w_b = log_p_b - log_q_b
