@@ -249,7 +249,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_instances', default=10000, type=int)
     parser.add_argument('--data_path', default=f'{git_root()}/data/bshape/')
     parser.add_argument('--timesteps', default=10, help='number of video frames in one video')
-    parser.add_argument('--num_objects', default=3, help='number of objects in one video')
+    parser.add_argument('--num_objects', default=2, help='number of objects in one video')
     parser.add_argument('--dv', default=0.3, help='constant velocity of the digits')
     parser.add_argument('--frame_size', default=40, help='squared size of the canvas')
     parser.add_argument('--object_size', default=6)

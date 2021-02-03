@@ -359,7 +359,7 @@ def gibbs_objective(models, x, result_flags, num_sweeps):
         metrics['density'] = torch.cat(metrics['density'], 0)  # (num_sweeps) * S * B
     return metrics
 
-def gibbs_sweep(generative, x, z, metrics):
+def xgibbs_sweep(generative, x, z, metrics):
     """
     Gibbs updates
     """
@@ -385,7 +385,7 @@ def gibbs_sweep(generative, x, z, metrics):
     metrics['density'].append(log_joint.unsqueeze(0)) # 1-by-B-length vector
     return tau, mu, z, metrics
 
-def hmc_objective(models, x, result_flags, hmc_sampler):
+def xhmc_objective(models, x, result_flags, hmc_sampler):
     """
     HMC + marginalization over discrete variables in GMM problem
     """
@@ -400,7 +400,7 @@ def hmc_objective(models, x, result_flags, hmc_sampler):
     metrics['density'] = torch.cat(metrics['density'], 0)
     return log_tau.exp(), mu, metrics
 
-def bpg_objective(models, x, result_flags, num_sweeps, resampler):
+def xbpg_objective(models, x, result_flags, num_sweeps, resampler):
     """
     bpg objective
     """
@@ -416,7 +416,7 @@ def bpg_objective(models, x, result_flags, num_sweeps, resampler):
     metrics['density'] = torch.cat(metrics['density'], 0)  # (num_sweeps) * S * B
     return metrics
 
-def bpg_update_eta(generative, x, z, tau_old, mu_old, metrics):
+def xbpg_update_eta(generative, x, z, tau_old, mu_old, metrics):
     """
     Given local variable z, update global variables eta := {mu, tau}.
     """

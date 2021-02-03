@@ -46,7 +46,8 @@ def load_models(model, filename, weights_dir="./weights"):
     return {k: v.state_dict(checkpoint[k]) for k, v in model.items()}
 
 def adam(models, **kwargs):
-    return optim.Adam([dict(params=x.parameters()) for x in models], **kwargs)
+    iterable = models.values() if isinstance(models, dict) else models
+    return optim.Adam([dict(params=x.parameters()) for x in iterable], **kwargs)
 
 def git_root():
     return subprocess.check_output('git rev-parse --show-toplevel', shell=True).decode("utf-8").rstrip()

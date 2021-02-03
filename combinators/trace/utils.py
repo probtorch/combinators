@@ -91,6 +91,7 @@ def show(tr:TraceLike, fix_width=False):
     return "{" + "; ".join([f"'{k}'-➢{ten_show(v)}" for k, v in tr.items()]) + "}"
 
 def showDist(dist):
+    ''' prettier show instance wit more relevant information for a distribution '''
     props = distprops(dist)
     sattrs = [f'{p}:{tensor_utils.show(getattr(dist, p))}' for p in props]
     return type(dist).__name__ + "(" +", ".join(sattrs)+ ")"

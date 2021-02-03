@@ -137,6 +137,7 @@ import torch.nn.functional as F
 
 class APGSResamplerOriginal(nn.Module):
     def __init__(self, sample_size):
+        super().__init__()
         self.strategy = 'systematic'
         self.uniformer = Uniform(low=torch.Tensor([0.0]), high=torch.Tensor([1.0]))
         self.spacing = torch.arange(sample_size).float()
