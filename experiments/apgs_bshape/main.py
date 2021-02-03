@@ -5,7 +5,7 @@ import torch
 import time
 import numpy as np
 from random import shuffle
-from experiments.apgs_bshape.models import Enc_coor, Dec_coor, Enc_digit, Dec_digit
+from experiments.apgs_bshape.models import *
 from experiments.apgs_bshape.hao import apg_objective
 import os
 import torch
@@ -15,7 +15,7 @@ from combinators import debug
 from experiments.apgs_bshape.affine_transformer import Affine_Transformer
 from experiments.apgs_bshape.dataset.loader import datapaths
 from combinators.resampling.strategies import APGSResamplerOriginal
-from combinators.utils import git_root
+from combinators.utils import adam, git_root, save_models, load_models
 
 if debug.runtime() == 'jupyter':
     from tqdm.notebook import trange, tqdm
@@ -27,7 +27,8 @@ def train(
     objective,
     optimizer,
     models,
-    AT,
+    AT1,
+    AT2,
     resampler,
     num_sweeps,
     data_paths,
@@ -58,11 +59,11 @@ def train(
             data = torch.from_numpy(np.load(data_path)).float().to(autodevice(device))
             num_batches = int(data.shape[0] / batch_size)
             seq_indices = torch.randperm(data.shape[0])
-            with trange(3 if is_smoketest else num_batches, desc=f'batch', position=2) as batches:
+            with trange(1 if is_smoketest else num_batches, desc=f'batch', position=2) as batches:
                 for b in batches:
                     optimizer.zero_grad()
                     frames = data[seq_indices[b*batch_size : (b+1)*batch_size]].repeat(sample_size, 1, 1, 1, 1)
-                    trace = objective(models, AT, frames, K, result_flags, num_sweeps, resampler, shape_mean)
+                    trace = objective(models, AT1, AT2, frames, K, result_flags, num_sweeps, resampler, shape_mean)
                     loss_phi = trace['loss_phi'].sum()
                     loss_theta = trace['loss_theta'].sum()
                     loss_phi.backward(retain_graph=True)
@@ -88,7 +89,7 @@ def train(
 
                     batches.set_postfix_str(",  ".join(['{}={:.4f}'.format(k, v[-1].mean().item()/num_batches) for k, v in trace.items() if isinstance(v, Tensor)]))
                 if checkpoint:
-                    save_models(models, checkpoint_filename)
+                    save_models(models, filename=checkpoint_filename)
 
                 metrics_print = ",  ".join(['%s: %.4f' % (k, v/num_batches) for k, v in metrics.items()])
                 if not os.path.exists('results/'):
@@ -102,108 +103,36 @@ def train(
                 log_file.close()
 
 
-# def train(optimizer, models, AT, resampler, num_sweeps, data_paths, shape_mean, K, num_epochs, sample_size, batch_size, CUDA, device, model_version):
-#     """
-#     training function of apg samplers
-#     """
-#     result_flags = {'loss_required' : True, 'ess_required' : True, 'mode_required' : False, 'density_required': True}
-#     shape_mean = shape_mean.repeat(sample_size, batch_size, K, 1, 1)
-#     for epoch in range(num_epochs):
-#         shuffle(data_paths)
-#         for group, data_path in enumerate(data_paths):
-#             time_start = time.time()
-#             metrics = dict()
-#             data = torch.from_numpy(np.load(data_path)).float()
-#             num_batches = int(data.shape[0] / batch_size)
-#             seq_indices = torch.randperm(data.shape[0])
-#             for b in range(num_batches):
-#                 optimizer.zero_grad()
-#                 frames = data[seq_indices[b*batch_size : (b+1)*batch_size]].repeat(sample_size, 1, 1, 1, 1)
-#                 if CUDA:
-#                     with torch.cuda.device(device):
-#                         frames = frames.cuda()
-#                         shape_mean = shape_mean.cuda()
-#                 trace = apg_objective(models, AT, frames, K, result_flags, num_sweeps, resampler, shape_mean)
-#                 loss_phi = trace['loss_phi'].sum()
-#                 loss_theta = trace['loss_theta'].sum()
-#                 loss_phi.backward(retain_graph=True)
-#                 loss_theta.backward()
-#                 optimizer.step()
-#                 if 'loss_phi' in metrics:
-#                     metrics['loss_phi'] += trace['loss_phi'][-1].item()
-#                 else:
-#                     metrics['loss_phi'] = trace['loss_phi'][-1].item()
-#                 if 'loss_theta' in metrics:
-#                     metrics['loss_theta'] += trace['loss_theta'][-1].item()
-#                 else:
-#                     metrics['loss_theta'] = trace['loss_theta'][-1].item()
-#                 if 'ess' in metrics:
-#                     metrics['ess'] += trace['ess'][-1].mean().item()
-#                 else:
-#                     metrics['ess'] = trace['ess'][-1].mean().item()
-#                 if 'density' in metrics:
-#                     metrics['density'] += trace['density'][-1].mean().item()
-#                 else:
-#                     metrics['density'] = trace['density'][-1].mean().item()
-#             save_models(models, model_version)
-#             metrics_print = ",  ".join(['%s: %.4f' % (k, v/num_batches) for k, v in metrics.items()])
-#             if not os.path.exists('results/'):
-#                 os.makedirs('results/')
-#             if epoch == 0 and group == 0:
-#                 log_file = open('results/log-' + model_version + '.txt', 'w+')
-#             else:
-#                 log_file = open('results/log-' + model_version + '.txt', 'a+')
-#             time_end = time.time()
-#             print("(%ds) Epoch=%d, Group=%d, " % (time_end - time_start, epoch, group) + metrics_print, file=log_file)
-#             log_file.close()
-#             print("Epoch=%d, Group=%d completed in (%ds),  " % (epoch, group, time_end - time_start))
+def init_models(AT1, AT2, frame_pixels, digit_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, CUDA, device, load_version, lr):
 
-def init_models(AT, frame_pixels, digit_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, CUDA, device, load_version, lr):
-    enc_coor = Enc_coor(num_pixels=(frame_pixels-digit_pixels+1)**2, num_hidden=num_hidden_coor, z_where_dim=z_where_dim, AT=AT)
-    dec_coor = Dec_coor(z_where_dim=z_where_dim, CUDA=CUDA, device=device)
-    enc_digit = Enc_digit(num_pixels=digit_pixels**2, num_hidden=num_hidden_digit, z_what_dim=z_what_dim, AT=AT)
-    dec_digit = Dec_digit(num_pixels=digit_pixels**2, num_hidden=num_hidden_digit, z_what_dim=z_what_dim, AT=AT, CUDA=CUDA, device=device)
-    if CUDA:
-        with torch.cuda.device(device):
-            enc_coor.cuda()
-            enc_digit.cuda()
-            dec_digit.cuda()
+    debug.seed(0)
+    enc_coor = Enc_coor(num_pixels=(frame_pixels-digit_pixels+1)**2, num_hidden=num_hidden_coor, z_where_dim=z_where_dim, AT=AT1)
+    dec_coor = Dec_coor(z_where_dim=z_where_dim)
+    enc_digit = Enc_digit(num_pixels=digit_pixels**2, num_hidden=num_hidden_digit, z_what_dim=z_what_dim, AT=AT1)
+    dec_digit = Dec_digit(num_pixels=digit_pixels**2, num_hidden=num_hidden_digit, z_what_dim=z_what_dim, AT=AT1)
+    debug.seed(0)
+    enc_coor2 = Enc_coor2(num_pixels=(frame_pixels-digit_pixels+1)**2, num_hidden=num_hidden_coor, z_where_dim=z_where_dim, AT=AT2)
+    dec_coor2 = Dec_coor2(z_where_dim=z_where_dim)
+    enc_digit2 = Enc_digit2(num_pixels=digit_pixels**2, num_hidden=num_hidden_digit, z_what_dim=z_what_dim, AT=AT2)
+    dec_digit2 = Dec_digit2(num_pixels=digit_pixels**2, num_hidden=num_hidden_digit, z_what_dim=z_what_dim, AT=AT2)
+
+    models = dict(
+        enc_coor =enc_coor,
+        enc_coor2 =enc_coor2,
+        dec_coor =dec_coor,
+        dec_coor2=dec_coor2,
+        enc_digit=enc_digit,
+        enc_digit2=enc_digit2,
+        dec_digit=dec_digit,
+        dec_digit2=dec_digit2,
+    )
 
     if load_version is not None:
-        weights = torch.load("weights/cp-%s" % load_version)
-        enc_coor.load_state_dict(weights['enc-coor'])
-        enc_digit.load_state_dict(weights['enc-digit'])
-        dec_digit.load_state_dict(weights['dec-digit'])
-    if lr is not None:
-        optimizer =  torch.optim.Adam(list(enc_coor.parameters())+
-                                        list(enc_digit.parameters())+
-                                        list(dec_digit.parameters()),
-                                        lr=lr,
-                                        betas=(0.9, 0.99))
-#         optimizer =  torch.optim.SGD(list(enc_coor.parameters())+
-#                                         list(enc_digit.parameters())+
-#                                         list(dec_digit.parameters()),
-#                                         lr=lr)
-        return (enc_coor, dec_coor, enc_digit, dec_digit), optimizer
-#     else:
-#         for p in enc_coor.parameters():
-#             p.requires_grad = False
-#         for p in enc_digit.parameters():
-#             p.requires_grad = False
-#         for p in dec_digit.parameters():
-#             p.requires_grad = False
-    return (enc_coor, dec_coor, enc_digit, dec_digit)
+        load_models(models, load_version)
 
-def save_models(models, save_version):
-    (enc_coor, dec_coor, enc_digit, dec_digit) = models
-    checkpoint = {
-        'enc-coor' : enc_coor.state_dict(),
-        'enc-digit' : enc_digit.state_dict(),
-        'dec-digit' : dec_digit.state_dict()
-    }
-    if not os.path.exists('weights/'):
-        os.makedirs('weights/')
-    torch.save(checkpoint, 'weights/cp-%s' % save_version)
+    optimizer = adam(models, **(dict(lr=lr, betas=(0.9, 0.99)) if lr is not None else dict()))
+    return models, optimizer
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Bouncing Shapes')
@@ -212,7 +141,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_epochs', default=200, type=int)
     parser.add_argument('--batch_size', default=5, type=int)
     parser.add_argument('--budget', default=100, type=int)
-    parser.add_argument('--num_sweeps', default=1, type=int)
+    parser.add_argument('--num_sweeps', default=3, type=int)
     parser.add_argument('--lr', default=5e-4, type=float)
     parser.add_argument('--resample_strategy', default='systematic', choices=['systematic', 'multinomial'])
     parser.add_argument('--num_objects', default=2, type=int)
@@ -239,20 +168,25 @@ if __name__ == '__main__':
     data_paths = datapaths(data_dir=args.data_dir, subfolder='')
     shape_mean = torch.from_numpy(np.load('dataset/shape_mean.npy')).float()
 
-    AT = Affine_Transformer(args.frame_pixels, args.shape_pixels).to(autodevice(device))
+
+    debug.seed(4)
+    AT1 = Affine_Transformer(args.frame_pixels, args.shape_pixels).to(autodevice(device))
+    debug.seed(4)
+    AT2 = Affine_Transformer(args.frame_pixels, args.shape_pixels).to(autodevice(device))
     resampler = APGSResamplerOriginal(sample_size).to(autodevice(device))
     # models = init_models(AT, args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, load=False, device=device)
     # optimizer = adam(models, lr=args.lr)
 
     CUDA=torch.cuda.is_available()
-    models, optimizer = init_models(AT, args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, CUDA, device, load_version=None, lr=args.lr)
+    models, optimizer = init_models(AT1, AT2, args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, CUDA, device, load_version=None, lr=args.lr)
     print('Start training for bshape tracking task..')
     print('version=' + model_version)
     train(
         objective=apg_objective,
         optimizer=optimizer,
         models=models,
-        AT=AT,
+        AT1=AT1,
+        AT2=AT2,
         resampler=resampler,
         num_sweeps=args.num_sweeps,
         data_paths=data_paths,
@@ -265,70 +199,7 @@ if __name__ == '__main__':
         model_version=model_version,
         checkpoint=False,
         checkpoint_filename=model_version)
-    # train(
-    #     objective=apg_objective_declarative,
-    #     optimizer=optimizer,
-    #     models=models,
-    #     AT=AT,
-    #     resampler=resampler,
-    #     num_sweeps=num_sweeps,
-    #     data_paths=data_paths,
-    #     shape_mean=shape_mean,
-    #     num_objects=args.num_objects,
-    #     num_epochs=args.num_epochs,
-    #     sample_size=sample_size,
-    #     batch_size=args.batch_size,
-    #     device=device,
-    #     model_version=model_version,
-    #     checkpoint=True,
-    #     checkpoint_filename=model_version
-    # )
 
-# /usr/bin/env python3
-# import torch
-# import time
-# import numpy as np
-# import torch.nn as nn
-# import torch.nn.functional as F
-# from torch import optim, Tensor
-# import math
-# from typing import NoReturn, Tuple
-# import os
-# import torch
-# import time
-# import numpy as np
-# from random import shuffle
-# import operator
-# from itertools import accumulate
-# from functools import partial
-# from collections import namedtuple
-# from torch.distributions.one_hot_categorical import OneHotCategorical as cat
-#
-# from combinators.inference import _dispatch
-# from combinators import Forward, Reverse, Propose, Condition, Resample, RequiresGrad, Program
-# from combinators.metrics import effective_sample_size, log_Z_hat
-# from combinators.tensor.utils import autodevice, kw_autodevice
-# from combinators.stochastic import Trace
-# import combinators.trace.utils as trace_utils
-# import combinators.tensor.utils as tensor_utils
-# import combinators.debug as debug
-# from combinators.utils import ppr, curry
-# import sys
-# from combinators.trace.utils import RequiresGrad, copysubtrace, copytrace, mapvalues, disteq
-#
-# from combinators.utils import adam, save_models
-# from combinators.tensor.utils import autodevice
-#
-# if debug.runtime() == 'jupyter':
-#     from tqdm.notebook import trange, tqdm
-# else:
-#     from tqdm import trange, tqdm
-# from tqdm.contrib import tenumerate
-#
-# import experiments.apgs_bshape.hao as hao
-# from experiments.apgs_bshape.dataset.loader import datapaths
-# from experiments.apgs_bshape.models import Enc_coor, Dec_coor, Enc_digit, Dec_digit, init_models, ix
-#
 # def apg_objective_declarative(models, AT, frames, K, result_flags, num_sweeps, resampler, shape_mean):
 #     # (enc_rws_eta, enc_apg_z, enc_apg_eta, generative, x, sample_size, num_sweeps, compare=True)
 #     compare = True

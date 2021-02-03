@@ -12,7 +12,7 @@ import ast
 import weakref
 import combinators.trace.utils as trace_utils
 
-
+from operator import itemgetter, not_
 from combinators.stochastic import Trace, Factor
 from combinators.types import Output, check_passable_kwarg, check_passable_arg, Out
 from combinators.program import Program, model
@@ -30,17 +30,26 @@ class Kernel(TraceModule):
         raise NotImplementedError()
 
     def forward(self, cond_trace: Trace, cond_outs: Output, sample_dims:int=None, batch_dims:int=None, validate:bool=True, _debug=False, **kwargs) -> Out:
-        if not (isinstance(cond_trace, Trace) and
-                isinstance(sample_dims, (int, type(None))) and
-                isinstance(batch_dims, (int, type(None))) and
-                isinstance(validate, bool)):
-            raise TypeError("expected arguments do not typecheck. Current suggestion is to pass auxillary apply_kernel arguments as kwargs.")
+        types = dict(
+            cond_trace=(type(cond_trace), Trace, isinstance(cond_trace, Trace)),
+            sample_dims=(type(sample_dims), (int, type(None)), isinstance(sample_dims, (int, type(None)))),
+            batch_dims=(type(batch_dims), (int, type(None)), isinstance(batch_dims, (int, type(None)))),
+            validate=(type(validate), bool, isinstance(validate, bool)),
+        )
+        invalid_types = dict(filter(lambda x: not x[1][2], types.items()))
+
+        if len(invalid_types) > 0:
+            raise TypeError("\n    ".join([
+                "Expected kernel arguments do not typecheck. Current suggestion is to pass auxillary apply_kernel arguments as kwargs.",
+                *[f"arg: {k} :: {v[0]}, expected type: {v[1]}" for k, v in invalid_types.items()]
+            ]))
 
         # get a fresh trace to make sure we don't have inplace mutation
         trace = Trace()
 
         check_kwargs = dict(sample_dims=sample_dims, batch_dims=batch_dims, **kwargs)
         passable_kwargs = {k: v for k,v in check_kwargs.items() if check_passable_kwarg(k, self.apply_kernel)}
+
         out = self.apply_kernel(trace, cond_trace, cond_outs, **passable_kwargs)
 
         if validate and not trace_utils.valeq(cond_trace, trace):

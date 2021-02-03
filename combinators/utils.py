@@ -52,7 +52,7 @@ def adam(models, **kwargs):
 def git_root():
     return subprocess.check_output('git rev-parse --show-toplevel', shell=True).decode("utf-8").rstrip()
 
-def ppr_show(a:Any, m='a', debug=False):
+def ppr_show(a:Any, m='a', debug=False, **kkwargs):
     if debug:
         print(type(a))
     if isinstance(a, Tensor):
@@ -74,7 +74,7 @@ def ppr_show(a:Any, m='a', debug=False):
             print("showinstance", showinstance)
             print("args", args)
             print("kwargs", kwargs)
-        return showinstance(a, args=args, **kwargs)
+        return showinstance(a, args=args, **kwargs, **kkwargs)
     elif isinstance(a, Out):
         print(f"got type {type(a)}, guessing you want the trace:")
         return ppr_show(a.trace)
@@ -83,8 +83,8 @@ def ppr_show(a:Any, m='a', debug=False):
     else:
         return f"invalid type: {type(a)}"
 
-def ppr(a:Any, m='a', debug=False):
-    print(ppr_show(a, m=m, debug=debug))
+def ppr(a:Any, m='a', debug=False, desc='', **kkwargs):
+    print(desc, ppr_show(a, m=m, debug=debug, **kkwargs))
 
 # FIXME: currently not used, but currying the annotations might be nice
 def curry(func):

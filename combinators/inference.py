@@ -34,7 +34,7 @@ from combinators.utils import ppr
 def maybe(obj, name, default, fn=(lambda x: x)):
     return fn(getattr(obj, name)) if hasattr(obj, name) else default
 
-
+IX = 1
 
 def _dispatch(permissive):
     def get_callable(fn):
@@ -176,6 +176,7 @@ class Resample(Inf):
                 program=program_state if self._debug or _debug else Out(*program_state), # strip auxiliary traces
                 type=type(self).__name__,
                 log_weight=lw_,
+                ix=ix,
                 ),
             trace=tr_,
             log_prob=lw_,
@@ -251,6 +252,7 @@ class Reverse(KernelInf):
                 kernel=kernel_state,
                 type=type(self).__name__,
                 log_weight=maybe(program_state, 'log_weight', 0),
+                ix=ix,
                 ))
 
         if 'log_cweight' in program_state:
@@ -302,6 +304,7 @@ class Forward(KernelInf):
                 program=program_state,
                 kernel=kernel_state,
                 type=type(self).__name__,
+                ix=ix,
                 ))
 
         if ix is not None:
@@ -338,7 +341,16 @@ class Propose(Conditionable, Inf):
         target_state = _dispatch(True)(self.target)(proposal_state.output, *shared_args, **inf_kwargs,  **shared_kwargs)
 
         lv = target_state.log_prob - proposal_state.log_prob
+        if ix.t <= IX:
+            print()
+        if ix.t <= IX:
+            print("log_fwd {}\t{: .4f}".format(ix.t, proposal_state.log_prob.mean().item()), tensor_utils.show(proposal_state.log_prob))
+            print("log_tar {}\t{: .4f}".format(ix.t, target_state.log_prob.mean().item()), tensor_utils.show(target_state.log_prob), )
+            print("log_inc {}\t{: .4f}".format(ix.t, lv.mean().item()), tensor_utils.show(lv) )
 
+        if ix.t <= IX:
+            ppr(proposal_state.trace, desc="   fwd_kernel.trace", delim="\n     ")
+            ppr(target_state.trace,   desc="target_kernel.trace", delim="\n     ")
         self._cache = Out(
             extras=dict(
                 proposal=proposal_state if self._debug or _debug else Out(*proposal_state), # strip auxiliary traces
@@ -347,7 +359,8 @@ class Propose(Conditionable, Inf):
 
                 # only way this happens if we are recursively defining propose statements.
                 log_weight=lv,
-                log_cweight=lv if 'log_cweight' not in proposal_state else lv + proposal_state.log_cweight
+                log_cweight=lv if 'log_cweight' not in proposal_state else lv + proposal_state.log_cweight,
+                ix=ix,
                 ),
             trace=target_state.trace,
             log_prob=target_state.log_prob,

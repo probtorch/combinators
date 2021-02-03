@@ -106,15 +106,16 @@ def showRV(v, args=[], dists=False):
         props = distprops(v.dist)
         sattrs = [f'{p}={tensor_utils.show(getattr(v.dist, p))}' for p in props]
         arglist.append('dist=' + name + "(" + ", ".join(sattrs) + ")")
-    breakpoint();
     return name + ", ".join(arglist)
 
 @typechecked
 def showall(tr:Trace, delim="; ", pretty=True, mlen=0, sort=True, args=[], dists=False):
+    items = list(tr.items())
+    if len(items) == 0:
+        return "Trace{}"
     if pretty:
         mlen = max(map(len, tr.keys()))
         delim = "\n,"
-    items = list(tr.items())
     if sort:
         items.sort()
     return "{" + delim.join([("{:>"+str(mlen)+"}-➢{}").format(k, showRV(v, args=args, dists=dists)) for k, v in items]) + "}"
