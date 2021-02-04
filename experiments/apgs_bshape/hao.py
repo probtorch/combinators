@@ -5,9 +5,9 @@ import torch.nn.functional as F
 from torch.distributions.normal import Normal
 import combinators.stochastic as probtorch
 import combinators.debug as debug
-from combinators.utils import ppr
+from combinators.utils import ppr, pprm
 import combinators.tensor.utils as tensor_utils
-from experiments.apgs_bshape.models import Noop, ix, NoopKernel
+from experiments.apgs_bshape.models import Noop, ix, Memo
 from combinators.inference import *
 import sys
 
@@ -38,9 +38,9 @@ def apg_objective(models, AT1, AT2, frames, K, result_flags, num_sweeps, resampl
     metrics = {'loss_phi' : [], 'loss_theta' : [], 'ess' : [], 'E_where' : [], 'E_recon' : [], 'density' : []}
     (enc_coor2, dec_coor2,enc_digit2, dec_digit2) = [models[k] for k in ["enc_coor2", "dec_coor2", "enc_digit2", "dec_digit2"]]
     log_w, q, metrics, propose_IS = oneshot(models, frames, mean_shape, metrics, result_flags)
+
     # q = resample_variables(resampler, q, log_weights=log_w)
-    # propose = Resample(propose_IS)
-    propose = propose_IS
+
     T = frames.shape[2]
 
     for m in range(num_sweeps-1):
@@ -54,20 +54,28 @@ def apg_objective(models, AT1, AT2, frames, K, result_flags, num_sweeps, resampl
     get_conv = _get_conv(mean_shape, dec_digit2)
 
     mkix = lambda t: ix(sweep=1, rev=False, block='is', t=t, recon_level='frames')
-    noopp = Noop()
-    propose_IS = noopp
+
+    propose_IS = Noop()
+
     for t in range(T):
-        propose_IS = Propose(
-            ix=mkix(t),
-            target=dec_coor2,
-            proposal=Resample(Forward(enc_coor2, propose_IS)))
+        proposal_IS = Forward(enc_coor2, propose_IS)
+
+    propose_IS = Propose(
+        ix=mkix(t),
+        target=dec_coor2,
+        proposal=propose_IS)
 
     propose_IS = Propose(ix=mkix(T+1),
         target=dec_digit2,
-        proposal=Resample(Forward(enc_digit2, propose_IS)))
+        proposal=Forward(enc_digit2, Resample(propose_IS)))
 
     propose = propose_IS
+    out = propose(dict(frames=frames, get_conv=get_conv, conv_kernel=None, z_where_T=[]), sample_dims=0, batch_dim=1, reparameterized=False)
+
+
     # ======================================================================== #
+    print("is done")
+    sys.exit(0)
 
     for sweep in range(2, num_sweeps+1):
         rkix_obj = lambda block, t: (ix(sweep=sweep, rev=True, block=block, t=t, recon_level="object"))
@@ -223,110 +231,112 @@ def traverse(out, getter):
         returns.reverse()
         return returns
 
-def oneshot(models, frames, conv_kernel, metrics, result_flags):
-    (enc_coor, dec_coor, enc_digit, dec_digit) = [models[k] for k in ["enc_coor", "dec_coor", "enc_digit", "dec_digit"]]
-    (enc_coor2, dec_coor2,enc_digit2, dec_digit2) = [models[k] for k in ["enc_coor2", "dec_coor2", "enc_digit2", "dec_digit2"]]
-    T = frames.shape[2]
-    S, B, K, DP, DP = conv_kernel.shape
-    q = probtorch.Trace()
-    p = probtorch.Trace()
-    print("========================================================")
-    def get_conv(ix, trace):
-        if ix.block=='is':
-            return conv_kernel # mean_shape
-        else:
-            out = dec_digit2(q=trace, frames=frames, ix=ix)
-            breakpoint();
-            return out
-
-    log_q = torch.zeros(S, B)
-    for t in range(T):
-        q = enc_coor(q, frames, t, conv_kernel, extend_dir='forward')
-        p = dec_coor(q, p, t)
-        log_q += q.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-        log_p = p.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-        log_w = (log_p - log_q)
-
-        if t <= IX:
-            print()
-            ppr(log_q, desc="log_q ({})\t{: .4f}\t".format(t, log_q.mean().item()))
-            ppr(log_p, desc="log_p ({})\t{: .4f}\t".format(t, log_p.mean().item()))
-            ppr(log_w, desc="log_w ({})\t{: .4f}\t".format(t, log_w.mean().item()))
-        # if t <= IX:
-        #     ppr(q, desc="hao prp trace")
-        #     ppr(p, desc="hao tar trace")
-        #     print()
-
-    print("--------------------------------------------------------")
-    # print("proposal trace:")
-    # ppr(q, m='vd')
-    # print("target trace:")
-    # ppr(p, m='vd')
-
-    mkix = lambda t: ix(sweep=1, rev=False, block='is', t=t, recon_level='frames')
-    noopp = Noop()
-    propose_IS = noopp
-    for t in range(T):
-        propose_IS = Propose(
-            ix=mkix(t),
-            target=dec_coor2,
-            #       p_coor(c_1_t=0) ... p_coor(c_1_t=10)
-            # ------------------------------------------------------
-            #            q(z_1 | η_1, x) q_0(η_1|x)
-            proposal=Forward(enc_coor2, propose_IS))
-
-    # ppr(out.trace, m='v')
-
-    # forward kernel shape
-    q = enc_digit(q, frames, timestep=T+1, extend_dir='forward')
-    # generative program shape
-    p = dec_digit(q, p, frames, timestep=T+1, recon_level='frames')
-
-    # print("POST: proposal trace:")
-    # ppr(q, m='vd')
-    # print("POST: target trace:")
-    # ppr(p, m='vd')
-
-    propose_IS = Propose(ix=mkix(T+1),
-        target=dec_digit2,
-        proposal=Forward(enc_digit2, propose_IS))
-
-    out = propose_IS(dict(frames=frames, get_conv=get_conv, conv_kernel=None, z_where_T=[]), sample_dims=0, batch_dim=1, reparameterized=False)
-
-
-    print('--------------------')
-    log_q = q.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    ppr(log_q, desc="log_q (hao)")
-    print('--------------------')
-    log_p = p.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
-    ppr(out.target.log_prob, desc='log_p (com)')
-    ppr(log_p,                 desc="log_p (hao)")
-    print('--------------------')
-    log_w = (log_p - log_q).detach()
-    ppr(out.log_weight, desc='log_w (com)')
-    ppr(log_w,          desc="log_w (hao)")
-    print('--------------------')
-    w = F.softmax(log_w, 0).detach()
-    print('onestep done')
-
-    if result_flags['loss_required']:
-        loss_phi = (w * (- log_q)).sum(0).mean()
-        loss_theta = (w * (-log_p)).sum(0).mean()
-        metrics['loss_phi'].append(loss_phi.unsqueeze(0))
-        metrics['loss_theta'].append(loss_theta.unsqueeze(0))
-    if result_flags['ess_required']:
-        ess = (1. /(w**2).sum(0))
-        metrics['ess'].append(ess.unsqueeze(0))
-    if result_flags['mode_required']:
-        E_where = []
-        for t in range(T):
-            E_where.append(q['z_where_%d' % (t+1)].dist.loc.unsqueeze(2))
-        E_where = torch.cat(z_where, 2)
-        metrics['E_where'].append(E_where.mean(0).unsqueeze(0).cpu().detach()) # 1 * B * T * K * 2
-        metrics['E_recon'].append(p['recon'].dist.probs.mean(0).unsqueeze(0).cpu().detach()) # 1 * B * T * FP * FP
-    if result_flags['density_required']:
-        metrics['density'].append(log_p.detach().unsqueeze(0))
-    return log_w, q, metrics, propose_IS
+# def oneshot(models, frames, conv_kernel, metrics, result_flags):
+#     (enc_coor, dec_coor, enc_digit, dec_digit) = [models[k] for k in ["enc_coor", "dec_coor", "enc_digit", "dec_digit"]]
+#     (enc_coor2, dec_coor2,enc_digit2, dec_digit2) = [models[k] for k in ["enc_coor2", "dec_coor2", "enc_digit2", "dec_digit2"]]
+#     T = frames.shape[2]
+#     S, B, K, DP, DP = conv_kernel.shape
+#     q = probtorch.Trace()
+#     p = probtorch.Trace()
+#     print("========================================================")
+#     def get_conv(ix, trace):
+#         if ix.block=='is':
+#             return conv_kernel # mean_shape
+#         else:
+#             out = dec_digit2(q=trace, frames=frames, ix=ix)
+#             breakpoint();
+#             return out
+#
+#     log_q = torch.zeros(S, B)
+#     for t in range(T):
+#         q = enc_coor(q, frames, t, conv_kernel, extend_dir='forward')
+#         p = dec_coor(q, p, t)
+#         log_q += q.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+#         log_p = p.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+#         log_w = (log_p - log_q)
+#
+#         if t <= IX:
+#             print()
+#             ppr(log_q, desc="log_q ({})\t{: .4f}\t".format(t, log_q.mean().item()))
+#             ppr(log_p, desc="log_p ({})\t{: .4f}\t".format(t, log_p.mean().item()))
+#             ppr(log_w, desc="log_w ({})\t{: .4f}\t".format(t, log_w.mean().item()))
+#         # if t <= IX:
+#         #     ppr(q, desc="hao prp trace")
+#         #     ppr(p, desc="hao tar trace")
+#         #     print()
+#
+#     print("--------------------------------------------------------")
+#     # print("proposal trace:")
+#     # ppr(q, m='vd')
+#     # print("target trace:")
+#     # ppr(p, m='vd')
+#
+#     # forward kernel shape
+#     q = enc_digit(q, frames, timestep=T+1, extend_dir='forward')
+#     # generative program shape
+#     p = dec_digit(q, p, frames, timestep=T+1, recon_level='frames')
+#
+#     # print("POST: proposal trace:")
+#     # ppr(q, m='vd')
+#     # print("POST: target trace:")
+#     # ppr(p, m='vd')
+#
+#
+#     # (2/4 3:45pm)
+#     mkix_IS = lambda t: ix(sweep=1, rev=False, block='is', t=t, recon_level='frames')
+#     propose_IS = Noop()
+#     for t in range(T):
+#         propose_IS = Propose(
+#             ix=mkix_IS(t),
+#             target=dec_coor2,
+#             #       p_coor(c_1_t=0) ... p_coor(c_1_t=10)
+#             # ------------------------------------------------------
+#             #            q(z_1 | η_1, x) q_0(η_1|x)
+#             proposal=Forward(enc_coor2, propose_IS))
+#
+#     propose_IS = Propose(ix=mkix_IS(T+1),
+#         target=dec_digit2,
+#         proposal=Resample(Forward(enc_digit2, propose_IS)))
+#
+#     propose = propose_IS
+#
+#     out = propose_IS(dict(frames=frames, get_conv=get_conv, conv_kernel=None, z_where_T=[]), sample_dims=0, batch_dim=1, reparameterized=False)
+#
+#
+#     print('--------------------')
+#     log_q = q.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+#     ppr(log_q, desc="log_q (hao)")
+#     print('--------------------')
+#     log_p = p.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+#     ppr(out.target.log_prob, desc='log_p (com)')
+#     ppr(log_p,                 desc="log_p (hao)")
+#     print('--------------------')
+#     log_w = (log_p - log_q).detach()
+#     ppr(out.log_weight, desc='log_w (com)')
+#     ppr(log_w,          desc="log_w (hao)")
+#     print('--------------------')
+#     w = F.softmax(log_w, 0).detach()
+#     print('onestep done')
+#     sys.exit(0)
+#
+#     if result_flags['loss_required']:
+#         loss_phi = (w * (- log_q)).sum(0).mean()
+#         loss_theta = (w * (-log_p)).sum(0).mean()
+#         metrics['loss_phi'].append(loss_phi.unsqueeze(0))
+#         metrics['loss_theta'].append(loss_theta.unsqueeze(0))
+#     if result_flags['ess_required']:
+#         ess = (1. /(w**2).sum(0))
+#         metrics['ess'].append(ess.unsqueeze(0))
+#     if result_flags['mode_required']:
+#         E_where = []
+#         for t in range(T):
+#             E_where.append(q['z_where_%d' % (t+1)].dist.loc.unsqueeze(2))
+#         E_where = torch.cat(z_where, 2)
+#         metrics['E_where'].append(E_where.mean(0).unsqueeze(0).cpu().detach()) # 1 * B * T * K * 2
+#         metrics['E_recon'].append(p['recon'].dist.probs.mean(0).unsqueeze(0).cpu().detach()) # 1 * B * T * FP * FP
+#     if result_flags['density_required']:
+#         metrics['density'].append(log_p.detach().unsqueeze(0))
+#     return log_w, q, metrics, propose_IS
 
 def oneshot(models, frames, conv_kernel, metrics, result_flags):
     (enc_coor, dec_coor, enc_digit, dec_digit) = [models[k] for k in ["enc_coor", "dec_coor", "enc_digit", "dec_digit"]]
@@ -345,7 +355,6 @@ def oneshot(models, frames, conv_kernel, metrics, result_flags):
         log_q += q.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
         log_p = p.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
         log_w = (log_p - log_q)
-
     # forward kernel shape
     q = enc_digit(q, frames, timestep=T+1, extend_dir='forward')
     # generative program shape
@@ -357,31 +366,54 @@ def oneshot(models, frames, conv_kernel, metrics, result_flags):
     ppr(log_w, desc="IS complete  : log_w {:.4f}  <**> ".format(log_w.detach().mean().item()))
     pminus  = trace_utils.copysubtrace(p, set(p.keys()) - {'recon'})
     lpminus = pminus.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    ppr(p, desc="Target")
+    ppr(q, desc="Proposal")
     print((lpminus - log_q).mean())
-    breakpoint();
-
+    print('--------------------------')
+    print('     Combinators          ')
+    print('--------------------------')
 
     w = F.softmax(log_w, 0).detach()
 
+    # (2/4 3:45pm)
     mkix = lambda t: ix(sweep=1, rev=False, block='is', t=t, recon_level='frames')
-    noopp = Noop()
-    propose_IS = noopp
+
+    prop = Noop()
     for t in range(T):
-        propose_IS = Propose(
-            ix=mkix(t),
-            target=dec_coor2,
-            proposal=Resample(Forward(enc_coor2, propose_IS)))
+        prop = Forward(kernel=enc_coor2, program=prop, ix=mkix(t))
 
-    propose_IS = Propose(ix=mkix(T+1),
-        target=dec_digit2,
-        proposal=Resample(Forward(enc_digit2, propose_IS)))
+    propose_IS = Propose(
+        target=Forward(Memo(dec_digit2), dec_coor2, ix=mkix(T+1)),
+        proposal=Forward(enc_digit2, prop, ix=mkix(T+1)))
 
-    propose = propose_IS
     debug.seed(0)
+    propose = propose_IS
     out = propose(dict(frames=frames, get_conv=get_conv, conv_kernel=None, z_where_T=[]), sample_dims=0, batch_dim=1, reparameterized=False)
+
+    print('====================')
+    ppr(out.proposal.trace, desc="Proposal(comb)", delim="\n, ")
+    print("+++++++")
+    ppr(out.target.trace, desc="Target  (comb)")
+    print('====================')
+    log_q = q.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    pprm(log_q, name="log_q (hao)")
+    pprm(out.proposal.log_prob,   name='log_q (com)')
+    print('--------------------')
+    log_p = p.log_joint(sample_dims=0, batch_dim=1, reparameterized=False)
+    pprm(out.target.log_prob,   name='log_p (com)')
+    pprm(log_p,                 name="log_p (hao)")
+    print('--------------------')
+    log_w = (log_p - log_q).detach()
+    pprm(out.log_weight, name='log_w (com)')
+    pprm(log_w,          name="log_w (hao)")
+    print('--------------------')
+    w = F.softmax(log_w, 0).detach()
+    print('onestep done')
+    sys.exit(0)
 
     ppr(out.log_weight, desc="IS combinator: log_w {:.4f}  <**> ".format(out.log_weight.detach().mean().item()))
     print('onestep done')
+    breakpoint();
 
 
     if result_flags['loss_required']:

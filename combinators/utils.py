@@ -52,7 +52,7 @@ def adam(models, **kwargs):
 def git_root():
     return subprocess.check_output('git rev-parse --show-toplevel', shell=True).decode("utf-8").rstrip()
 
-def ppr_show(a:Any, m='a', debug=False, **kkwargs):
+def ppr_show(a:Any, m='dv', debug=False, **kkwargs):
     if debug:
         print(type(a))
     if isinstance(a, Tensor):
@@ -85,8 +85,11 @@ def ppr_show(a:Any, m='a', debug=False, **kkwargs):
     else:
         return repr(a)
 
-def ppr(a:Any, m='a', debug=False, desc='', **kkwargs):
+def ppr(a:Any, m='dv', debug=False, desc='', **kkwargs):
     print(desc, ppr_show(a, m=m, debug=debug, **kkwargs))
+
+def pprm(a:Tensor, name='', **kkwargs):
+    ppr(a, desc="{} ({: .4f})".format(name, a.detach().cpu().mean().item()), **kkwargs)
 
 # FIXME: currently not used, but currying the annotations might be nice
 def curry(func):

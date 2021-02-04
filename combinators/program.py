@@ -13,7 +13,7 @@ import ast
 import weakref
 
 from combinators.stochastic import Trace, Factor
-from combinators.types import Output, State, TraceLike, get_shape_kwargs, Out
+from combinators.types import Output, State, TraceLike, get_shape_kwargs, Out, check_passable_kwarg
 import combinators.trace.utils as trace_utils
 from combinators.trace.utils import RequiresGrad
 
@@ -32,8 +32,7 @@ class Program(TraceModule):
     def forward(self, *args:Any, sample_dims=None, batch_dim=None, reparameterized=True, **kwargs:Any):
         trace = self.get_trace()  # allows Condition to hook into this process
         skwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim)
-        out = self.model(trace, *args, **get_shape_kwargs(self.model, **skwargs), **kwargs)
-
+        out = self.model(trace, *args, **get_shape_kwargs(self.model, **skwargs), **{k: v for k, v in kwargs.items() if check_passable_kwarg(k, self.model)})
 
         self.clear_cond_trace()   # closing bracket for a run, required if a user does not use the Condition combinator
 

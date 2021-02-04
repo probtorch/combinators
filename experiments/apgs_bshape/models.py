@@ -78,11 +78,15 @@ class Enc_coor(nn.Module):
         # if ('z_where_%d' % (timestep+1)) in q and torch.allclose(q_mean, q['z_where_%d' % (timestep+1)].value):
         #     breakpoint()
         q_std = torch.cat(q_std, 2)
-        q_new = copy_trace(q, 'z_where_%d' % (timestep+1))
 
+        q_new = copy_trace(q, 'z_where_%d' % (timestep+1))
         if extend_dir == 'forward':
             z_where_t = torch.cat(z_where_t, 2)
             z_where_tp1 = q_new.normal(loc=q_mean, scale=q_std, value=z_where_t, name='z_where_%d' % (timestep+1))
+            if (timestep in [0]):
+                print("in1 mean", q_mean.mean())
+                print("in1 std ", q_std.mean())
+                print("in1 std ", z_where_t.mean())
         elif extend_dir == 'backward':
             try:
                 z_where_old = q['z_where_%d' % (timestep+1)].value
@@ -121,7 +125,6 @@ class Enc_coor2(Kernel):
 
     def apply_kernel(self, q_new, cond_trace, cond_output, ix=None):
         debug.seed(ix.t);
-        # print(f'[ℇ] coor2 {ix}')
         q = cond_trace
         try:
             frames = cond_output['frames']
@@ -129,8 +132,7 @@ class Enc_coor2(Kernel):
             raise Exception(ix)
         if 'conv_kernel' not in cond_output or cond_output['conv_kernel'] is None:
             conv_kernel = cond_output['get_conv'](eval_output=cond_output, ix=ix)
-            # for IS , call for mean_shape
-            # for a sweep, call for object
+            cond_output['conv_kernel'] = conv_kernel
         else:
             conv_kernel = cond_output['conv_kernel']
 
@@ -180,7 +182,7 @@ class Enc_coor2(Kernel):
                 print("cannot extract z_where_%d from the incoming trace." % (timestep+1))
             z_where_tp1 = q_new.normal(loc=q_mean, scale=q_std, value=z_where_old, name='z_where_%d' % (timestep+1))
 
-
+        #ppr(q)
 
         output = cond_output
         # if ix.t > 0:
@@ -188,6 +190,7 @@ class Enc_coor2(Kernel):
         output[f'z_where_{ix.t+1}'] = z_where_tp1
         #output['z_where_T'] = cond_output['z_where_T']
         # output['z_where_T'].append(z_where_t.unsqueeze(2))
+        # ppr(z_where_tp1, desc='[ℇ] z_where_{:d} ({:.4f})'.format(ix.t+1, z_where_tp1.mean().item()))
         return output
 
 class Noop(Program):
@@ -202,12 +205,16 @@ class Noop(Program):
         else:
             raise RuntimeError()
 
-class NoopKernel(Kernel):
-    def __init__(self):
+class Memo(Kernel):
+    """ turns a program into a kernel """
+    def __init__(self, program):
         super().__init__()
+        self.program = program
 
-    def apply_kernel(self, _, cond_trace, cond_outputs, ix=None):
-        return cond_outputs
+    def apply_kernel(self, trace, *args, **kwargs):
+        out = self.program(*args, **kwargs)
+        trace.update(out.trace)
+        return out.output
 
 class Dec_coor(nn.Module):
     """
@@ -228,6 +235,7 @@ class Dec_coor(nn.Module):
         # if timestep <= IX:
         #     print("<><><><><><><><><><>")
         #     ppr(p, desc=f"Dec_coor inp {timestep}->{timestep+1}")
+        #     
         if timestep == 0:
             p.normal(loc=self.prior_mu0,
                      scale=self.prior_Sigma0,
@@ -258,29 +266,11 @@ class Dec_coor2(Program):
         self.prior_Sigmat = torch.ones(z_where_dim) * 0.2
 
     def model(self, trace, eval_output, shared_args, ix=None):
-        # print(f'[ⅆ] coor2 {ix}')
-        # if ix.t <= IX:
-        #     print("<><><><><><><><><><>")
-        #     ppr(trace, desc=f"Dec_coor2 pi {ix.t}->{ix.t+1}")
-        #     ppr(eval_output, desc=f"Dec_coor2 pi {ix.t}->{ix.t+1}")
-        debug.seed(ix.t);
-        # FIXME: replace with output
-        loc = self.prior_mu0 if ix.t == 0 else eval_output[f'z_where_{ix.t}']
-        scale = self.prior_Sigma0 if ix.t == 0 else self.prior_Sigmat
-        value = eval_output[f'z_where_{ix.t+1}']
-
-
-        # should relabel this to *_ll
-        trace.normal(loc=loc, scale=scale, value=value, name=f'z_where_{ix.t+1}')
-        eval_output[f'z_where_{ix.t+1}'] = value # LIKELIHOOD NOT NEEDED BUT NEED TO RENAME A BUNCH OF SHIT
-        eval_output.update(shared_args)
-
-        rix = sweepix(sweep=ix.sweep, t=ix.t, recon_level='frame', block=ix.block, rev=ix.rev)
-        eval_output['reconstruction'] = eval_output['get_conv'](trace=trace, eval_output=eval_output, ix=rix)
-
-        # if ix.t <= IX:
-        #     ppr(trace, desc="Dec_coor2 po")
-        #     print("++++++++++++++++++++")
+        z_where_str = lambda t: f'z_where_{t}'
+        get_z_where = lambda t: eval_output[z_where_str(t)]
+        trace.normal(loc=self.prior_mu0, scale=self.prior_Sigma0, value=get_z_where(1), name=z_where_str(1))
+        for t in range(1, ix.t-1 if ix.block == "is" else ix.t+1):
+            trace.normal(loc=get_z_where(t), scale=self.prior_Sigmat, value=get_z_where(t+1), name=z_where_str(t+1))
         return eval_output
 
 
@@ -457,55 +447,70 @@ class Dec_digit2(Program):
 
         self.AT = AT
 
-    # def model(self, q, p, frames, recon_level, ix=None):
     def model(self, trace, eval_output, shared_args, ix=None):
         assert ix is not None
-        frames = eval_output['frames']
-        timestep=ix.t
-        debug.seed(timestep);
-        try:
-            digit_mean = self.dec_digit_mean(eval_output['z_what'])  # S * B * K * (28*28)
-        except:
-            breakpoint();
+        if ix.block == "is":
+            # we are in the kernel position of a forward:
+            # eval_output == cond_trace
+            # shared_args == cond_output
+            frames = shared_args['frames']
+            digit_mean = self.dec_digit_mean(shared_args['z_what'])  # S * B * K * (28*28)
 
-            raise Exception(ix)
+            self.add_likelihood_to_trace(
+                trace, frames,
+                z_what=shared_args['z_what'], z_where=shared_args['z_where'],
+                digit_mean=digit_mean)
+        else:
+            frames = eval_output['frames']
+            timestep=ix.t
+            debug.seed(timestep);
+            try:
+                digit_mean = self.dec_digit_mean(eval_output['z_what'])  # S * B * K * (28*28)
+            except:
+                breakpoint();
+                raise Exception(ix)
 
-        S, B, K, DP2 = digit_mean.shape
-        DP = int(math.sqrt(DP2))
-        digit_mean = digit_mean.view(S, B, K, DP, DP)
-        # EValuation
-        if ix.recon_level == 'object': ## return the recnostruction of objects
-            # print(f'[ⅆ] eval {ix}')
-            eval_output['conv_kernel'] = digit_mean.detach()
-            return eval_output
+            S, B, K, DP2 = digit_mean.shape
+            DP = int(math.sqrt(DP2))
+            digit_mean = digit_mean.view(S, B, K, DP, DP)
+            # EValuation
+            if ix.recon_level == 'object': ## return the recnostruction of objects
+                # print(f'[ⅆ] eval {ix}')
+                eval_output['conv_kernel'] = digit_mean.detach()
+                return eval_output
 
-        # EValuation
-        # FIXME:
-        elif ix.recon_level == 'frame':
-            # # print(f'[ⅆ] eval {ix}')
-            #
-            # # _, _, T, FP, _ = frames.shape[3]
-            # FP = frames.shape[3]
-            # z_where = eval_output['z_where_%d' % (timestep+1)].unsqueeze(2)
-            # breakpoint();
-            # recon_frames = torch.clamp(self.AT.digit_to_frame(digit=digit_mean, z_where=z_where).sum(-3), min=0.0, max=1.0).squeeze() # S * B * T * FP * FP
-            # assert recon_frames.shape == frames.shape, 'recon_frames shape =%s, frames shape = %s' % (recon_frames.shape, frames.shape)
-            # _ = trace.variable(Bernoulli, probs=recon_frames, value=frames, name='recon_frame')
-            return eval_output
+            # EValuation
+            # FIXME:
+            elif ix.recon_level == 'frame':
+                # reconstruct_image(self, trace, frames, recon_frames, z_what, z_where_T, digit_mean, sample=False):
+                pass
 
-        # likeihood
-        elif ix.recon_level =='frames': # return the reconstruction of the entire frames
-            # print(f'[ⅆ] digit2 {ix}')
+            # likeihood
+            elif ix.recon_level =='frames': # return the reconstruction of the entire frames
+                # print(f'[ⅆ] digit2 {ix}')
+                self.add_likelihood_to_trace(self, trace, frames, z_what=eval_output['z_what'], z_where=eval_output['z_where'], digit_mean=digit_mean)
+                return eval_output
+            else:
+                raise ValueError
+
+    def add_likelihood_to_trace(self, trace, frames, z_what, z_where, digit_mean):
+            S, B, K, DP2 = digit_mean.shape
             _, _, T, FP, _ = frames.shape
-            z_where = eval_output['z_where'] # must be constructed by now
             recon_frames = torch.clamp(self.AT.digit_to_frame(digit=digit_mean, z_where=z_where).sum(-3), min=0.0, max=1.0) # S * B * T * FP * FP
             assert recon_frames.shape == (S, B, T, FP, FP), "ERROR! unexpected reconstruction shape"
             trace.normal(loc=self.prior_mu,
                      scale=self.prior_std,
-                     value=eval_output['z_what'],
+                     value=z_what,
                      # should relabel this to *_ll
-                     name='z_what')   #  <<<<<<<<<<<<<<<<<<<<<<<<<< LIKELIHOOD!! shouldn't overlap in names!
+                     name='z_what')
             _= trace.variable(Bernoulli, probs=recon_frames, value=frames, name='recon')
-            return eval_output
-        else:
-            raise ValueError
+
+    def reconstruct_image(self, trace, frames, z_what, z_where_T, digit_mean, sample=False):
+            rs = []
+            for _z_where in z_where_T:
+                z_where = z_where.unsqueeze(2)
+                recon_frames = torch.clamp(self.AT.digit_to_frame(digit=digit_mean, z_where=z_where).sum(-3), min=0.0, max=1.0).squeeze() # S * B * T * FP * FP
+                rs.append(recon_frames)
+                assert recon_frames.shape == frames.shape, 'recon_frames shape =%s, frames shape = %s' % (recon_frames.shape, frames.shape)
+                _ = trace.variable(Bernoulli, probs=recon_frames, value=frames, name='recon_frame')
+            return rs

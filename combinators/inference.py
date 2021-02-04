@@ -29,7 +29,7 @@ from inspect import signature
 import inspect
 from combinators.objectives import nvo_avo
 import combinators.resampling.strategies as rstrat
-from combinators.utils import ppr
+from combinators.utils import ppr, pprm
 
 def maybe(obj, name, default, fn=(lambda x: x)):
     return fn(getattr(obj, name)) if hasattr(obj, name) else default
@@ -266,7 +266,7 @@ class Reverse(KernelInf):
 class Forward(KernelInf):
     def __init__(
             self,
-            kernel: Kernel,
+            kernel: Union[Program, Kernel],
             program: Union[Program, Condition, Resample, KernelInf, Inf],
             loss_fn=(lambda x, fin: fin),
             loss0=None,
@@ -295,6 +295,8 @@ class Forward(KernelInf):
         kernel_state = self._run_kernel(program_state.trace, program_state.output, **inf_kwargs, **program_kwargs)
 
         log_prob = kernel_state.trace.log_joint(**shape_kwargs, nodes=self.joint_set(kernel_state.trace))
+        if isinstance(self.kernel, Program):
+            log_prob += program_state.trace.log_joint(**shape_kwargs, nodes=self.joint_set(program_state.trace))
 
         self._cache = Out(
             trace=kernel_state.trace,
@@ -340,7 +342,15 @@ class Propose(Conditionable, Inf):
         # conditioned_target = Condition(self.target, trace=proposal_state.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and _doesn't_ need the whole trace?
         target_state = _dispatch(True)(self.target)(proposal_state.output, *shared_args, **inf_kwargs,  **shared_kwargs)
 
+        # ppr(proposal_state.trace, desc="proposal trace from:")
+        # ppr(target_state.kernel.trace if target_state.type == "Reverse" else target_state.trace, desc="target trace from:")
+
         lv = target_state.log_prob - proposal_state.log_prob
+        # pprm(lv, name="log_w")
+        # pprm(target_state.log_prob, name="log_p")
+        # pprm(proposal_state.log_prob, name="log_p")
+        # print("done")
+
         # if ix.t <= IX:
         #     print()
         # if ix.t <= IX:
