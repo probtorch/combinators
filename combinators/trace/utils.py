@@ -118,7 +118,9 @@ def showall(tr:Trace, delim="; ", pretty=True, mlen=0, sort=True, args=[], dists
         delim = "\n,"
     if sort:
         items.sort()
-    return "{" + delim.join([("{:>"+str(mlen)+"}-➢{}").format(k, showRV(v, args=args, dists=dists)) for k, v in items]) + "}"
+    pref = delim if "\n" == delim[0] or "\n" == delim[-1] else ""
+
+    return "{" + pref + delim.join([("{:>"+str(mlen)+"}-➢{}").format(k, showRV(v, args=args, dists=dists)) for k, v in items]) + "}"
 
 @typechecked
 def showvals(tr:Trace, delim="; ", pretty=True, mlen=0, sort=True):
