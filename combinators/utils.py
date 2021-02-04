@@ -59,6 +59,8 @@ def ppr_show(a:Any, m='a', debug=False, **kkwargs):
         return tensor_utils.show(a)
     elif isinstance(a, D.Distribution):
         return trace_utils.showDist(a)
+    elif isinstance(a, list):
+        return "[" + ", ".join(map(ppr_show, a)) + "]"
     elif isinstance(a, (Trace, RandomVariable)):
         args = []
         kwargs = dict()
