@@ -158,13 +158,13 @@ class Enc_coor2(Kernel):
             z_where_tp1 = q_new.normal(loc=q_mean, scale=q_std, value=z_where_old, name='z_where_%d' % (timestep+1))
 
 
+
         output = dict()
-        output[f'z_where_{ix.t}'] = z_where_t
+        if ix.t > 0:
+            output[f'z_where_{ix.t}'] = cond_output[f'z_where_{ix.t}']
         output[f'z_where_{ix.t+1}'] = z_where_tp1
         output['z_where_T'] = cond_output['z_where_T']
         output['z_where_T'].append(z_where_t.unsqueeze(2))
-
-
         return output
 
 class Noop(Program):
@@ -238,7 +238,9 @@ class Dec_coor2(Program):
         value = eval_output[f'z_where_{ix.t+1}']
 
         trace.normal(loc=loc, scale=scale, value=value, name=f'z_where_{ix.t+1}')
-        return shared_args
+        eval_output[f'z_where_{ix.t+1}'] = value
+        eval_output.update(shared_args)
+        return eval_output
 
 
 class Enc_digit(nn.Module):
@@ -316,7 +318,6 @@ class Enc_digit2(Kernel):
         frames = cond_output['frames']
 
         z_where = torch.cat(cond_output['z_where_T'], 2)
-        print(tensor_utils.show(z_where))
         cropped = self.AT.frame_to_digit(frames=frames, z_where=z_where)
         cropped = torch.flatten(cropped, -2, -1)
         hidden = self.enc_digit_hidden(cropped).mean(2)
