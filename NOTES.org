@@ -1,18 +1,19 @@
 #+TITLE: Notes
 * TODOs
-** DONE test whole-program conditioning
-*** DONE make sure the declarative annealing experiment didn't get messed up by not including whole-program conditioning.
-** DONE resample combinator
-** DONE RWS-VAE on GMM
-** TODO APGS on GMM
-*** DONE all nodes are indexed by ix.fr ix.to.
-*** TODO confirm that the traces are propagating as you would expect.
-**** NEXT confirm that 1step is correct
-**** TODO confirm 2step forward
-**** TODO confirm 2step reverse
-**** TODO Validate log_probs with hao's code
-** TODO RWS-VAE on BMNIST
-** TODO APGS on BMNIST
+** DONE Experiments sections (2h15m)
+*** DONE NVI experiment section (+45m)+ 1h30m
+*** DONE APGs section (30m)
+*** DONE APGs plot + table (15m)
+** TODO NVI complete (2h+heiko) (10-20k) 40m per 10k.
+*** DONE use sampling budget that is identical to the paper (288 samples / 8 clusters)
+*** DONE run NVI for 20k
+*** DONE run AVO for 20k
+*** TODO fix resampling with nvi
+*** TODO run NVIR for 20k
+*** TODO make betas learnable
+*** TODO run NVIR* for 20k
+** TODO APG remaining (4h)
+25m
 * On Lazy observations
 As-is, lazy observations are a requirement in order to statically reason
 (really, "assume") a trace's structure before running it.
