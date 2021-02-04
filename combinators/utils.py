@@ -83,7 +83,7 @@ def ppr_show(a:Any, m='a', debug=False, **kkwargs):
     elif isinstance(a, dict):
         return repr({k: ppr_show(v) for k, v in a.items()})
     else:
-        return f"invalid type: {type(a)}"
+        return repr(a)
 
 def ppr(a:Any, m='a', debug=False, desc='', **kkwargs):
     print(desc, ppr_show(a, m=m, debug=debug, **kkwargs))

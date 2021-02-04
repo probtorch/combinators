@@ -34,7 +34,7 @@ from combinators.utils import ppr
 def maybe(obj, name, default, fn=(lambda x: x)):
     return fn(getattr(obj, name)) if hasattr(obj, name) else default
 
-IX = 1
+IX = -20
 
 def _dispatch(permissive):
     def get_callable(fn):
@@ -341,16 +341,17 @@ class Propose(Conditionable, Inf):
         target_state = _dispatch(True)(self.target)(proposal_state.output, *shared_args, **inf_kwargs,  **shared_kwargs)
 
         lv = target_state.log_prob - proposal_state.log_prob
-        if ix.t <= IX:
-            print()
-        if ix.t <= IX:
-            print("log_fwd {}\t{: .4f}".format(ix.t, proposal_state.log_prob.mean().item()), tensor_utils.show(proposal_state.log_prob))
-            print("log_tar {}\t{: .4f}".format(ix.t, target_state.log_prob.mean().item()), tensor_utils.show(target_state.log_prob), )
-            print("log_inc {}\t{: .4f}".format(ix.t, lv.mean().item()), tensor_utils.show(lv) )
+        # if ix.t <= IX:
+        #     print()
+        # if ix.t <= IX:
+        #     print("log_fwd {}\t{: .4f}\t".format(ix.t, proposal_state.log_prob.mean().item()), tensor_utils.show(proposal_state.log_prob))
+        #     print("log_tar {}\t{: .4f}\t".format(ix.t, target_state.log_prob.mean().item()), tensor_utils.show(target_state.log_prob), )
+        #     print("log_inc {}\t{: .4f}\t".format(ix.t, lv.mean().item()), tensor_utils.show(lv) )
 
-        if ix.t <= IX:
-            ppr(proposal_state.trace, desc="   fwd_kernel.trace", delim="\n     ")
-            ppr(target_state.trace,   desc="target_kernel.trace", delim="\n     ")
+
+        # if ix.t <= IX:
+        #     ppr(proposal_state.trace, desc="   fwd_kernel.trace", delim="\n     ")
+        #     ppr(target_state.trace,   desc="target_kernel.trace", delim="\n     ")
         self._cache = Out(
             extras=dict(
                 proposal=proposal_state if self._debug or _debug else Out(*proposal_state), # strip auxiliary traces

@@ -6,7 +6,7 @@ import time
 import numpy as np
 from random import shuffle
 from experiments.apgs_bshape.models import *
-from experiments.apgs_bshape.hao import apg_objective
+from experiments.apgs_bshape.hao import apg_objective, apg_comb
 import os
 import torch
 import numpy as np
@@ -141,7 +141,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_epochs', default=200, type=int)
     parser.add_argument('--batch_size', default=5, type=int)
     parser.add_argument('--budget', default=100, type=int)
-    parser.add_argument('--num_sweeps', default=3, type=int)
+    parser.add_argument('--num_sweeps', default=2, type=int)
     parser.add_argument('--lr', default=5e-4, type=float)
     parser.add_argument('--resample_strategy', default='systematic', choices=['systematic', 'multinomial'])
     parser.add_argument('--num_objects', default=2, type=int)
@@ -154,6 +154,8 @@ if __name__ == '__main__':
     parser.add_argument('--z_what_dim', default=10, type=int)
     args = parser.parse_args()
 
+    # lr = args.lr
+    lr = 0.01
     sample_size = int(args.budget / args.num_sweeps)
     debug.seed(0)
     device = torch.device('cpu') # 'cuda:%d' % args.device)
@@ -168,7 +170,6 @@ if __name__ == '__main__':
     data_paths = datapaths(data_dir=args.data_dir, subfolder='')
     shape_mean = torch.from_numpy(np.load('dataset/shape_mean.npy')).float()
 
-
     debug.seed(4)
     AT1 = Affine_Transformer(args.frame_pixels, args.shape_pixels).to(autodevice(device))
     debug.seed(4)
@@ -178,10 +179,11 @@ if __name__ == '__main__':
     # optimizer = adam(models, lr=args.lr)
 
     CUDA=torch.cuda.is_available()
-    models, optimizer = init_models(AT1, AT2, args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, CUDA, device, load_version=None, lr=args.lr)
+    models, optimizer = init_models(AT1, AT2, args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, CUDA, device, load_version=None, lr=lr)
     print('Start training for bshape tracking task..')
     print('version=' + model_version)
     train(
+        # objective=apg_comb,
         objective=apg_objective,
         optimizer=optimizer,
         models=models,
