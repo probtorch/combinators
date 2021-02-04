@@ -83,10 +83,6 @@ class Enc_coor(nn.Module):
         if extend_dir == 'forward':
             z_where_t = torch.cat(z_where_t, 2)
             z_where_tp1 = q_new.normal(loc=q_mean, scale=q_std, value=z_where_t, name='z_where_%d' % (timestep+1))
-            if (timestep in [0]):
-                print("in1 mean", q_mean.mean())
-                print("in1 std ", q_std.mean())
-                print("in1 std ", z_where_t.mean())
         elif extend_dir == 'backward':
             try:
                 z_where_old = q['z_where_%d' % (timestep+1)].value
@@ -123,13 +119,13 @@ class Enc_coor2(Kernel):
 #         self.conv_kernel = conv_kernel
         self.AT = AT
 
-    def apply_kernel(self, q_new, cond_trace, cond_output, ix=None):
+    def apply_kernel(self, trace, cond_trace, cond_output, ix=None):
         debug.seed(ix.t);
-        q = cond_trace
         try:
             frames = cond_output['frames']
         except:
             raise Exception(ix)
+
         if 'conv_kernel' not in cond_output or cond_output['conv_kernel'] is None:
             conv_kernel = cond_output['get_conv'](eval_output=cond_output, ix=ix)
             cond_output['conv_kernel'] = conv_kernel
@@ -159,38 +155,27 @@ class Enc_coor2(Kernel):
                 z_where_k = dist.rsample() if self.reparameterized else dist.sample()
                 z_where_t.append(z_where_k.unsqueeze(2))
             else:
-                z_where_k = q['z_where_%d' % (timestep+1)].value[:,:,k,:]
+                z_where_k = cond_output['z_where_%d' % (timestep+1)][:,:,k,:]
 
             recon_k = self.AT.digit_to_frame(conv_kernel[:,:,k,:,:].unsqueeze(2), z_where_k.unsqueeze(2).unsqueeze(2)).squeeze(2).squeeze(2)
             assert recon_k.shape ==(S,B,FP,FP), 'shape = %s' % recon_k.shape
             frame_left = frame_left - recon_k
         q_mean = torch.cat(q_mean, 2)
         q_std = torch.cat(q_std, 2)
-        # q_new = copy_trace(q, 'z_where_%d' % (timestep+1))
-
-        # if f'z_where_{ix.t}' in cond_output:
-        #     breakpoint();
 
         if not ix.rev:
             z_where_t = torch.cat(z_where_t, 2)
-            z_where_tp1 = q.normal(loc=q_mean, scale=q_std, value=z_where_t, name='z_where_%d' % (timestep+1))
+            z_where_tp1 = trace.normal(loc=q_mean, scale=q_std, value=z_where_t, name='z_where_%d' % (timestep+1))
             cond_output['z_where_T'].append(z_where_t.unsqueeze(2))
         else:
             try:
-                z_where_old = q['z_where_%d' % (timestep+1)].value
+                z_where_old = cond_output['z_where_%d' % (timestep+1)]
             except:
                 print("cannot extract z_where_%d from the incoming trace." % (timestep+1))
-            z_where_tp1 = q_new.normal(loc=q_mean, scale=q_std, value=z_where_old, name='z_where_%d' % (timestep+1))
-
-        #ppr(q)
+            z_where_tp1 = trace.normal(loc=q_mean, scale=q_std, value=z_where_old, name='z_where_%d' % (timestep+1))
 
         output = cond_output
-        # if ix.t > 0:
-        #     output[f'z_where_{ix.t}'] = cond_output[f'z_where_{ix.t}']
         output[f'z_where_{ix.t+1}'] = z_where_tp1
-        #output['z_where_T'] = cond_output['z_where_T']
-        # output['z_where_T'].append(z_where_t.unsqueeze(2))
-        # ppr(z_where_tp1, desc='[ℇ] z_where_{:d} ({:.4f})'.format(ix.t+1, z_where_tp1.mean().item()))
         return output
 
 class Noop(Program):
@@ -448,7 +433,10 @@ class Dec_digit2(Program):
         self.AT = AT
 
     def model(self, trace, eval_output, shared_args, ix=None):
+        # WARNING: slight deviation in IS of the recon RV
         assert ix is not None
+        timestep=ix.t
+        debug.seed(timestep);
         if ix.block == "is":
             # we are in the kernel position of a forward:
             # eval_output == cond_trace
@@ -460,10 +448,9 @@ class Dec_digit2(Program):
                 trace, frames,
                 z_what=shared_args['z_what'], z_where=shared_args['z_where'],
                 digit_mean=digit_mean)
+            return shared_args
         else:
             frames = eval_output['frames']
-            timestep=ix.t
-            debug.seed(timestep);
             try:
                 digit_mean = self.dec_digit_mean(eval_output['z_what'])  # S * B * K * (28*28)
             except:
@@ -494,23 +481,23 @@ class Dec_digit2(Program):
                 raise ValueError
 
     def add_likelihood_to_trace(self, trace, frames, z_what, z_where, digit_mean):
-            S, B, K, DP2 = digit_mean.shape
-            _, _, T, FP, _ = frames.shape
-            recon_frames = torch.clamp(self.AT.digit_to_frame(digit=digit_mean, z_where=z_where).sum(-3), min=0.0, max=1.0) # S * B * T * FP * FP
-            assert recon_frames.shape == (S, B, T, FP, FP), "ERROR! unexpected reconstruction shape"
-            trace.normal(loc=self.prior_mu,
-                     scale=self.prior_std,
-                     value=z_what,
-                     # should relabel this to *_ll
-                     name='z_what')
-            _= trace.variable(Bernoulli, probs=recon_frames, value=frames, name='recon')
+        S, B, K, DP2 = digit_mean.shape
+        _, _, T, FP, _ = frames.shape
+        recon_frames = torch.clamp(self.AT.digit_to_frame(digit=digit_mean, z_where=z_where).sum(-3), min=0.0, max=1.0) # S * B * T * FP * FP
+        assert recon_frames.shape == (S, B, T, FP, FP), "ERROR! unexpected reconstruction shape"
+        trace.normal(loc=self.prior_mu,
+                 scale=self.prior_std,
+                 value=z_what,
+                 # should relabel this to *_ll
+                 name='z_what')
+        _= trace.variable(Bernoulli, probs=recon_frames, value=frames, name='recon')
 
     def reconstruct_image(self, trace, frames, z_what, z_where_T, digit_mean, sample=False):
-            rs = []
-            for _z_where in z_where_T:
-                z_where = z_where.unsqueeze(2)
-                recon_frames = torch.clamp(self.AT.digit_to_frame(digit=digit_mean, z_where=z_where).sum(-3), min=0.0, max=1.0).squeeze() # S * B * T * FP * FP
-                rs.append(recon_frames)
-                assert recon_frames.shape == frames.shape, 'recon_frames shape =%s, frames shape = %s' % (recon_frames.shape, frames.shape)
-                _ = trace.variable(Bernoulli, probs=recon_frames, value=frames, name='recon_frame')
-            return rs
+        rs = []
+        for _z_where in z_where_T:
+            z_where = z_where.unsqueeze(2)
+            recon_frames = torch.clamp(self.AT.digit_to_frame(digit=digit_mean, z_where=z_where).sum(-3), min=0.0, max=1.0).squeeze() # S * B * T * FP * FP
+            rs.append(recon_frames)
+            assert recon_frames.shape == frames.shape, 'recon_frames shape =%s, frames shape = %s' % (recon_frames.shape, frames.shape)
+            _ = trace.variable(Bernoulli, probs=recon_frames, value=frames, name='recon_frame')
+        return rs

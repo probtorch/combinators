@@ -12,24 +12,23 @@ import ast
 import weakref
 from typing import Iterable, NamedTuple
 import operator
+from inspect import signature
+import inspect
 
-from combinators.types import check_passable_arg, check_passable_kwarg, get_shape_kwargs, Out
-from combinators.utils import dispatch
-from combinators.trace.utils import RequiresGrad, copytrace, mapvalues, disteq
-from combinators.tensor.utils import autodevice, kw_autodevice
 import combinators.debug as debug
 import combinators.trace.utils as trace_utils
 import combinators.tensor.utils as tensor_utils
+import combinators.resampling.strategies as rstrat
+
+from combinators.types import check_passable_arg, check_passable_kwarg, get_shape_kwargs, Out, Output, State, TraceLike
+from combinators.utils import dispatch, ppr, pprm
+from combinators.trace.utils import RequiresGrad, copytrace, mapvalues, disteq
+from combinators.tensor.utils import autodevice, kw_autodevice
 from combinators.stochastic import Trace, ConditioningTrace
-from combinators.types import Output, State, TraceLike
 from combinators.program import Program
 from combinators.kernel import Kernel
 from combinators.traceable import Conditionable
-from inspect import signature
-import inspect
 from combinators.objectives import nvo_avo
-import combinators.resampling.strategies as rstrat
-from combinators.utils import ppr, pprm
 
 def maybe(obj, name, default, fn=(lambda x: x)):
     return fn(getattr(obj, name)) if hasattr(obj, name) else default
@@ -59,7 +58,7 @@ class Inf(ABC):
             exclude=None,
             include=None,
             batch_dim=None):
-        self.loss0 = torch.zeros(1, device=autodevice(device)) if loss0 is None else loss0.to(autodevice(device))
+        self.loss0 = torch.zeros(1, device=autodevice(device)) if loss0 is None else loss0
         self.foldr_loss = loss_fn
         self.ix = ix
         self._debug = _debug
@@ -151,8 +150,9 @@ class Resample(Inf):
             program: Inf, # not Union[Program, Inf] because (@stites) is not computing log_joint for programs, (which I guess would be the joint?)
             ix=None,
             _debug:bool=False,
+            loss0=None,
             strategy=rstrat.Systematic()):
-        super().__init__(ix=ix, _debug=_debug)
+        super().__init__(ix=ix, _debug=_debug, loss0=loss0)
         self.program = program
         self.strategy = strategy
 

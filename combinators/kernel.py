@@ -52,9 +52,6 @@ class Kernel(TraceModule):
 
         out = self.apply_kernel(trace, cond_trace, cond_outs, **passable_kwargs)
 
-        if validate and not trace_utils.valeq(cond_trace, trace):
-            raise RuntimeError("RVs in trace are not correctly conditioned on the cond_trace")
-
         # grab anything that is missing from the cond_trace
         full_trace = trace_utils.copytraces(cond_trace, trace)
 

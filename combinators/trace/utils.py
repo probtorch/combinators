@@ -79,7 +79,7 @@ def valeq(t1:Trace, t2:Trace, nodes:Union[Dict[str, Any], List[Tuple[str, str]],
     invalid = list(filter(lambda name: not trace_eq(t1, t2, name), _nodes))
     if len(invalid) > 0:
         str_nodes = "{" + ", ".join(invalid) + "}"
-        raise Exception("RV nodes {} are not equal in:\n  trace 1: {}\n  trace 2: {}".format(str_nodes, t1, t2))
+        raise Exception("RV nodes {} are not equal in:\n  trace 1: {}\n  trace 2: {}".format(str_nodes, set(t1.keys()), set(t2.keys())))
 
     return True
 
