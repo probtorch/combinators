@@ -23,19 +23,13 @@ class Distribution(Program):
         self.dist = dist
         self.RandomVariable = RandomVariable
 
-    def model(self, trace, sample_shape=torch.Size([1,1]), validate=True):
+    def model(self, trace, sample_shape=torch.Size([1,1])):
         dist = self.dist
-        # FIXME: ensure conditioning a program work like this is automated?
         value, provenance = trace_utils.maybe_sample(trace, sample_shape)(dist, self.name)
-        # if validate and not (len(value.shape) >= 2):
-        #     raise RuntimeError("must have at least sample dim + output dim")
-        # if not all(map(lambda lr: lr[0] == lr[1], zip(sample_shape, value.shape))):
-        #     adjust_shape = [*sample_shape, *value.shape[len(sample_shape):]]
-        #     value = value.view(adjust_shape)
 
         rv = self.RandomVariable(dist=dist, value=value, provenance=provenance) # <<< rv.log_prob = dist.log_prob(value)
         trace.append(rv, name=self.name)
-        return trace[self.name].value
+        return None
 
     def __repr__(self):
         return f'Distribution[name={self.name}; dist={repr(self.dist)}]'
@@ -49,9 +43,6 @@ class Normal(Distribution):
 
         self._dist = distributions.Normal(loc=self.loc, scale=self.scale)
         super().__init__(name, self._dist)
-
-    # def __repr__(self):
-    #     return f"Normal(name={self.name}, loc={self._loc}, scale={self._scale})"
 
     def as_dist(self, as_multivariate=False):
         return self._dist if not as_multivariate else \
@@ -114,11 +105,10 @@ class Density(Program):
         super().__init__()
         self.name = name
         self.log_density_fn = log_density_fn
-        self.RandomVariable = ImproperRandomVariable # might be useful
 
     def model(self, trace):
         assert self.name in trace, "an improper RV can only condition on values in an existing trace"
-        rv = ImproperRandomVariable(log_density_fn=self.log_density_fn, value=trace[self.name].value, provenance=Provenance.OBSERVED)
+        rv = ImproperRandomVariable(log_density_fn=self.log_density_fn, value=trace[self.name].value, provenance=Provenance.REUSED)
         trace.append(rv, name=self.name)
         return None
 
@@ -133,19 +123,22 @@ class Tempered(Density):
         self.beta = beta
         self.density1 = d1
         self.density2 = d2
-        # FIXME: needed for NVI*/NVIR*
+
         if optimize:
-            raise NotImplementedError("Also need to torch.sigmoid to get beta back")
             self.logit = nn.Parameter(torch.logit(beta))
 
     def log_density_fn(self, value:Tensor) -> Tensor:
+
         def log_prob(g, value):
+            # FIXME: technically if we also learn d1 or d2, we must detach parameters first
+            assert all([p.requires_grad == False for p in g.parameters()])
+
             return g.log_density_fn(value) if isinstance(g, Density) else g.dist.log_prob(value)
 
-        # with torch.no_grad(): # you can't learn anything about this density for the moment
         t = self.beta
         return log_prob(self.density1, value)*(1-t) + \
                log_prob(self.density2, value)*t
+
 
     def __repr__(self):
         return "[β={:.4f}]".format(self.beta.item()) + super().__repr__()
@@ -156,10 +149,8 @@ class GMM(Density):
         assert len(locs) == len(covs)
         self.K = K = len(locs)
         super().__init__(name, self.log_density_fn)
-        # FIXME: self.components = nn.ParameterList([distributions.MultivariateNormal(loc=locs[k], covariance_matrix=covs[k]) for k in range(K)])
         self.components = [distributions.MultivariateNormal(loc=locs[k], covariance_matrix=covs[k]) for k in range(K)]
         self.assignments = distributions.Categorical(torch.ones(K, device=locs[0].device)) # take this off the trace
-        # self.assignments = Categorical("assignments", probs=torch.ones(K))
 
     def sample(self, sample_shape=torch.Size([1])):
         """ only used to visualize samples """
