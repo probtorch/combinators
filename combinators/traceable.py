@@ -15,8 +15,24 @@ from combinators.stochastic import Trace, Factor
 from combinators.types import Output, State, TraceLike, get_value
 import combinators.trace.utils as trace_utils
 import combinators.tensor.utils as tensor_utils
+import warnings
+import functools
 
 logger = logging.getLogger(__name__)
+
+def deprecated(func):
+    """This is a decorator which can be used to mark functions
+    as deprecated. It will result in a warning being emitted
+    when the function is used."""
+    @functools.wraps(func)
+    def new_func(*args, **kwargs):
+        warnings.simplefilter('always', DeprecationWarning)  # turn off filter
+        warnings.warn("Call to deprecated function {}.".format(func.__name__),
+                      category=DeprecationWarning,
+                      stacklevel=2)
+        warnings.simplefilter('default', DeprecationWarning)  # reset filter
+        return func(*args, **kwargs)
+    return new_func
 
 @typechecked
 class Conditionable(ABC):
@@ -34,10 +50,12 @@ class Conditionable(ABC):
 
 @typechecked
 class Traceable(Conditionable):
+    @deprecated
     def __init__(self) -> None:
         super().__init__()
 
-    def log_probs(self, values:Optional[TraceLike] = None) -> Dict[str, Tensor]:
+    @deprecated
+    def log_joint(self, values:Optional[TraceLike] = None) -> Dict[str, Tensor]:
         #raise RuntimeError("traces are no longer cached for Observable and, therefore, all log_probs are invalid")
         logger.warn("traces are no longer CONSISTENTLY cached for Observable and, therefore, log_probs may be invalid")
         def eval_under(getter, k:str) -> Tensor:
@@ -57,6 +75,7 @@ class Traceable(Conditionable):
         else:
             raise NotImplementedError()
 
+    @deprecated
     @property
     def variables(self) -> Set[str]:
         return set(self.get_trace().keys())

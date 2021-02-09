@@ -184,7 +184,7 @@ class KernelInf(Conditionable, Inf):
 class Extend(KernelInf):
     def __init__(self,
             program: Program,
-            kernel: Kernel,
+            kernel: Program, # FIXME: make this :=  f | extend (p, q) later
             loss_fn=(lambda x, fin: fin),
             loss0=None,
             device=None,
@@ -207,7 +207,8 @@ class Extend(KernelInf):
         kernel = Condition(self.kernel, cond_trace=self._cond_trace) if self._cond_trace is not None else self.kernel
 
         kernel_out = _dispatch()(kernel)(program_out.trace, program_out.output, **inf_kwargs, **shared_kwargs)
-        # FIXME: when we get rid of kernels and put extend combinators here, kernel_out.log_weight must be 0 and we need an assert here
+
+        assert (kernel_out.log_weight == 0).all()
         assert len(set(kernel_out.trace.keys()).intersection(set(program_out.trace.keys()))) == 0
 
         log_joint_extended = kernel_out.trace.log_joint(**shape_kwargs, nodes={k for k,v in kernel_out.trace.items() if v.provenance != Provenance.OBSERVED})
@@ -218,6 +219,7 @@ class Extend(KernelInf):
             output=program_out.output,
             extras=dict(
                 program=program_out,
+                trace_star = kernel_out.trace,
                 kernel=kernel_out,
                 type=type(self).__name__,
                 ix=ix,
