@@ -111,20 +111,15 @@ def curry(func):
 
 def dispatch(get_callable, permissive):
     def curry_fn(fn):
+
         def go(*args:Any, **kwargs:Any):
             spec_fn = get_callable(fn)
-            _dispatch_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, spec_fn)} if permissive else kwargs
-            if isinstance(fn, nn.Module):
-                forward_spec = inspect.getfullargspec(fn.forward)
-                for k, v in kwargs.items():
-                    is_forward_only_kwarg = k in forward_spec.kwonlyargs and k not in _dispatch_kwargs
-                    if is_forward_only_kwarg:
-                        _dispatch_kwargs[k] = v
 
+            _dispatch_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, spec_fn)} if permissive else kwargs
             _dispatch_args   = args
-            # _dispatch_args   = [v for k,v in args.items() if check_passable_arg(k, fn)] if permissive else args
-            # assert args is None or len(args) == 0, "need to filter this list, but currently don't have an example"
+
             return fn(*_dispatch_args, **_dispatch_kwargs)
+
         return go
     return curry_fn
 

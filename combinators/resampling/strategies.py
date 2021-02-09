@@ -1,62 +1,67 @@
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
-from typing import Tuple
+from typing import Optional, Tuple
 import math
 import torch.distributions as D
 from torch.distributions.categorical import Categorical
 from torch.distributions.uniform import Uniform
 from combinators.tensor.utils import kw_autodevice
 from combinators.stochastic import Trace, RandomVariable, ImproperRandomVariable
+import combinators.stochastic as probtorch
 
 class Strategy:
-    def __call__(self, trace:Trace, log_weight:Tensor)->Tuple[Trace, Tensor]:
+    def __call__(self, trace:Trace, log_weight:Tensor, sample_dim:int, batch_dim:int)->Tuple[Trace, Tensor]:
         raise NotImplementedError()
 
-    def _(self, trace:Trace, log_weight:Tensor)->None:
-        raise NotImplementedError()
+def pick(z, aidx, sample_dim):
+    ddim = z.dim() - aidx.dim()
+    assert z.shape[:z.dim()-ddim] == aidx.shape, "data dims must be at the end of arg:z"
 
-def pick(z, idx, sample_dim=0):
-    ddim = z.dim() - idx.dim()
-    mask = idx[(...,) + (None,)*ddim].expand_as(z)
+    mask = aidx
+    for _ in range(ddim):
+        mask = mask.unsqueeze(-1)
+    mask = mask.expand_as(z)
+
     return z.gather(sample_dim, mask)
 
-def ancestor_indices_systematic(lw, sample_dim=0, batch_dim=1):
-    if batch_dim is None:
-        _batch_dim = 1
-        lw = lw[None, :]  # Add empty batch dim
-    else:
-        _batch_dim = batch_dim
-    n, b = lw.shape[sample_dim], lw.shape[_batch_dim]
-    u = torch.rand(b)
-    usteps = torch.stack([(k + u) for k in range(n)], dim=_batch_dim)/n
+def ancestor_indices_systematic(lw, sample_dim, batch_dim):
+    assert batch_dim is not None and sample_dim is not None
+    _sample_dim = -1
+    n, b = lw.shape[sample_dim], lw.shape[batch_dim]
+
+    u = torch.rand(b, device=lw.device)
+    usteps = torch.stack([(k + u) for k in range(n)], dim=_sample_dim)/n
     nws = F.softmax(lw.detach(), dim=sample_dim)
-    csum = nws.transpose(sample_dim, -1).cumsum(dim=-1)
-    cmax, _ = torch.max(csum, dim=_batch_dim, keepdim=True)
+
+    csum = nws.transpose(sample_dim, _sample_dim).cumsum(dim=_sample_dim)
+    cmax, _ = torch.max(csum, dim=_sample_dim, keepdim=True)
     ncsum = csum / cmax
+
     aidx = torch.searchsorted(ncsum, usteps, right=False)
-    aidx = aidx.transpose(-1, sample_dim)
-    if batch_dim is None:
-        aidx = aidx.squeeze()  # remove empty batch dim
+    aidx = aidx.transpose(_sample_dim, sample_dim)
     return aidx
 
 class Systematic(Strategy):
-    def __init__(self, sample_dim=0, batch_dim=1):
-        # self.sample_dim = sample_dim
-        # self.batch_dim = batch_dim
-        pass
 
-    def __call__(self, trace, log_weight, sample_dim=0, batch_dim=1)->Tuple[Trace, Tensor]:
-        # do we want to reason about these arguments at a higher level?
-        self.sample_dim = sample_dim
-        self.batch_dim = batch_dim
+    def __call__(self, trace:Trace, log_weight:Tensor, sample_dim:int, batch_dim:Optional[int])->Tuple[Trace, Tensor]:
+        assert sample_dim == 0, "FIXME: take this assert out"
 
-        aidx = ancestor_indices_systematic(log_weight, sample_dim=self.sample_dim, batch_dim=self.batch_dim)
+        if batch_dim is None:
+            assert len(log_weight.shape) == 1, "batch_dim None requires 1d log_weight"
+            _batch_dim = 1
+            log_weight = log_weight.unsqueeze(_batch_dim)
+
+        aidx = ancestor_indices_systematic(log_weight, sample_dim=sample_dim, batch_dim=_batch_dim if batch_dim is None else batch_dim)
+
+        if batch_dim is None:
+            aidx = aidx.squeeze(_batch_dim)
+
         new_trace = Trace()
         for key, rv in trace._nodes.items():
             # TODO: Do not detach all
-            value = pick(rv.value, aidx, sample_dim=self.sample_dim).detach()
-            log_prob = pick(rv.log_prob, aidx, sample_dim=self.sample_dim).detach()
+            value = pick(rv.value, aidx, sample_dim=sample_dim).detach()
+            log_prob = pick(rv.log_prob, aidx, sample_dim=sample_dim).detach()
 
             if isinstance(rv, RandomVariable):
                 var = RandomVariable(dist=rv._dist, value=value, log_prob=log_prob)
@@ -66,146 +71,62 @@ class Systematic(Strategy):
                 raise NotImplementedError()
 
             new_trace.append(var, name=key)
-        # REVIEW NEW CODE
-        log_weight = torch.logsumexp(log_weight - math.log(log_weight.shape[self.sample_dim]), dim=self.sample_dim, keepdim=True).expand_as(log_weight)
+
+        log_weight = torch.logsumexp(log_weight - math.log(log_weight.shape[sample_dim]), dim=sample_dim, keepdim=True).expand_as(log_weight)
         return new_trace, log_weight
 
-    def _(self, trace, log_weight):
-        """ inplace version """
-        aidx = ancestor_indices_systematic(log_weight, sample_dim=self.sample_dim, batch_dim=self.batch_dim)
-        for key in trace._nodes:
-            trace[key]._value = pick(trace[key].value, aidx, sample_dim=self.sample_dim)
-            trace[key]._log_prob = pick(trace[key].log_prob, aidx, sample_dim=self.sample_dim)
-        log_weight = torch.logsumexp(log_weight, dim=self.sample_dim, keepdim=True).expand_as(log_weight)
-        return trace, log_weight
+def stubtest_ancestor_indices_systematic():
+    S = 4
+    B = 1000
+    lw = torch.tensor([0.1, 0.2, 0.3, 0.4]).log()
+    lw = lw.unsqueeze(1).expand(S, B)
+    a = ancestor_indices_systematic(lw, 0, 1).T
+    for i in range(S):
+        print(i, ( a == i ).sum() / (S*B))
 
+def stubtest_resample_with_batch(B=100, N=5):
+    S = 4
 
-class APGResampler():
-    def __init__(self, strategy, sample_size, CUDA, device):
-        super(Strategy, self).__init__()
-        self.strategy = strategy
-        assert self.strategy == 'systematic' or 'multinomial', "ERROR! specify resampling strategy as either systematic or multinomial."
-        if self.strategy == 'systematic':
-            if CUDA:
-                self.uniformer = Uniform(low=torch.Tensor([0.0]).cuda().to(device), high=torch.Tensor([1.0]).cuda().to(device))
-                self.spacing = torch.arange(sample_size).float().cuda().to(device)
-            else:
-                self.uniformer = Uniform(low=torch.Tensor([0.0]), high=torch.Tensor([1.0]))
-                self.spacing = torch.arange(sample_size).float()
-        self.S = sample_size
-        self.CUDA = CUDA
+    value = torch.tensor([[1,1],[2,2],[3,3],[4,4]])
+    lw = torch.tensor([0.1, 0.2, 0.3, 0.4]).log()
 
-    def sample_ancestral_index(self, log_weights):
-        """
-        sample ancestral indices
-        """
-        sample_dim, batch_dim = log_weights.shape
-        if self.strategy == 'systematic':
-            positions = (self.uniformer.sample((batch_dim,)) + self.spacing) / self.S
-            # weights = log_weights.exp()
-            normalized_weights = F.softmax(log_weights, 0)
-            cumsums = torch.cumsum(normalized_weights.transpose(0, 1), dim=1)
-            (normalizers, _) = torch.max(input=cumsums, dim=1, keepdim=True)
-            normalized_cumsums = cumsums / normalizers ## B * S
+    lw = lw.unsqueeze(1).expand(S, B)
+    value = value.unsqueeze(1).expand(S, B, 2)
+    tr = Trace()
 
-            ancestral_index = torch.searchsorted(normalized_cumsums, positions)
-            assert ancestral_index.shape == (batch_dim, sample_dim), "ERROR! systematic resampling resulted unexpected index shape."
-            ancestral_index = ancestral_index.transpose(0, 1)
+    for n in range(N):
+        tr.append(RandomVariable(dist=D.Normal(0, 1), value=value, log_prob=lw), name=f'z_{n}')
 
-        elif self.strategy == 'multinomial':
-            normalized_weights = F.softmax(log_weights, 0)
-            ancestral_index = Categorical(normalized_weights.transpose(0, 1)).sample((sample_dim, ))
-        else:
-            print("ERROR! unexpected resampling strategy.")
-        return ancestral_index
+    resampled, _lw = Systematic()(tr, lw, sample_dim=0, batch_dim=1)
+    assert (_lw.exp() == 0.25).all()
 
-    def resample_4dims(self, var, ancestral_index):
-        sample_dim, batch_dim, dim3, dim4 = var.shape
-        gather_index = ancestral_index.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, dim3, dim4)
-        return torch.gather(var, 0, gather_index)
+    memo = torch.zeros(S)
+    for n, (_, rv) in enumerate(resampled.items()):
+        for s in range(S):
+            memo[s] += (rv.value == (s+1)).sum() / (S*B*N*2)
 
-    def resample_5dims(self, var, ancestral_index):
-        sample_dim, batch_dim, dim3, dim4, dim5 = var.shape
-        gather_index = ancestral_index.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).repeat(1, 1, dim3, dim4, dim5)
-        return torch.gather(var, 0, gather_index)
+    print(memo)
 
-import torch
-from torch.distributions.categorical import Categorical
-from torch.distributions.uniform import Uniform
-import torch.nn.functional as F
+def stubtest_resample_without_batch():
+    S = 4
+    N = 5
+    B = 100
 
+    value = torch.tensor([[1,1],[2,2],[3,3],[4,4]])
+    lw = torch.tensor([0.1, 0.2, 0.3, 0.4]).log()
+    tr = Trace()
 
-class APGSResamplerOriginal(nn.Module):
-    def __init__(self, sample_size):
-        super().__init__()
-        self.strategy = 'systematic'
-        self.uniformer = Uniform(low=torch.Tensor([0.0]), high=torch.Tensor([1.0]))
-        self.spacing = torch.arange(sample_size).float()
-        self.S = sample_size
+    memo = torch.zeros(S)
+    for _ in range(B):
+        for n in range(N):
+            tr.append(RandomVariable(dist=D.Normal(0, 1), value=value, log_prob=lw), name=f'z_{n}')
 
-    def sample_ancestral_index(self, log_weights):
-        """
-        sample ancestral indices
-        """
-        sample_dim, batch_dim = log_weights.shape
+        resampled, _lw = Systematic()(tr, lw, sample_dim=0, batch_dim=None)
 
-        positions = (self.uniformer.sample((batch_dim,)) + self.spacing) / self.S
-        # weights = log_weights.exp()
-        normalized_weights = F.softmax(log_weights, 0)
-        cumsums = torch.cumsum(normalized_weights.transpose(0, 1), dim=1)
-        (normalizers, _) = torch.max(input=cumsums, dim=1, keepdim=True)
-        normalized_cumsums = cumsums / normalizers ## B * S
+        assert (_lw.exp() == 0.25).all()
+        for n, (_, rv) in enumerate(resampled.items()):
+            for s in range(S):
+                memo[s] += (rv.value == (s+1)).sum() / (S*N*2)
 
-        ancestral_index = torch.searchsorted(normalized_cumsums, positions)
-        assert ancestral_index.shape == (batch_dim, sample_dim), "ERROR! systematic resampling resulted unexpected index shape."
-        ancestral_index = ancestral_index.transpose(0, 1)
+    print(memo / B)
 
-        return ancestral_index
-
-    def resample_4dims(self, var, ancestral_index):
-        sample_dim, batch_dim, dim3, dim4 = var.shape
-        gather_index = ancestral_index.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, dim3, dim4)
-        return torch.gather(var, 0, gather_index)
-
-    def resample_5dims(self, var, ancestral_index):
-        sample_dim, batch_dim, dim3, dim4, dim5 = var.shape
-        gather_index = ancestral_index.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).repeat(1, 1, dim3, dim4, dim5)
-        return torch.gather(var, 0, gather_index)
-
-class APG(Strategy):
-    def __init__(self, sample_size):
-        super(Strategy).__init__()
-        self.strategy = APGSResamplerOriginal(sample_size)
-
-    def __call__(self, trace, log_weight, sample_dim=0, batch_dim=1)->Tuple[Trace, Tensor]:
-        q, log_weights, resampler = trace, log_weight, self.strategy
-        ancestral_index = resampler.sample_ancestral_index(log_weights)
-        tau = q['precisions0'].value
-        tau_concentration = q['precisions0'].dist.concentration
-        tau_rate = q['precisions0'].dist.rate
-        mu = q['means0'].value
-        mu_loc = q['means0'].dist.loc
-        mu_scale = q['means0'].dist.scale
-        z = q['states0'].value
-        z_probs = q['states0'].dist.probs
-        tau = resampler.resample_4dims(var=tau, ancestral_index=ancestral_index)
-        tau_concentration = resampler.resample_4dims(var=tau_concentration, ancestral_index=ancestral_index)
-        tau_rate = resampler.resample_4dims(var=tau_rate, ancestral_index=ancestral_index)
-        mu = resampler.resample_4dims(var=mu, ancestral_index=ancestral_index)
-        mu_loc = resampler.resample_4dims(var=mu_loc, ancestral_index=ancestral_index)
-        mu_scale = resampler.resample_4dims(var=mu_scale, ancestral_index=ancestral_index)
-        z = resampler.resample_4dims(var=z, ancestral_index=ancestral_index)
-        z_probs = resampler.resample_4dims(var=z_probs, ancestral_index=ancestral_index)
-        q_resampled = Trace()
-        breakpoint();
-        q_resampled.gamma(tau_concentration,
-                          tau_rate,
-                          value=tau,
-                          name='precisions0')
-        q_resampled.normal(mu_loc,
-                           mu_scale,
-                           value=mu,
-                           name='means0')
-        _ = q_resampled.variable(cat, probs=z_probs, value=z, name='states0')
-
-        return q_resampled

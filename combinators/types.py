@@ -86,10 +86,10 @@ class iproperty_dict(property_dict):
 IPropertyDict = iproperty_dict
 
 class Out(PropertyDict):
-    def __init__(self, trace:Trace, log_prob:Optional[Output], output:Output, extras:dict=dict()):
-        self.trace = trace
-        self.log_prob = log_prob
-        self.output = output
+    def __init__(self, trace:Trace, log_weight:Optional[Output], output:Output, extras:dict=dict()):
+        self.trace = trace       # τ; ρ
+        self.log_weight = log_weight # w      FIXME: this should be log weight
+        self.output = output     # c
         for k, v in extras.items():
             self[k] = v
 
@@ -100,5 +100,5 @@ class Out(PropertyDict):
             if hasattr(self, o):
                 extras[o] = getattr(self, o)
 
-        for x in [self.trace, self.log_prob, self.output, extras]:
+        for x in [self.trace, self.log_weight, self.output, extras]:
             yield x
