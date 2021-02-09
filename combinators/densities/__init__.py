@@ -23,13 +23,13 @@ class Distribution(Program):
         self.dist = dist
         self.RandomVariable = RandomVariable
 
-    def model(self, trace, sample_shape=torch.Size([1,1])):
+    def model(self, trace, c, sample_shape=torch.Size([1,1])):
         dist = self.dist
         value, provenance = trace_utils.maybe_sample(trace, sample_shape)(dist, self.name)
 
         rv = self.RandomVariable(dist=dist, value=value, provenance=provenance) # <<< rv.log_prob = dist.log_prob(value)
         trace.append(rv, name=self.name)
-        return None
+        return {self.name: rv.value}
 
     def __repr__(self):
         return f'Distribution[name={self.name}; dist={repr(self.dist)}]'
@@ -86,7 +86,7 @@ class NormalGamma(Distribution):
         self.alpha = alpha
         self.beta = beta
 
-    def model(self, trace, sample_shape=None):
+    def model(self, trace, c, sample_shape=None):
         gamma = D.Gamma(self.alpha, self.beta)
         precisions, provenance = trace_utils.maybe_sample(trace, sample_shape)(gamma, self.PRECISIONS)
         trace.append(RandomVariable(dist=gamma, value=precisions, provenance=provenance), name=self.PRECISIONS)
@@ -106,11 +106,11 @@ class Density(Program):
         self.name = name
         self.log_density_fn = log_density_fn
 
-    def model(self, trace):
+    def model(self, trace, c):
         assert self.name in trace, "an improper RV can only condition on values in an existing trace"
         rv = ImproperRandomVariable(log_density_fn=self.log_density_fn, value=trace[self.name].value, provenance=Provenance.REUSED)
         trace.append(rv, name=self.name)
-        return None
+        return {self.name: rv.value}
 
     def __repr__(self):
         return f'[{self.name}]' + super().__repr__()
