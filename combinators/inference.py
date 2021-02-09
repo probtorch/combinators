@@ -183,12 +183,11 @@ class Extend(Inf, Conditionable):
 
         p_out = _dispatch()(p)(*shared_args, **inf_kwargs, **shared_kwargs)
 
-        f = Condition(self.f, cond_trace=self._cond_trace) if self._cond_trace is not None else self.f
-
-        f_out = _dispatch()(f)(p_out.trace, p_out.output, **inf_kwargs, **shared_kwargs)
+        f_out = _dispatch()(self.f)(p_out.trace, p_out.output, **inf_kwargs, **shared_kwargs)
 
         assert (f_out.log_weight == 0).all()
         assert len(set(f_out.trace.keys()).intersection(set(p_out.trace.keys()))) == 0
+        assert len({k for k, v in f_out.trace.items() if v.provenance == Provenance.OBSERVED or v.provenance == Provenance.REUSED}) == 0
 
         log_u2 = f_out.trace.log_joint(**shape_kwargs, nodes={k for k,v in f_out.trace.items() if v.provenance != Provenance.OBSERVED})
 
@@ -253,8 +252,8 @@ class Compose(Inf):
 
 class Propose(Conditionable, Inf):
     def __init__(self,
-            target: Union[Program, KernelInf],
-            proposal: Union[Program, Inf],
+            p: Union[Program, Extend],
+            q: Union[Program, Inf],
             loss_fn=(lambda x, fin: fin),
             loss0=None,
             device=None,
@@ -262,58 +261,45 @@ class Propose(Conditionable, Inf):
             _debug:bool=False):
         Conditionable.__init__(self)
         Inf.__init__(self, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
-        self.target = target
-        self.proposal = proposal
+        self.p = p
+        self.q = q
 
-    def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, _debug_extras=None, reparameterized=True, ix=None, **shared_kwargs) -> Out:
-        """ Proposal """
-        ix = self.ix if self.ix is not None else ix
-        inf_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized, _debug=_debug, ix=ix)
+    def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
+        """ Propose """
+        shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
+        inf_kwargs = dict(_debug=_debug, ix = self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        # proposal = Condition(self.proposal, trace=self._cond_trace, as_trace=False) if self._cond_trace is not None else self.proposal
-        proposal_out = self.proposal(*shared_args, **inf_kwargs, **shared_kwargs)
+        q_out = _dispatch()(self.q)(*shared_args, **inf_kwargs, **shared_kwargs)
 
-        # conditioned_target = Condition(self.target, trace=proposal_out.trace, requires_grad=RequiresGrad.YES) # NOTE: might be a bug and _doesn't_ need the whole trace?
-        target_out = _dispatch(True)(self.target)(proposal_out.output, *shared_args, **inf_kwargs,  **shared_kwargs)
+        p_condition = Condition(self.p, q_out.trace)
 
-        # ppr(proposal_out.trace, desc="proposal trace from:")
-        # ppr(target_out.kernel.trace if target_out.type == "Reverse" else target_out.trace, desc="target trace from:")
+        p_out = _dispatch()(p_condition)(*shared_args, **inf_kwargs,  **shared_kwargs)
 
-        lv = target_out.log_prob - proposal_out.log_prob
-        # pprm(lv, name="log_w")
-        # pprm(target_out.log_prob, name="log_p")
-        # pprm(proposal_out.log_prob, name="log_p")
-        # print("done")
+        nodes = set(q_out.trace.keys()) - (
+            set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED}) \
+            - set({k for k, v in p_out.trace.items() if v.provenance != Provenance.OBSERVED})
+        )
+        u1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
 
-        # if ix.t <= IX:
-        #     print()
-        # if ix.t <= IX:
-        #     print("log_fwd {}\t{: .4f}\t".format(ix.t, proposal_out.log_prob.mean().item()), tensor_utils.show(proposal_out.log_prob))
-        #     print("log_tar {}\t{: .4f}\t".format(ix.t, target_out.log_prob.mean().item()), tensor_utils.show(target_out.log_prob), )
-        #     print("log_inc {}\t{: .4f}\t".format(ix.t, lv.mean().item()), tensor_utils.show(lv) )
+        # τ*, by definition, can't have OBSERVE or REUSED random variables
+        u1_star = 0 if 'trace_star' not in q_out else q_out.trace_star.log_joint(**shape_kwargs)
 
+        lw1 = q_out.log_weight
+        lv2 = p_out.log_weight - (u1 - u1_star)
 
-        # if ix.t <= IX:
-        #     ppr(proposal_out.trace, desc="   fwd_kernel.trace", delim="\n     ")
-        #     ppr(target_out.trace,   desc="target_kernel.trace", delim="\n     ")
         self._out = Out(
+            trace=p_out.trace,
+            log_weight=lw1 + lv2,
+            output=p_out.output,
             extras=dict(
-                proposal=proposal_out if self._debug or _debug else Out(*proposal_out), # strip auxiliary traces
-                target=target_out if self._debug  or _debug else Out(*target_out), # strip auxiliary traces
+                lv=lv2,
+                q_out=q_out,
+                p_out=p_out,
                 type=type(self).__name__,
-
-                # only way this happens if we are recursively defining propose statements.
-                log_weight=lv,
-                log_cweight=lv if 'log_cweight' not in proposal_out else lv + proposal_out.log_cweight,
                 ix=ix,
                 ),
-            trace=target_out.trace,
-            log_prob=target_out.log_prob,
-            output=target_out.output,)
+            )
 
-        if ix is not None:
-            self._out['ix'] = ix
-
-        self._out['loss'] = self.foldr_loss(self._out, maybe(proposal_out, 'loss', self.loss0))
+        self._out['loss'] = self.foldr_loss(self._out, maybe(q_out, 'loss', self.loss0))
 
         return self._out

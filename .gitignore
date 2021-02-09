@@ -142,5 +142,6 @@ nix/antlr4.nix
 nix/hydra.nix
 runs/
 *.bk
-data/
-/.dir-locals.el
+data
+weights/
+icml/
