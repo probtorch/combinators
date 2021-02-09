@@ -73,9 +73,8 @@ class Condition(Inf):
     FIXME: can't condition a conditioned model at the moment
     """
     def __init__(self,
-            process: Conditionable,
+            program: Conditionable,
             cond_trace: Optional[Trace]=None,
-            # program: Optional[Inf]=None,
             requires_grad:RequiresGrad=RequiresGrad.DEFAULT,
             detach:Set[str]=set(),
             as_trace=True,
@@ -86,14 +85,11 @@ class Condition(Inf):
             loss0=None,
             device=None) -> None:
         Inf.__init__(self, ix=ix, _debug=_debug, loss_fn=loss_fn, loss0=loss0, device=device)
-        assert cond_trace is not None # or program is not None
-        self.process = process
+        self.program = program
 
-        if requires_grad == RequiresGrad.NO:
-            self.conditioning_trace = trace_utils.copytrace(cond_trace, requires_grad=requires_grad, detach=detach)
-        else:
         # FIXME: do we actually need a copy of the trace?
-            self.conditioning_trace = cond_trace
+        self.conditioning_trace = trace_utils.copytrace(cond_trace, requires_grad=requires_grad, detach=detach) \
+            if requires_grad == RequiresGrad.NO else cond_trace
 
         self._requires_grad = requires_grad
         self._detach = detach
@@ -102,13 +98,13 @@ class Condition(Inf):
 
     def __call__(self, *args:Any, _debug=False, **kwargs:Any) -> Out:
         """ Condition """
-        extras=dict(type=type(self).__name__ + "(" + type(self.process).__name__ + ")")
+        extras=dict(type=type(self).__name__ + "(" + type(self.program).__name__ + ")")
 
-        self.process._cond_trace = ConditioningTrace(self.conditioning_trace)
+        self.program._cond_trace = ConditioningTrace(self.conditioning_trace)
 
-        out = _dispatch()(self.process)(*args, **kwargs)
+        out = _dispatch()(self.program)(*args, **kwargs)
 
-        self.process._cond_trace = Trace()
+        self.program._cond_trace = Trace()
 
         trace = out.trace
         for k, v in out.items():
@@ -127,13 +123,13 @@ class Resample(Inf):
     """
     def __init__(
             self,
-            program: Union[Program, Inf],
+            q: Union[Program, Inf],
             ix=None,
             _debug:bool=False,
             loss0=None,
             strategy=rstrat.Systematic()):
         super().__init__(ix=ix, _debug=_debug, loss0=loss0)
-        self.program = program
+        self.q = q
         self.strategy = strategy
 
     def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
@@ -142,57 +138,40 @@ class Resample(Inf):
 
         inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        program_out = self.program(*shared_args, **inf_kwargs, **shared_kwargs)
+        q_out = self.q(*shared_args, **inf_kwargs, **shared_kwargs)
 
         passable_kwargs = {k: v for k, v in shape_kwargs.items() if check_passable_kwarg(k, self.strategy)}
 
-        tr_, lw_ = self.strategy(program_out.trace, program_out.log_weight, **passable_kwargs)
+        tr_2, lw_2 = self.strategy(q_out.trace, q_out.log_weight, **passable_kwargs)
 
         self._out = Out(
             extras=dict(
-                program_out=program_out,
+                q_out=q_out,
                 type=type(self).__name__,
                 ix=ix,
                 ),
-            trace=tr_,
-            log_weight=lw_,
-            output=program_out.output)
+            trace=tr_2,
+            log_weight=lw_2,
+            output=q_out.output)
 
-        self._out['loss'] = self.foldr_loss(self._out, maybe(program_out, 'loss', self.loss0))
+        self._out['loss'] = self.foldr_loss(self._out, maybe(q_out, 'loss', self.loss0))
 
         return self._out
 
-class KernelInf(Conditionable, Inf):
-    def __init__(
-            self,
-            loss_fn=(lambda x, fin: fin),
-            loss0=None,
-            device=None,
-            ix=None,
-            _debug=False):
-        Conditionable.__init__(self)
-        Inf.__init__(self, ix=ix, _debug=_debug, loss_fn=loss_fn, loss0=loss0, device=device)
 
-    def _show_traces(self):
-        if all(map(lambda x: x is None, self._out)):
-            print("No traces found!")
-        else:
-            print("program: {}".format(self._out.program.trace))
-            print("kernel : {}".format(self._out.kernel.trace))
-
-
-class Extend(KernelInf):
+class Extend(Inf, Conditionable):
     def __init__(self,
-            program: Program,
-            kernel: Program, # FIXME: make this :=  f | extend (p, q) later
+            p: Program,
+            f: Program, # FIXME: make this :=  f | extend (p, q) later
             loss_fn=(lambda x, fin: fin),
             loss0=None,
             device=None,
             ix=None,
             _debug=False) -> None:
-        super().__init__(loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
-        self.program = program
-        self.kernel = kernel
+        Conditionable.__init__(self)
+        Inf.__init__(self, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
+        self.p = p
+        self.f = f
 
     def __call__(self, *shared_args:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs:Any) -> Out:
         """ Extend """
@@ -200,86 +179,75 @@ class Extend(KernelInf):
 
         inf_kwargs = dict(_debug=_debug, ix = self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        program = Condition(self.program, cond_trace=self._cond_trace, as_trace=False) if self._cond_trace is not None else self.program
+        p = Condition(self.p, cond_trace=self._cond_trace, as_trace=False) if self._cond_trace is not None else self.p
 
-        program_out = _dispatch()(program)(*shared_args, **inf_kwargs, **shared_kwargs)
+        p_out = _dispatch()(p)(*shared_args, **inf_kwargs, **shared_kwargs)
 
-        kernel = Condition(self.kernel, cond_trace=self._cond_trace) if self._cond_trace is not None else self.kernel
+        f = Condition(self.f, cond_trace=self._cond_trace) if self._cond_trace is not None else self.f
 
-        kernel_out = _dispatch()(kernel)(program_out.trace, program_out.output, **inf_kwargs, **shared_kwargs)
+        f_out = _dispatch()(f)(p_out.trace, p_out.output, **inf_kwargs, **shared_kwargs)
 
-        assert (kernel_out.log_weight == 0).all()
-        assert len(set(kernel_out.trace.keys()).intersection(set(program_out.trace.keys()))) == 0
+        assert (f_out.log_weight == 0).all()
+        assert len(set(f_out.trace.keys()).intersection(set(p_out.trace.keys()))) == 0
 
-        log_joint_extended = kernel_out.trace.log_joint(**shape_kwargs, nodes={k for k,v in kernel_out.trace.items() if v.provenance != Provenance.OBSERVED})
+        log_u2 = f_out.trace.log_joint(**shape_kwargs, nodes={k for k,v in f_out.trace.items() if v.provenance != Provenance.OBSERVED})
 
         self._out = Out(
-            trace=program_out.trace,
-            log_weight=program_out.log_weight + log_joint_extended, # $w_1 \cdot u_2$
-            output=program_out.output,
+            trace=p_out.trace,
+            log_weight=p_out.log_weight + log_u2, # $w_1 \cdot u_2$
+            output=p_out.output,
             extras=dict(
-                program=program_out,
-                trace_star = kernel_out.trace,
-                kernel=kernel_out,
+                p_out=p_out,
+                f_out=f_out,
+                trace_star = f_out.trace,
                 type=type(self).__name__,
                 ix=ix,
                 ))
 
-        self._out['loss'] = self.foldr_loss(self._out, maybe(program_out, 'loss', self.loss0))
+        self._out['loss'] = self.foldr_loss(self._out, maybe(p_out, 'loss', self.loss0))
 
         return self._out
 
-class Forward(KernelInf):
+class Compose(Inf):
     def __init__(
             self,
-            kernel: Union[Program, Kernel],
-            program: Union[Program, Condition, Resample, KernelInf, Inf],
+            q2: Program, # FIXME: make this more general later
+            q1: Union[Program, Condition, Resample, Inf],
             loss_fn=(lambda x, fin: fin),
             loss0=None,
             device=None,
             ix=None,
             _debug=False,
-            _permissive=True,
-            exclude=None,
-            include=None,
     ) -> None:
-        super().__init__(_permissive, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug, exclude=exclude, include=include)
-        self.program = program
-        self.kernel = kernel
-        self._run_program = _dispatch(permissive=True)(self.program)
-        self._run_kernel = _dispatch(permissive=True)(self.kernel)
+        super().__init__(loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
+        self.q1 = q1
+        self.q2 = q2
 
-    def __call__(self, *program_args:Any, sample_dims=None, batch_dim=None, _debug=False, _debug_extras=None, reparameterized=True, ix=None, **program_kwargs) -> Out:
-        """ Forward """
+    def __call__(self, *shared_args:Any, sample_dims=None, batch_dim=None, _debug=False, _debug_extras=None, reparameterized=True, ix=None, **shared_kwargs) -> Out:
+        """ Compose """
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
 
-        ix = self.ix if self.ix is not None else ix
-        inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
+        inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        program_out = self._run_program(*program_args, **inf_kwargs, **program_kwargs)
+        q1_out = _dispatch()(self.q1)(*shared_args, **inf_kwargs, **shared_kwargs)
 
-        kernel_out = self._run_kernel(program_out.trace, program_out.output, **inf_kwargs, **program_kwargs)
+        q2_out = _dispatch()(self.q2)(q1_out.trace, q1_out.output, **inf_kwargs, **shared_kwargs)
 
-        log_prob = kernel_out.trace.log_joint(**shape_kwargs, nodes=self.joint_set(kernel_out.trace))
-        if isinstance(self.kernel, Program):
-            log_prob += program_out.trace.log_joint(**shape_kwargs, nodes=self.joint_set(program_out.trace))
+        assert len(set(q2_out.trace.keys()).intersection(set(q1_out.trace.keys()))) == 0
 
         self._out = Out(
-            trace=kernel_out.trace,
-            log_prob=log_prob,
-            output=kernel_out.output,
+            trace=trace_utils.copytraces(q2_out.trace, q1_out.trace),
+            log_weight=q1_out.log_weight + q2_out.log_weight,
+            output=q2_out.output,
             extras=dict(
-                program=program_out,
-                kernel=kernel_out,
+                q1_out=q1_out,
+                q2_out=q2_out,
                 type=type(self).__name__,
                 ix=ix,
                 ))
 
-        if ix is not None:
-            self._out['ix'] = ix
-        if 'log_cweight' in program_out:
-            self._out['log_cweight'] = program_out['log_cweight']
-        self._out['loss'] = self.foldr_loss(self._out, maybe(program_out, 'loss', self.loss0))
+        self._out['loss'] = self.foldr_loss(self._out, maybe(q1_out, 'loss', self.loss0))
+
         return self._out
 
 
