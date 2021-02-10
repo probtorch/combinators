@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-import torch.nn as nn
+import torch
+from torch import nn, Tensor
 from typing import Any
 from abc import abstractmethod
 
@@ -25,9 +26,20 @@ class Program(nn.Module, Conditionable):
 
         trace = Trace(cond_trace=self._cond_trace)
         out = self.model(trace, *args, **{k: v for k, v in all_kwargs.items() if check_passable_kwarg(k, self.model)})
-        self.clear_cond_trace()   # closing bracket for a run, required if a user does not use the Condition combinator
 
-        log_weight = trace.log_joint(nodes={k for k, rv in trace.items() if rv.provenance == Provenance.OBSERVED}, **shape_kwargs)
+        if self._cond_trace is not None:
+            # FIXME: move this to Condition
+            rho_addrs = {k for k in trace.keys()}
+            tau_addrs = {k for k, rv in trace.items() if rv.provenance != Provenance.OBSERVED}
+            tau_prime_addrs = {k for k, rv in self._cond_trace.items() if rv.provenance != Provenance.OBSERVED}
+
+            log_weight = trace.log_joint(nodes=rho_addrs - (tau_addrs - tau_prime_addrs), **shape_kwargs)
+
+            self.clear_cond_trace()   # closing bracket for a run, required if a user does not use the Condition combinator
+        else:
+            log_weight = trace.log_joint(nodes={k for k, rv in trace.items() if rv.provenance == Provenance.OBSERVED}, **shape_kwargs)
+            if not isinstance(log_weight, Tensor):
+                log_weight = torch.tensor(log_weight)
 
         return Out(trace=trace, log_weight=log_weight, output=out, extras=dict(type=type(self).__name__))
 

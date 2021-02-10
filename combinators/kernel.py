@@ -15,7 +15,6 @@ import combinators.trace.utils as trace_utils
 from operator import itemgetter, not_
 from combinators.stochastic import Trace, Factor
 from combinators.types import Output, check_passable_kwarg, check_passable_arg, Out
-from combinators.program import Program, model
 from combinators.traceable import TraceModule
 
 

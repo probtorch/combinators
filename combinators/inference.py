@@ -98,25 +98,27 @@ class Condition(Inf):
 
     def __call__(self, *args:Any, _debug=False, **kwargs:Any) -> Out:
         """ Condition """
-        extras=dict(type=type(self).__name__ + "(" + type(self.program).__name__ + ")")
 
-        self.program._cond_trace = ConditioningTrace(self.conditioning_trace)
+        self.program._cond_trace = self.conditioning_trace
 
         out = _dispatch()(self.program)(*args, **kwargs)
 
-        self.program._cond_trace = Trace()
+        out['type']=type(self).__name__ + "(" + type(self.program).__name__ + ")"
 
-        trace = out.trace
-        for k, v in out.items():
-            if k not in ['conditioned_output', 'trace', 'log_weight', 'output']:
-                extras[k] = v
+        self.program._cond_trace = None
 
-        if self.as_trace and isinstance(trace, ConditioningTrace):
-            return Out(trace.as_trace(access_only=not self.full_trace_return), out.log_weight, out.output, extras=extras)
-        else:
-            return out
+        return out
 
-class Resample(Inf):
+        # trace = out.trace
+        # for k, v in out.items():
+        #     if k not in ['conditioned_output', 'trace', 'log_weight', 'output']:
+        #         extras[k] = v
+        # if self.as_trace and isinstance(trace, ConditioningTrace):
+        #     return Out(trace.as_trace(access_only=not self.full_trace_return), log_weight=out.log_weight, output=out.output, extras=extras)
+        # else:
+        #     return out
+
+class Resample(Inf, Conditionable):
     """
     Compute importance weight of the proposal program's trace under the target program's trace,
     considering the incomming log weight lw of the proposal's trace
@@ -127,8 +129,10 @@ class Resample(Inf):
             ix=None,
             _debug:bool=False,
             loss0=None,
-            strategy=rstrat.Systematic()):
-        super().__init__(ix=ix, _debug=_debug, loss0=loss0)
+            strategy=rstrat.Systematic()
+    ):
+        Conditionable.__init__(self)
+        Inf.__init__(self, ix=ix, _debug=_debug, loss0=loss0)
         self.q = q
         self.strategy = strategy
 
@@ -179,13 +183,13 @@ class Extend(Inf, Conditionable):
 
         inf_kwargs = dict(_debug=_debug, ix = self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        p = Condition(self.p, cond_trace=self._cond_trace, as_trace=False) if self._cond_trace is not None else self.p
-
+        p = Condition(self.p, self._cond_trace) if self._cond_trace is not None else self.p
         p_out = _dispatch()(p)(*shared_args, **inf_kwargs, **shared_kwargs)
 
-        f_out = _dispatch()(self.f)(p_out.trace, p_out.output, **inf_kwargs, **shared_kwargs)
+        f = Condition(self.f, self._cond_trace) if self._cond_trace is not None else self.f
+        f_out = _dispatch()(f)(*shared_args, **inf_kwargs, **shared_kwargs)
 
-        assert (f_out.log_weight == 0).all()
+        assert (f_out.log_weight == 0.0)
         assert len(set(f_out.trace.keys()).intersection(set(p_out.trace.keys()))) == 0
         assert len({k for k, v in f_out.trace.items() if v.provenance == Provenance.OBSERVED or v.provenance == Provenance.REUSED}) == 0
 
@@ -207,7 +211,7 @@ class Extend(Inf, Conditionable):
 
         return self._out
 
-class Compose(Inf):
+class Compose(Conditionable, Inf):
     def __init__(
             self,
             q2: Program, # FIXME: make this more general later
@@ -218,7 +222,8 @@ class Compose(Inf):
             ix=None,
             _debug=False,
     ) -> None:
-        super().__init__(loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
+        Conditionable.__init__(self)
+        Inf.__init__(self, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
         self.q1 = q1
         self.q2 = q2
 
@@ -228,11 +233,13 @@ class Compose(Inf):
 
         inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        q1_out = _dispatch()(self.q1)(*shared_args, **inf_kwargs, **shared_kwargs)
+        q1 = Condition(self.q1, self._cond_trace) if self._cond_trace is not None else self.q1
+        q1_out = _dispatch()(q1)(*shared_args, **inf_kwargs, **shared_kwargs)
 
-        q2_out = _dispatch()(self.q2)(q1_out.trace, q1_out.output, **inf_kwargs, **shared_kwargs)
+        q2 = Condition(self.q2, self._cond_trace) if self._cond_trace is not None else self.q2
+        q2_out = _dispatch()(q2)(q1_out.output, *shared_args, **inf_kwargs, **shared_kwargs)
 
-        assert len(set(q2_out.trace.keys()).intersection(set(q1_out.trace.keys()))) == 0
+        assert len(set(q2_out.trace.keys()).intersection(set(q1_out.trace.keys()))) == 0, "addresses must not overlap"
 
         self._out = Out(
             trace=trace_utils.copytraces(q2_out.trace, q1_out.trace),
@@ -282,10 +289,12 @@ class Propose(Conditionable, Inf):
         u1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
 
         # τ*, by definition, can't have OBSERVE or REUSED random variables
-        u1_star = 0 if 'trace_star' not in q_out else q_out.trace_star.log_joint(**shape_kwargs)
+        u1_star = 0 if 'trace_star' not in p_out else p_out.trace_star.log_joint(**shape_kwargs)
 
         lw1 = q_out.log_weight
         lv2 = p_out.log_weight - (u1 - u1_star)
+
+        # breakpoint();
 
         self._out = Out(
             trace=p_out.trace,
@@ -296,6 +305,8 @@ class Propose(Conditionable, Inf):
                 q_out=q_out,
                 p_out=p_out,
                 type=type(self).__name__,
+                # FIXME: can we ditch this? how important is this for objectives
+                trace_star=p_out.trace_star if 'trace_star' in p_out else None,
                 ix=ix,
                 ),
             )
