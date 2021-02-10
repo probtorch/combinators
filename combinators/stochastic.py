@@ -207,13 +207,13 @@ class Trace(MutableMapping):
     reassigned.
     """
 
-    def __init__(self, idempotent:bool=False):
+    def __init__(self, cond_trace=None):
         # TODO: Python 3 dicts are ordered as of 3.6,
         # so could we use a normal dict instead?
         self._nodes = OrderedDict()
         self._counters = {}
         self._mask = None
-        self.idempotent = idempotent
+        self._cond_trace = cond_trace
         self.lazy_observations = dict()
 
     def __getitem__(self, name):
@@ -330,30 +330,20 @@ class Trace(MutableMapping):
         value = kwargs.pop('value', None)
         provenance = kwargs.pop('provenance', None)
         dist = Dist(*args, **kwargs)
-        if self.idempotent and name in self._nodes.keys() and equiv(dist, self[name].dist):
-            value = self[name].value
-            provenance = Provenance.REUSED
-        elif value is None:
-            if name in self.lazy_observations:
-                if not (provenance in [Provenance.OBSERVED, None]):
-                    raise RuntimeError(f"cannot apply enqueued observation when sampled with provenance {provenance}")
-                provenance = Provenance.OBSERVED
-                value = self.lazy_observations[name]
-            elif dist.has_rsample:
-                value = dist.rsample()
+        if value is None:
+            if self._cond_trace is not None and name in self._cond_trace:
+                value = self._cond_trace[name].value
+                provenance = Provenance.REUSED
             else:
-                value = dist.sample()
-            provenance = Provenance.SAMPLED
+                value = dist.rsample() if dist.has_rsample else dist.sample()
+                provenance = Provenance.SAMPLED
         else:
             if not provenance:
                 provenance = Provenance.OBSERVED
             if isinstance(value, RandomVariable):
                 value = value.value
         node = RandomVariable(dist, value, provenance, mask=self._mask)
-
-        if provenance is Provenance.REUSED:
-            self[name]._provenance = provenance
-        elif name is None:
+        if name is None:
             self.append(node)
         else:
             self[name] = node

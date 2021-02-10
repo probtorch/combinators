@@ -23,7 +23,7 @@ class Program(nn.Module, Conditionable):
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
         all_kwargs = {**shape_kwargs, **kwargs}
 
-        trace = self.get_trace()  # allows Condition to hook into this process
+        trace = Trace(cond_trace=self._cond_trace)
         out = self.model(trace, *args, **{k: v for k, v in all_kwargs.items() if check_passable_kwarg(k, self.model)})
         self.clear_cond_trace()   # closing bracket for a run, required if a user does not use the Condition combinator
 
