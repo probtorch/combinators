@@ -9,7 +9,7 @@ from typing import Optional, Dict, Union, Callable
 from combinators.tensor.utils import kw_autodevice, autodevice
 import combinators.trace.utils as trace_utils
 
-from combinators import Program
+from combinators.program import Program
 from combinators.embeddings import CovarianceEmbedding
 from combinators.stochastic import Trace, ImproperRandomVariable, RandomVariable, Provenance
 from combinators.types import TraceLike

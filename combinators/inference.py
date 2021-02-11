@@ -1,34 +1,31 @@
 #!/usr/bin/env python3
 
 import torch
-import torch.nn as nn
-from torch import Tensor, distributions
-from typing import Any, Tuple, Optional, Dict, List, Union, Set, Callable
-from collections import ChainMap, namedtuple
-from typeguard import typechecked
-from abc import ABC, abstractmethod, abstractproperty
-import inspect
-import ast
-import weakref
-from typing import Iterable, NamedTuple
-import operator
-from inspect import signature
-import inspect
+from torch import Tensor
+from typing import Any, Tuple, Optional, Union, Set, Callable
+from abc import ABC
+from typing import NamedTuple
 
 import combinators.debug as debug
 import combinators.trace.utils as trace_utils
 import combinators.tensor.utils as tensor_utils
 import combinators.resampling.strategies as rstrat
 
-from combinators.types import check_passable_arg, check_passable_kwarg, get_shape_kwargs, Out, Output, State, TraceLike
-from combinators.utils import dispatch, ppr, pprm
-from combinators.trace.utils import RequiresGrad, copytrace, mapvalues, disteq
+from combinators.types import check_passable_kwarg, Out
+from combinators.utils import dispatch
+from combinators.trace.utils import RequiresGrad
 from combinators.tensor.utils import autodevice, kw_autodevice
-from combinators.stochastic import Trace, ConditioningTrace, Provenance
+from combinators.stochastic import Trace, Provenance
 from combinators.program import Program
 from combinators.kernel import Kernel
 from combinators.traceable import Conditionable
-from combinators.objectives import nvo_avo
+
+def copytraces(*traces):
+    newtrace = Trace()
+    for tr in traces:
+        for k, rv in tr.items():
+            newtrace.append(rv, name=k)
+    return newtrace
 
 def maybe(obj, name, default, fn=(lambda x: x)):
     return fn(getattr(obj, name)) if hasattr(obj, name) else default
@@ -88,8 +85,7 @@ class Condition(Inf):
         self.program = program
 
         # FIXME: do we actually need a copy of the trace?
-        self.conditioning_trace = trace_utils.copytrace(cond_trace, requires_grad=requires_grad, detach=detach) \
-            if requires_grad == RequiresGrad.NO else cond_trace
+        self.conditioning_trace = copytraces(cond_trace)
 
         self._requires_grad = requires_grad
         self._detach = detach
@@ -109,16 +105,8 @@ class Condition(Inf):
 
         return out
 
-        # trace = out.trace
-        # for k, v in out.items():
-        #     if k not in ['conditioned_output', 'trace', 'log_weight', 'output']:
-        #         extras[k] = v
-        # if self.as_trace and isinstance(trace, ConditioningTrace):
-        #     return Out(trace.as_trace(access_only=not self.full_trace_return), log_weight=out.log_weight, output=out.output, extras=extras)
-        # else:
-        #     return out
 
-class Resample(Inf, Conditionable):
+class Resample(Inf):
     """
     Compute importance weight of the proposal program's trace under the target program's trace,
     considering the incomming log weight lw of the proposal's trace
@@ -131,7 +119,6 @@ class Resample(Inf, Conditionable):
             loss0=None,
             strategy=rstrat.Systematic()
     ):
-        Conditionable.__init__(self)
         Inf.__init__(self, ix=ix, _debug=_debug, loss0=loss0)
         self.q = q
         self.strategy = strategy
@@ -165,8 +152,8 @@ class Resample(Inf, Conditionable):
 
 class Extend(Inf, Conditionable):
     def __init__(self,
-            p: Program,
-            f: Program, # FIXME: make this :=  f | extend (p, q) later
+            p: Program, # FIXME: make this :=  p | extend (p, f) later
+            f: Program,
             loss_fn=(lambda x, fin: fin),
             loss0=None,
             device=None,
@@ -183,15 +170,22 @@ class Extend(Inf, Conditionable):
 
         inf_kwargs = dict(_debug=_debug, ix = self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        p = Condition(self.p, self._cond_trace) if self._cond_trace is not None else self.p
-        p_out = _dispatch()(p)(*shared_args, **inf_kwargs, **shared_kwargs)
+        if self._cond_trace is None:
+            p_out = _dispatch()(self.p)(*shared_args, **inf_kwargs, **shared_kwargs)
 
-        f = Condition(self.f, self._cond_trace) if self._cond_trace is not None else self.f
-        f_out = _dispatch()(f)(*shared_args, **inf_kwargs, **shared_kwargs)
+            f_out = _dispatch()(self.f)(*shared_args, **inf_kwargs, **shared_kwargs)
 
-        assert (f_out.log_weight == 0.0)
+            assert (f_out.log_weight == 0.0)
+            assert len({k for k, v in f_out.trace.items() if v.provenance == Provenance.OBSERVED or v.provenance == Provenance.REUSED}) == 0
+
+        else:
+            p_out = _dispatch()(Condition(self.p, self._cond_trace))(*shared_args, **inf_kwargs, **shared_kwargs)
+
+            f_out = _dispatch()(Condition(self.f, self._cond_trace))(*shared_args, **inf_kwargs, **shared_kwargs)
+
+            assert len({k for k, v in f_out.trace.items() if v.provenance == Provenance.OBSERVED}) == 0
+
         assert len(set(f_out.trace.keys()).intersection(set(p_out.trace.keys()))) == 0
-        assert len({k for k, v in f_out.trace.items() if v.provenance == Provenance.OBSERVED or v.provenance == Provenance.REUSED}) == 0
 
         log_u2 = f_out.trace.log_joint(**shape_kwargs, nodes={k for k,v in f_out.trace.items() if v.provenance != Provenance.OBSERVED})
 
@@ -211,7 +205,8 @@ class Extend(Inf, Conditionable):
 
         return self._out
 
-class Compose(Conditionable, Inf):
+
+class Compose(Inf):
     def __init__(
             self,
             q2: Program, # FIXME: make this more general later
@@ -222,7 +217,6 @@ class Compose(Conditionable, Inf):
             ix=None,
             _debug=False,
     ) -> None:
-        Conditionable.__init__(self)
         Inf.__init__(self, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
         self.q1 = q1
         self.q2 = q2
@@ -233,16 +227,14 @@ class Compose(Conditionable, Inf):
 
         inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        q1 = Condition(self.q1, self._cond_trace) if self._cond_trace is not None else self.q1
-        q1_out = _dispatch()(q1)(*shared_args, **inf_kwargs, **shared_kwargs)
+        q1_out = _dispatch()(self.q1)(*shared_args, **inf_kwargs, **shared_kwargs)
 
-        q2 = Condition(self.q2, self._cond_trace) if self._cond_trace is not None else self.q2
-        q2_out = _dispatch()(q2)(q1_out.output, *shared_args, **inf_kwargs, **shared_kwargs)
+        q2_out = _dispatch()(self.q2)(q1_out.output, *shared_args, **inf_kwargs, **shared_kwargs)
 
         assert len(set(q2_out.trace.keys()).intersection(set(q1_out.trace.keys()))) == 0, "addresses must not overlap"
 
         self._out = Out(
-            trace=trace_utils.copytraces(q2_out.trace, q1_out.trace),
+            trace=copytraces(q2_out.trace, q1_out.trace),
             log_weight=q1_out.log_weight + q2_out.log_weight,
             output=q2_out.output,
             extras=dict(
@@ -257,7 +249,7 @@ class Compose(Conditionable, Inf):
         return self._out
 
 
-class Propose(Conditionable, Inf):
+class Propose(Inf):
     def __init__(self,
             p: Union[Program, Extend],
             q: Union[Program, Inf],
@@ -266,7 +258,6 @@ class Propose(Conditionable, Inf):
             device=None,
             ix=None,
             _debug:bool=False):
-        Conditionable.__init__(self)
         Inf.__init__(self, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
         self.p = p
         self.q = q
@@ -276,37 +267,95 @@ class Propose(Conditionable, Inf):
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
         inf_kwargs = dict(_debug=_debug, ix = self.ix if self.ix is not None else ix, **shape_kwargs)
 
+        for s in range(1000):
+            debug.seed(11)
+            q1_out = _dispatch()(self.q.q1)(*shared_args, **inf_kwargs, **shared_kwargs)
+
+            q2_out = _dispatch()(self.q.q2)(q1_out.output, *shared_args, **inf_kwargs, **shared_kwargs)
+
+            q_lw1=q1_out.log_weight + q2_out.log_weight
+            # ^^^^^ compose
+            # vvvvv double-dispatched
+            debug.seed(11)
+
+            q_out = _dispatch()(self.q)(*shared_args, **inf_kwargs, **shared_kwargs)
+
+            lw_1   = q_out.trace.log_joint(nodes={'x_2', 'x_3', 'x_1'})
+
+            test_maybe = torch.equal(
+                    q_out.trace.log_joint(nodes={'x_2', 'x_3', 'x_1'}),
+                    q_out.trace.log_joint(nodes={'x_1'}) + q_out.trace.log_joint(nodes={'x_2', 'x_3'}))
+
+            if lw_1 != q_out.log_weight:
+                print(f"\nseed: {s}\n")
+                print(q_out.trace.log_joint(nodes={'x_2', 'x_3', 'x_1'}).item())
+                print((q_out.trace.log_joint(nodes={'x_1'}) + q_out.trace.log_joint(nodes={'x_2', 'x_3'})).item())
+                print(q_out.trace.log_joint(nodes={'x_1'}).item() + q_out.trace.log_joint(nodes={'x_2', 'x_3'}).item())
+
+                print((q_out.trace.log_joint(nodes={'x_1'}) + q_out.trace.log_joint(nodes={'x_2', 'x_3'})).dtype)
+                from decimal import getcontext
+                print(getcontext().prec)
+                print(type(q_out.trace.log_joint(nodes={'x_1'}).item()), type(q_out.trace.log_joint(nodes={'x_2', 'x_3'}).item()))
+
+                print()
+
+                breakpoint() # <<<<
+                print()
+
+            # for s in range(1000):
+            #     debug.seed(s)
+            #     out = prg()
+            #     assert torch.equal(
+            #         q_out.trace.log_joint(nodes={'x_2', 'x_3', 'x_1'}),
+            #         q_out.trace.log_joint(nodes={'x_1'}) + q_out.trace.log_joint(nodes={'x_2', 'x_3'}))
+
         q_out = _dispatch()(self.q)(*shared_args, **inf_kwargs, **shared_kwargs)
 
-        p_condition = Condition(self.p, q_out.trace)
 
-        p_out = _dispatch()(p_condition)(*shared_args, **inf_kwargs,  **shared_kwargs)
-
-        nodes = set(q_out.trace.keys()) - (
-            set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED}) \
-            - set({k for k, v in p_out.trace.items() if v.provenance != Provenance.OBSERVED})
-        )
-        u1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
-
-        # τ*, by definition, can't have OBSERVE or REUSED random variables
-        u1_star = 0 if 'trace_star' not in p_out else p_out.trace_star.log_joint(**shape_kwargs)
+        # p_condition = Condition(self.p, q_out.trace)
+        #
+        # p_out = _dispatch()(p_condition)(*shared_args, **inf_kwargs,  **shared_kwargs)
+        #
+        # nodes = set(q_out.trace.keys()) - (
+        #     set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED}) \
+        #     - set({k for k, v in p_out.trace.items() if v.provenance != Provenance.OBSERVED})
+        # )
+        # u1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
+        #
+        # # τ*, by definition, can't have OBSERVE or REUSED random variables
+        # u1_star = 0 if 'trace_star' not in p_out else p_out.trace_star.log_joint(**shape_kwargs)
 
         lw1 = q_out.log_weight
-        lv2 = p_out.log_weight - (u1 - u1_star)
+        # lv2 = p_out.log_weight - (u1 - u1_star)
 
         # breakpoint();
 
+        # self._out = Out(
+        #     trace=p_out.trace,
+        #     log_weight=lw1 + lv2,
+        #     output=p_out.output,
+        #     extras=dict(
+        #         lv=lv2,
+        #         q_out=q_out,
+        #         p_out=p_out,
+        #         type=type(self).__name__,
+        #         # FIXME: can we ditch this? how important is this for objectives
+        #         trace_star=p_out.trace_star if 'trace_star' in p_out else None,
+        #         ix=ix,
+        #         ),
+        #     )
+
         self._out = Out(
-            trace=p_out.trace,
-            log_weight=lw1 + lv2,
-            output=p_out.output,
+            trace=q_out.trace,
+            log_weight=lw1,
+            output=q_out.output,
             extras=dict(
-                lv=lv2,
+                # lv=lv2,
                 q_out=q_out,
-                p_out=p_out,
-                type=type(self).__name__,
-                # FIXME: can we ditch this? how important is this for objectives
-                trace_star=p_out.trace_star if 'trace_star' in p_out else None,
+                # p_out=p_out,
+                # type=type(self).__name__,
+                # # FIXME: can we ditch this? how important is this for objectives
+                # trace_star=p_out.trace_star if 'trace_star' in p_out else None,
                 ix=ix,
                 ),
             )

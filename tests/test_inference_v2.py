@@ -4,6 +4,7 @@ from combinators.program import *
 from combinators.densities import *
 from combinators.densities.kernels import *
 
+import combinators.debug as debug
 from combinators.stochastic import *
 from combinators.utils import *
 
@@ -80,13 +81,23 @@ def test_propose():
 
 
 def test_compose():
+    debug.seed(7)
     prg = Compose(q1=Simple1(), q2=Simple3())
-    out = prg(_debug=True)
-    assert set(out.trace.keys()) == {'x_1', 'x_2', 'x_3', 'z_1', 'z_2', 'z_3'}
-    assert torch.equal(out.log_weight, out.q1_out.log_weight + out.q2_out.log_weight)
+    debug.seed(6)
+
+    for s in range(1000):
+        debug.seed(s)
+        out = prg(_debug=True)
+
+        assert set(out.trace.keys()) == {'x_1', 'x_2', 'x_3', 'z_1', 'z_2', 'z_3'}
+        assert torch.equal(out.q1_out.log_weight, out.q1_out.trace.log_joint(nodes={'x_1', 'x_2'}))
+        assert torch.equal(out.q2_out.log_weight, out.q2_out.trace.log_joint(nodes={'x_3'}))
+        assert torch.equal(out.log_weight, out.q1_out.log_weight + out.q2_out.log_weight)
 
 
-def test_extend():
+
+
+def test_extend_unconditioned():
     prg = Extend(p=Simple2(), f=Simple4())
     out = prg(_debug=True)
     assert set(out.trace.keys()) == {'x_2', 'x_3', 'z_2', 'z_3'}
@@ -94,10 +105,93 @@ def test_extend():
     assert torch.equal(out.log_weight, out.p_out.log_weight + out.f_out.trace.log_joint())
 
 
-def test_extend_propose():
+def test_extend_conditioned():
     P = Extend(p=Simple2(), f=Simple4())
     Q = Compose(q1=Simple1(), q2=Simple3())
-    prg = Propose(p=P, q=Q)
+    q_out = Q()
+    p_out = Condition(program=P, cond_trace=q_out.trace)()
+    tau_0  = {'z_1', 'z_2', 'z_3', 'x_2', 'x_3', 'x_1'}
+    assert set(q_out.trace.keys()) == tau_0
+
+    tau_1  = {       'z_2', 'z_3', 'x_2', 'x_3'}
+    assert set(p_out.p_out.trace.keys()) == tau_1
+
+    tau_2  = {'z_1'                            }
+    assert set(p_out.f_out.trace.keys()) == tau_2
+
+    lw_1   = p_out.p_out.trace.log_joint()
+    assert lw_1 == p_out.p_out.log_weight
+
+    lw_2   = p_out.f_out.trace.log_joint()
+    assert lw_2 == p_out.f_out.log_weight
+
+    lu_2   = lw_2
+    lw_out = lw_1 + lu_2
+    assert lw_out == p_out.log_weight
+
+
+def test_extend_propose():
+    debug.seed(7)
+    Q = Compose(q1=Simple1(), q2=Simple3())
+    # P = Extend(p=Simple2(), f=Simple4())
+    prg = Propose(p=None, q=Q)
+    count = 0
+    seeds = []
+    out = prg(_debug=True)
+    # ===========================================================
+    q_out = out.q_out
+    # p_out = out.p_out
+    # tau_1  = {'z_1', 'z_2', 'z_3', 'x_2', 'x_3', 'x_1'}
+    # assert set(q_out.trace.keys()) == tau_1
+    #
+    # tau_2  = {       'z_2', 'z_3', 'x_2', 'x_3'}
+    # assert set(p_out.trace.keys()) == tau_2
+    #
+    # tau_star = {'z_1'                            }
+    # assert set(p_out.trace_star.keys()) == tau_star
+
+
+    for s in range(1000):
+        debug.seed(s)
+        out = prg()
+        assert torch.equal(
+            q_out.trace.log_joint(nodes={'x_2', 'x_3', 'x_1'}),
+            q_out.trace.log_joint(nodes={'x_1'}) + q_out.trace.log_joint(nodes={'x_2', 'x_3'}))
+
+    breakpoint();
+
+    lw_2   = p_out.trace.log_joint() + p_out.trace_star.log_joint()
+    assert lw_2 == p_out.log_weight
+
+    lu_1   = q_out.trace.log_joint(nodes={'x_2', 'x_3', 'x_1'})
+    lw_out = lw_1 + lw_2 - lu_1
+    #      x_1 x_2 x_3  * z_1 z_2 z_3 x_2 x_3
+    #  -------------------------------------------------
+    #      x_1 x_2 x_3
+    assert lw_out == p_out.log_weight
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     out = prg()
     assert set(out.trace.keys()) == {'x_2', 'x_3', 'z_2', 'z_3'}

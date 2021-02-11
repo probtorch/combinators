@@ -4,7 +4,7 @@ from probtorch.util import batch_sum, partial_sum, log_mean_exp
 import inspect
 import abc
 from enum import Enum
-import re
+import torch
 import math
 from typing import Callable
 from torch import Tensor
@@ -411,7 +411,7 @@ class Trace(MutableMapping):
         """
         if nodes is None:
             nodes = self._nodes
-        log_prob = 0.0
+        log_prob = torch.zeros(1)
         for n in nodes:
             if n in self._nodes:
                 node = self._nodes[n]
