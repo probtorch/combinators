@@ -25,6 +25,7 @@ class Distribution(Program):
 
     def model(self, trace, c, sample_shape=torch.Size([1,1])):
         dist = self.dist
+
         value, provenance = trace_utils.maybe_sample(trace, sample_shape)(dist, self.name)
 
         rv = self.RandomVariable(dist=dist, value=value, provenance=provenance) # <<< rv.log_prob = dist.log_prob(value)
@@ -107,8 +108,8 @@ class Density(Program):
         self.log_density_fn = log_density_fn
 
     def model(self, trace, c):
-        assert self.name in trace, "an improper RV can only condition on values in an existing trace"
-        rv = ImproperRandomVariable(log_density_fn=self.log_density_fn, value=trace[self.name].value, provenance=Provenance.REUSED)
+        assert trace._cond_trace is not None and self.name in trace._cond_trace, "an improper RV can only condition on values in an existing trace"
+        rv = ImproperRandomVariable(log_density_fn=self.log_density_fn, value=trace._cond_trace[self.name].value, provenance=Provenance.REUSED)
         trace.append(rv, name=self.name)
         return {self.name: rv.value}
 

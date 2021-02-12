@@ -19,35 +19,24 @@ class LinearMap(nn.Module):
         return self.net.bias
 
 class ResMLPJ(nn.Module):
-    """
-    residual connection + MLP + joint layer
-    """
-    def __init__(self, dim_in, dim_hidden, dim_out, with_cov_embedding=False, initialize=None, activation=nn.ReLU):
-        assert initialize is None or initialize in ['truncated_normal']
-        self._initialize_type = initialize
+    def __init__(self, dim_in, dim_hidden, dim_out):
         super().__init__()
-        self.with_cov_embedding = with_cov_embedding # TODO: ask heiko why this is ignored
-        self.initialize = initialize
-        self.joint = nn.Sequential(nn.Linear(dim_in, dim_hidden), activation())
-        self.mu = nn.Sequential(nn.Linear(dim_hidden, dim_out))
-        self.cov = nn.Sequential(nn.Linear(dim_hidden, dim_out))
+        self.map_joint = nn.Sequential(nn.Linear(dim_in, dim_hidden),
+                                             nn.ReLU())
+        self.map_mu = nn.Sequential(nn.Linear(dim_hidden, dim_out))
+        self.map_cov = nn.Sequential(nn.Linear(dim_hidden, dim_out))
 
     def forward(self, x):
-        y = self.joint(x)
-        mu = self.mu(y) + x # Add residual connection because it is easier to move in relation to a thing than to learn from scratch
-        cov_emb = self.cov(y)
+        y = self.map_joint(x)
+        mu = self.map_mu(y) + x
+        cov_emb = self.map_cov(y)
         return mu, cov_emb
 
     def initialize_(self, loc_offset, cov_emb):
-        if self._initialize_type is None or self._initialize_type in ['truncated_normal']:
-            initer = nn.init.zeros_
-        elif self._initialize_type == 'truncated_normal':
-            initer = lambda aten: nn.init.normal_(aten, mean=0., std=0.01)
-        else:
-            raise TypeError()
+        nn.init.zeros_(self.map_mu[0].weight)
+        nn.init.zeros_(self.map_mu[0].bias)
+        self.map_mu[0].bias.data.add_(loc_offset)
 
-        _ = [initer(ten) for ten in [self.cov[0].weight, self.cov[0].bias]]
-        if self.with_cov_embedding:
-            self.cov[0].bias.data.add_(cov_emb)
-        else:
-            self.mu[0].bias.data.add_(loc_offset)
+        nn.init.zeros_(self.map_cov[0].weight)
+        nn.init.zeros_(self.map_cov[0].bias)
+        self.map_cov[0].bias.data.add_(cov_emb)

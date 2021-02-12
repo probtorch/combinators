@@ -26,7 +26,6 @@ class ConditionalNormal(Program):
         value = trace.normal(loc=mu,
                             scale=torch.ones_like(mu, device=mu.device),
                             value=trace[self.ext_to].value if self.ext_to in trace else None,
-                            provanence=Provenance.REUSED if self.ext_to in trace else Provenance.SAMPLED,
                             name=self.ext_to)
 
         return {self.ext_to: value}
@@ -70,26 +69,27 @@ class ConditionalMultivariateNormal(Program):
 
         self.net = net
         try:
-            # FIXME: A bit of a bad, legacy assumption
-            self.net.initialize_(loc, getattr(self, self.cov_embedding.embed_name)) # we don't have cov_embed...
+            self.net.initialize_(torch.zeros_like(loc), self.cov_embedding.embed(cov, embedding_dim))
         except:
             pass
 
-    def model(self, trace, c):
-        assert isinstance(c, dict) and self.ext_from in c
+    def model(self, trace, c, *shared):
+        try:
+            assert isinstance(c, dict) and self.ext_from in c
+        except:
+            breakpoint();
 
         if self.learn_cov:
-            mu, cov_emb = self.net(c[self.ext_from].value.detach())
+            mu, cov_emb = self.net(c[self.ext_from].detach())
             cov = self.cov_embedding.unembed(cov_emb, self.cov_dim)
         else:
-            mu = self.net(c[self.ext_from].value.detach())
+            mu = self.net(c[self.ext_from].detach())
             cov = torch.eye(self.cov_dim, device=mu.device)
 
         value = trace.multivariate_normal(
             loc=mu,
             covariance_matrix=cov,
             value=trace[self.ext_to].value if self.ext_to in trace else None,
-            provanence=Provenance.REUSED if self.ext_to in trace else Provenance.SAMPLED,
             name=self.ext_to)
 
         return {self.ext_to: value}

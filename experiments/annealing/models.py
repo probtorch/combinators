@@ -28,7 +28,6 @@ def mk_kernel(from_:int, to_:int, std:float, num_hidden:int, learn_cov=True, act
         net=ResMLPJ(
             dim_in=2,
             dim_hidden=num_hidden,
-            activation=activation,
             dim_out=embedding_dim).to(autodevice()))
 
 def mk_mnlinear_kernel(from_:int, to_:int, std:float, dim:int):

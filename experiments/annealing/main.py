@@ -22,11 +22,15 @@ import experiments.visualize as V
 from experiments.annealing.models import mk_model, sample_along, paper_model
 
 def _log_weights(out, ret=[])->[Tensor]:
-    if out.type == "Propose":
-        _ret = ret + ([out.log_weight.detach().cpu()])
-        return _log_weights(out.q.q2, _ret)
+    _ret = [out.log_weight.detach().cpu()] + ret
+
+    if out.q_out.q1_out.type == "Propose":
+        use = out.q_out.q1_out
+        return _log_weights(use, _ret)
+    elif out.q_out.q2_out.type == "Propose":
+        use = out.q_out.q2_out
+        return _log_weights(use, _ret)
     else:
-        _ret = ret + ([out.log_weight.detach().cpu()])
         return _ret
 
 def report(writer, ess, lzh, loss_scalar, i, eval_break, targets, forwards):
@@ -71,6 +75,8 @@ def nvi_declarative(targets, forwards, reverses, sample_shape, batch_dim, sample
                     q=Compose(fwd, q),
                     loss_fn=print_and_sum_loss, _debug=True, ix=k, loss0=torch.zeros(1, **kw_autodevice()))
 
+    breakpoint();
+
     out = q(None, sample_shape=sample_shape, sample_dims=sample_dims, batch_dim=batch_dim)
 
     return _log_weights(out), out.loss, out
@@ -111,10 +117,43 @@ def main(trainer, K=8, seed=1, eval_break=50, num_iterations=10000, num_samples 
                 ]))
 
 if __name__ == '__main__':
-    batch_dim=0
-    sample_dims=1
-    sample_shape = (3, 100, 2)
-    out = paper_model()
+    batch_dim=None
+    sample_dims=0
+    # sample_shape = (3, 100, 2)
+    sample_shape = (10,)
+
+    debug.seed(7)
+    out = mk_model(2)
+
     targets, forwards, reverses = [[m.to(autodevice()) for m in out[n]] for n in ['targets', 'forwards', 'reverses']]
-    nvi_declarative(targets, forwards, reverses, sample_shape, batch_dim=batch_dim, sample_dims=sample_dims)
+
+    debug.seed(6)
+    lws, loss, out = nvi_declarative(targets, forwards, reverses, sample_shape, batch_dim=batch_dim, sample_dims=sample_dims)
+
+    debug.seed(6)
+    g0_out = targets[0](None, sample_dims=sample_dims, sample_shape=sample_shape, batch_dim=batch_dim)
+    g0_rv = g0_out.trace['g0']
+    g0_lp = g0_rv.log_prob
+
+    f12_out = forwards[0](dict(g0=g0_rv.value), sample_dims=sample_dims, sample_shape=sample_shape, batch_dim=batch_dim)
+    f12_rv = f12_out.trace['g1']
+    f12_lp = f12_rv.log_prob
+
+    targets[1]._cond_trace = f12_out.trace
+    g1_out = targets[1](None, sample_dims=sample_dims, sample_shape=sample_shape, batch_dim=batch_dim)
+    g1_rv = g1_out.trace['g1']
+    g1_lp = g1_rv.log_prob
+
+    reverses[0]._cond_trace = g0_out.trace
+    r21_out = reverses[0](dict(g1=g1_rv.value), sample_dims=sample_dims, sample_shape=sample_shape, batch_dim=batch_dim)
+    r21_rv = r21_out.trace['g0']
+    r21_lp = r21_rv.log_prob
+
+    lw = (g1_lp + r21_lp) - (g0_lp + f12_lp)
+    breakpoint();
+    print()
+
+
+
+
     # main(nvi_eager_resample, K=8, seed=1, eval_break=50, num_iterations=10000)
