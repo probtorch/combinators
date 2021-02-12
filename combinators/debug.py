@@ -59,7 +59,7 @@ def seed(s=42):
     torch.manual_seed(s)
     np.random.seed(s)
     random.seed(s)
-    torch.set_deterministic(True)
+    # torch.set_deterministic(True)
     torch.backends.cudnn.benchmark = True # just incase something goes wrong with set_deterministic
 
 def is_smoketest():
