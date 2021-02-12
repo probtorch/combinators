@@ -25,6 +25,7 @@ class Program(nn.Module, Conditionable):
         all_kwargs = {**shape_kwargs, **kwargs}
 
         trace = Trace(cond_trace=self._cond_trace)
+
         out = self.model(trace, *args, **{k: v for k, v in all_kwargs.items() if check_passable_kwarg(k, self.model)})
 
         if self._cond_trace is not None:

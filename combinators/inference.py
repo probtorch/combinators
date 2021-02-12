@@ -92,12 +92,12 @@ class Condition(Inf):
         self.as_trace = as_trace
         self.full_trace_return = full_trace_return
 
-    def __call__(self, *args:Any, _debug=False, **kwargs:Any) -> Out:
+    def __call__(self, c:Any, _debug=False, **kwargs:Any) -> Out:
         """ Condition """
 
         self.program._cond_trace = self.conditioning_trace
 
-        out = _dispatch()(self.program)(*args, **kwargs)
+        out = _dispatch()(self.program)(c, **kwargs)
 
         out['type']=type(self).__name__ + "(" + type(self.program).__name__ + ")"
 
@@ -123,13 +123,13 @@ class Resample(Inf):
         self.q = q
         self.strategy = strategy
 
-    def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
+    def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Resample """
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
 
         inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        q_out = self.q(*shared_args, **inf_kwargs, **shared_kwargs)
+        q_out = self.q(c, **inf_kwargs, **shared_kwargs)
 
         passable_kwargs = {k: v for k, v in shape_kwargs.items() if check_passable_kwarg(k, self.strategy)}
 
@@ -164,24 +164,24 @@ class Extend(Inf, Conditionable):
         self.p = p
         self.f = f
 
-    def __call__(self, *shared_args:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs:Any) -> Out:
+    def __call__(self, c:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs:Any) -> Out:
         """ Extend """
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
 
         inf_kwargs = dict(_debug=_debug, ix = self.ix if self.ix is not None else ix, **shape_kwargs)
 
         if self._cond_trace is None:
-            p_out = _dispatch()(self.p)(*shared_args, **inf_kwargs, **shared_kwargs)
+            p_out = _dispatch()(self.p)(c, **inf_kwargs, **shared_kwargs)
 
-            f_out = _dispatch()(self.f)(*shared_args, **inf_kwargs, **shared_kwargs)
+            f_out = _dispatch()(self.f)(p_out.output, **inf_kwargs, **shared_kwargs)
 
             assert (f_out.log_weight == 0.0)
             assert len({k for k, v in f_out.trace.items() if v.provenance == Provenance.OBSERVED or v.provenance == Provenance.REUSED}) == 0
 
         else:
-            p_out = _dispatch()(Condition(self.p, self._cond_trace))(*shared_args, **inf_kwargs, **shared_kwargs)
+            p_out = _dispatch()(Condition(self.p, self._cond_trace))(c, **inf_kwargs, **shared_kwargs)
 
-            f_out = _dispatch()(Condition(self.f, self._cond_trace))(*shared_args, **inf_kwargs, **shared_kwargs)
+            f_out = _dispatch()(Condition(self.f, self._cond_trace))(p_out.output, **inf_kwargs, **shared_kwargs)
 
             assert len({k for k, v in f_out.trace.items() if v.provenance == Provenance.OBSERVED}) == 0
 
@@ -221,15 +221,15 @@ class Compose(Inf):
         self.q1 = q1
         self.q2 = q2
 
-    def __call__(self, *shared_args:Any, sample_dims=None, batch_dim=None, _debug=False, _debug_extras=None, reparameterized=True, ix=None, **shared_kwargs) -> Out:
+    def __call__(self, c:Any, sample_dims=None, batch_dim=None, _debug=False, _debug_extras=None, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Compose """
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
 
         inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        q1_out = _dispatch()(self.q1)(*shared_args, **inf_kwargs, **shared_kwargs)
+        q1_out = _dispatch()(self.q1)(c, **inf_kwargs, **shared_kwargs)
 
-        q2_out = _dispatch()(self.q2)(q1_out.output, *shared_args, **inf_kwargs, **shared_kwargs)
+        q2_out = _dispatch()(self.q2)(q1_out.output, **inf_kwargs, **shared_kwargs)
 
         assert len(set(q2_out.trace.keys()).intersection(set(q1_out.trace.keys()))) == 0, "addresses must not overlap"
 
@@ -262,16 +262,16 @@ class Propose(Inf):
         self.p = p
         self.q = q
 
-    def __call__(self, *shared_args, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
+    def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Propose """
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
         inf_kwargs = dict(_debug=_debug, ix = self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        q_out = _dispatch()(self.q)(*shared_args, **inf_kwargs, **shared_kwargs)
+        q_out = _dispatch()(self.q)(c, **inf_kwargs, **shared_kwargs)
 
         p_condition = Condition(self.p, q_out.trace)
 
-        p_out = _dispatch()(p_condition)(*shared_args, **inf_kwargs,  **shared_kwargs)
+        p_out = _dispatch()(p_condition)(c, **inf_kwargs,  **shared_kwargs)
 
         nodes = set(q_out.trace.keys()) - (
             set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED}) \

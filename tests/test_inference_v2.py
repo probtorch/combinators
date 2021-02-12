@@ -30,6 +30,9 @@ class Simple2(Program):
         trace.normal(loc=torch.ones(1), scale=torch.ones(1), value=z_2, name="x_2")
         trace.normal(loc=torch.ones(1), scale=torch.ones(1), value=z_3, name="x_3")
 
+# ============================================================================= #
+# FIXME: We should write some tests that use c since the following are kernels  #
+# ============================================================================= #
 class Simple3(Program):
     def __init__(self):
         super().__init__()
@@ -61,6 +64,7 @@ def test_cond_eval():
     tau_p_addrs = {'z_1', 'z_2'}
     nodes = rho_f_addrs - (tau_f_addrs - tau_p_addrs)
     expected = s2_out.trace.log_joint(nodes=nodes)
+
     assert ( expected == s2_out.log_weight ).all()
 
     assert len(set({'z_1', 'x_1'}).intersection(set(s2_out.trace.keys()))) == 0
@@ -158,5 +162,3 @@ def test_extend_propose():
     #  ---------------------------------------    
     #  ((x_1 x_2 x_3  *   z_2 z_3)             * (z_1))
     assert lw_out == out.log_weight, "final is weight"
-    breakpoint()
-    print()
