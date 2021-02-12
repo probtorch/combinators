@@ -12,11 +12,10 @@ import combinators.tensor.utils as tensor_utils
 import combinators.resampling.strategies as rstrat
 
 from combinators.types import check_passable_kwarg, Out
-from combinators.utils import dispatch
 from combinators.trace.utils import RequiresGrad
 from combinators.tensor.utils import autodevice, kw_autodevice
 from combinators.stochastic import Trace, Provenance
-from combinators.program import Program
+from combinators.program import Program, dispatch
 from combinators.kernel import Kernel
 from combinators.traceable import Conditionable
 
@@ -30,16 +29,6 @@ def copytraces(*traces):
 def maybe(obj, name, default, fn=(lambda x: x)):
     return fn(getattr(obj, name)) if hasattr(obj, name) else default
 
-def _dispatch():
-    def get_callable(fn):
-        if isinstance(fn, Program):
-            spec_fn = fn.model
-        elif isinstance(fn, Kernel):
-            spec_fn = fn.apply_kernel
-        else:
-            spec_fn = fn
-        return spec_fn
-    return dispatch(get_callable, permissive=True)
 
 class Inf(ABC):
     def __init__(
@@ -97,7 +86,7 @@ class Condition(Inf):
 
         self.program._cond_trace = self.conditioning_trace
 
-        out = _dispatch()(self.program)(c, **kwargs)
+        out = dispatch(self.program)(c, **kwargs)
 
         out['type']=type(self).__name__ + "(" + type(self.program).__name__ + ")"
 
@@ -171,17 +160,17 @@ class Extend(Inf, Conditionable):
         inf_kwargs = dict(_debug=_debug, ix = self.ix if self.ix is not None else ix, **shape_kwargs)
 
         if self._cond_trace is None:
-            p_out = _dispatch()(self.p)(c, **inf_kwargs, **shared_kwargs)
+            p_out = dispatch(self.p)(c, **inf_kwargs, **shared_kwargs)
 
-            f_out = _dispatch()(self.f)(p_out.output, **inf_kwargs, **shared_kwargs)
+            f_out = dispatch(self.f)(p_out.output, **inf_kwargs, **shared_kwargs)
 
             assert (f_out.log_weight == 0.0)
             assert len({k for k, v in f_out.trace.items() if v.provenance == Provenance.OBSERVED or v.provenance == Provenance.REUSED}) == 0
 
         else:
-            p_out = _dispatch()(Condition(self.p, self._cond_trace))(c, **inf_kwargs, **shared_kwargs)
+            p_out = dispatch(Condition(self.p, self._cond_trace))(c, **inf_kwargs, **shared_kwargs)
 
-            f_out = _dispatch()(Condition(self.f, self._cond_trace))(p_out.output, **inf_kwargs, **shared_kwargs)
+            f_out = dispatch(Condition(self.f, self._cond_trace))(p_out.output, **inf_kwargs, **shared_kwargs)
 
             assert len({k for k, v in f_out.trace.items() if v.provenance == Provenance.OBSERVED}) == 0
 
@@ -227,9 +216,9 @@ class Compose(Inf):
 
         inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        q1_out = _dispatch()(self.q1)(c, **inf_kwargs, **shared_kwargs)
+        q1_out = dispatch(self.q1)(c, **inf_kwargs, **shared_kwargs)
 
-        q2_out = _dispatch()(self.q2)(q1_out.output, **inf_kwargs, **shared_kwargs)
+        q2_out = dispatch(self.q2)(q1_out.output, **inf_kwargs, **shared_kwargs)
 
         assert len(set(q2_out.trace.keys()).intersection(set(q1_out.trace.keys()))) == 0, "addresses must not overlap"
 
@@ -267,11 +256,11 @@ class Propose(Inf):
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
         inf_kwargs = dict(_debug=_debug, ix = self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        q_out = _dispatch()(self.q)(c, **inf_kwargs, **shared_kwargs)
+        q_out = dispatch(self.q)(c, **inf_kwargs, **shared_kwargs)
 
         p_condition = Condition(self.p, q_out.trace)
 
-        p_out = _dispatch()(p_condition)(c, **inf_kwargs,  **shared_kwargs)
+        p_out = dispatch(p_condition)(c, **inf_kwargs,  **shared_kwargs)
 
         nodes = set(q_out.trace.keys()) - (
             set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED}) \

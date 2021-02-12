@@ -10,6 +10,7 @@ from combinators.types import Out, check_passable_kwarg
 
 from combinators.traceable import Conditionable
 
+
 class Program(nn.Module, Conditionable):
     """ superclass of a program? """
     def __init__(self):
@@ -44,3 +45,19 @@ class Program(nn.Module, Conditionable):
 
         return Out(trace=trace, log_weight=log_weight, output=out, extras=dict(type=type(self).__name__))
 
+
+def dispatch(fn):
+    def runit(*args:Any, **kwargs:Any):
+        _dispatch_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn)}
+        _dispatch_args   = args
+
+        if isinstance(fn, nn.Module):
+            _extra_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn.forward) and k not in _dispatch_kwargs}
+            _dispatch_kwargs = {**_extra_kwargs, **_dispatch_kwargs}
+
+        if isinstance(fn, Program):
+            _extra_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn.model) and k not in _dispatch_kwargs}
+            _dispatch_kwargs = {**_extra_kwargs, **_dispatch_kwargs}
+
+        return fn(*_dispatch_args, **_dispatch_kwargs)
+    return runit

@@ -108,24 +108,3 @@ def curry(func):
             return result
     return f
 
-
-def dispatch(get_callable, permissive):
-    def curry_fn(fn):
-
-        def go(*args:Any, **kwargs:Any):
-            spec_fn = get_callable(fn)
-
-            _dispatch_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, spec_fn)} if permissive else kwargs
-            _dispatch_args   = args
-
-            if isinstance(fn, nn.Module):
-                _extra_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn.forward)} if permissive else kwargs
-                _dispatch_kwargs = {**_extra_kwargs, **_dispatch_kwargs}
-
-            return fn(*_dispatch_args, **_dispatch_kwargs)
-
-        return go
-    return curry_fn
-
-def dispatch_on(permissive):
-    return dispatch(lambda x: x, permissive)
