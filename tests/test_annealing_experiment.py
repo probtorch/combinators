@@ -16,7 +16,7 @@ from combinators.densities import MultivariateNormal, Tempered, RingGMM, Normal
 from combinators.densities.kernels import MultivariateNormalKernel, MultivariateNormalLinearKernel, NormalLinearKernel
 from combinators.nnets import ResMLPJ
 from combinators.objectives import nvo_rkl, nvo_avo, mb0, mb1, _estimate_mc, eval_nrep
-from combinators import Forward, Reverse, Propose, Condition, RequiresGrad, Resample
+from combinators import *
 from combinators.stochastic import RandomVariable, ImproperRandomVariable
 from combinators.metrics import effective_sample_size, log_Z_hat
 from tests.utils import is_smoketest, seed
@@ -182,33 +182,31 @@ def test_annealing_eager_resample(is_smoketest):
     print("test_annealing_eager_resample")
     experiment_runner(is_smoketest, nvi_eager_resample)
 
-def _log_prob(out, ret=[])->[Tensor]:
-    _ret = ret + ([out.log_prob.detach().cpu()] if out.log_joint is not None else [])
-    if 'proposal' not in out:
-        return _ret
+def _log_weights(out, ret=[])->[Tensor]:
+    if out.type == "Propose":
+        _ret = ret + ([out.log_weight.detach().cpu()])
+        return _log_weights(out.q.q2, _ret)
     else:
-        return _log_prob(out.proposal.program, _ret)
+        _ret = ret + ([out.log_weight.detach().cpu()])
+        return _ret
 
 
-def print_and_sum_loss(lv, loss):
-    out = loss + nvo_avo(lv)
-    print(out)
-    return out
+def print_and_sum_loss(out, loss):
+    loss = loss + nvo_avo(out.lv)
+    print(loss)
+    return loss
 
 
 def nvi_declarative(i, targets, forwards, reverses, sample_shape):
-    def mk_step(q, p, fwd, rev, k)->Propose:
-        return Propose(target=Reverse(p, rev),
-                       proposal=Forward(fwd, q),
-                       loss_fn=print_and_sum_loss, _debug=True, ix=k, loss0=torch.zeros(1, **kw_autodevice()))
-
-    proposal = targets[0]
+    q = targets[0]
     for k, (fwd, rev, p) in enumerate(zip(forwards, reverses, targets[1:])):
-        proposal = mk_step(proposal, p, fwd, rev, k)
+        q = Propose(p=Extend(p, rev),
+                    q=Compose(fwd, q),
+                    loss_fn=print_and_sum_loss, _debug=True, ix=k, loss0=torch.zeros(1, **kw_autodevice()))
 
-    out = proposal(sample_shape=sample_shape, sample_dims=0)
+    out = q(sample_shape=sample_shape, sample_dims=0)
 
-    return _log_prob(out), out.loss
+    return _log_weights(out), out.loss
 
 @mark.skip("accumulation of gradient needs to be fixed")
 def test_annealing_declarative():

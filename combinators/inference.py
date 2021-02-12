@@ -267,98 +267,40 @@ class Propose(Inf):
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
         inf_kwargs = dict(_debug=_debug, ix = self.ix if self.ix is not None else ix, **shape_kwargs)
 
-        for s in range(1000):
-            debug.seed(11)
-            q1_out = _dispatch()(self.q.q1)(*shared_args, **inf_kwargs, **shared_kwargs)
-
-            q2_out = _dispatch()(self.q.q2)(q1_out.output, *shared_args, **inf_kwargs, **shared_kwargs)
-
-            q_lw1=q1_out.log_weight + q2_out.log_weight
-            # ^^^^^ compose
-            # vvvvv double-dispatched
-            debug.seed(11)
-
-            q_out = _dispatch()(self.q)(*shared_args, **inf_kwargs, **shared_kwargs)
-
-            lw_1   = q_out.trace.log_joint(nodes={'x_2', 'x_3', 'x_1'})
-
-            test_maybe = torch.equal(
-                    q_out.trace.log_joint(nodes={'x_2', 'x_3', 'x_1'}),
-                    q_out.trace.log_joint(nodes={'x_1'}) + q_out.trace.log_joint(nodes={'x_2', 'x_3'}))
-
-            if lw_1 != q_out.log_weight:
-                print(f"\nseed: {s}\n")
-                print(q_out.trace.log_joint(nodes={'x_2', 'x_3', 'x_1'}).item())
-                print((q_out.trace.log_joint(nodes={'x_1'}) + q_out.trace.log_joint(nodes={'x_2', 'x_3'})).item())
-                print(q_out.trace.log_joint(nodes={'x_1'}).item() + q_out.trace.log_joint(nodes={'x_2', 'x_3'}).item())
-
-                print((q_out.trace.log_joint(nodes={'x_1'}) + q_out.trace.log_joint(nodes={'x_2', 'x_3'})).dtype)
-                from decimal import getcontext
-                print(getcontext().prec)
-                print(type(q_out.trace.log_joint(nodes={'x_1'}).item()), type(q_out.trace.log_joint(nodes={'x_2', 'x_3'}).item()))
-
-                print()
-
-                breakpoint() # <<<<
-                print()
-
-            # for s in range(1000):
-            #     debug.seed(s)
-            #     out = prg()
-            #     assert torch.equal(
-            #         q_out.trace.log_joint(nodes={'x_2', 'x_3', 'x_1'}),
-            #         q_out.trace.log_joint(nodes={'x_1'}) + q_out.trace.log_joint(nodes={'x_2', 'x_3'}))
-
         q_out = _dispatch()(self.q)(*shared_args, **inf_kwargs, **shared_kwargs)
 
+        p_condition = Condition(self.p, q_out.trace)
 
-        # p_condition = Condition(self.p, q_out.trace)
-        #
-        # p_out = _dispatch()(p_condition)(*shared_args, **inf_kwargs,  **shared_kwargs)
-        #
-        # nodes = set(q_out.trace.keys()) - (
-        #     set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED}) \
-        #     - set({k for k, v in p_out.trace.items() if v.provenance != Provenance.OBSERVED})
-        # )
-        # u1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
-        #
-        # # τ*, by definition, can't have OBSERVE or REUSED random variables
-        # u1_star = 0 if 'trace_star' not in p_out else p_out.trace_star.log_joint(**shape_kwargs)
+        p_out = _dispatch()(p_condition)(*shared_args, **inf_kwargs,  **shared_kwargs)
 
-        lw1 = q_out.log_weight
-        # lv2 = p_out.log_weight - (u1 - u1_star)
+        nodes = set(q_out.trace.keys()) - (
+            set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED}) \
+            - set({k for k, v in p_out.trace.items() if v.provenance != Provenance.OBSERVED})
+        )
+        lu_1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
 
-        # breakpoint();
+        # τ*, by definition, can't have OBSERVE or REUSED random variables
+        lu_star = 0 if 'trace_star' not in p_out else p_out.trace_star.log_joint(**shape_kwargs)
 
-        # self._out = Out(
-        #     trace=p_out.trace,
-        #     log_weight=lw1 + lv2,
-        #     output=p_out.output,
-        #     extras=dict(
-        #         lv=lv2,
-        #         q_out=q_out,
-        #         p_out=p_out,
-        #         type=type(self).__name__,
-        #         # FIXME: can we ditch this? how important is this for objectives
-        #         trace_star=p_out.trace_star if 'trace_star' in p_out else None,
-        #         ix=ix,
-        #         ),
-        #     )
+        lw_1 = q_out.log_weight
+        # We call that lv because its the incremental weight in the IS sense
+        # In the semantics this corresponds to lw_2 - (lu + [lu_star])
+        lv = p_out.log_weight - (lu_1 + lu_star)
 
         self._out = Out(
-            trace=q_out.trace,
-            log_weight=lw1,
-            output=q_out.output,
+            trace=p_out.trace,
+            log_weight=lw_1 + lv,
+            output=p_out.output,
             extras=dict(
-                # lv=lv2,
+                lv=lv,
                 q_out=q_out,
-                # p_out=p_out,
-                # type=type(self).__name__,
-                # # FIXME: can we ditch this? how important is this for objectives
-                # trace_star=p_out.trace_star if 'trace_star' in p_out else None,
+                p_out=p_out,
+                type=type(self).__name__,
+                # FIXME: can we ditch this? how important is this for objectives
+                trace_star=p_out.trace_star if 'trace_star' in p_out else None,
                 ix=ix,
                 ),
-            )
+        )
 
         self._out['loss'] = self.foldr_loss(self._out, maybe(q_out, 'loss', self.loss0))
 

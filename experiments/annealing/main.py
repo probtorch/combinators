@@ -13,15 +13,21 @@ from combinators.utils import adam
 from combinators.trace.utils import RequiresGrad
 from combinators.tensor.utils import autodevice, kw_autodevice, copy, show
 from combinators.densities import MultivariateNormal, Tempered, RingGMM, Normal
-from combinators.densities.kernels import MultivariateNormalKernel, MultivariateNormalLinearKernel, NormalLinearKernel
-from combinators.nnets import ResMLPJ
 from combinators.objectives import nvo_rkl, nvo_avo, mb0, mb1, _estimate_mc, eval_nrep
-from combinators import Forward, Reverse, Propose, debug
+from combinators.inference import *
 from combinators.stochastic import RandomVariable, ImproperRandomVariable
 from combinators.metrics import effective_sample_size, log_Z_hat
 
 import experiments.visualize as V
 from experiments.annealing.models import mk_model, sample_along, paper_model
+
+def _log_weights(out, ret=[])->[Tensor]:
+    if out.type == "Propose":
+        _ret = ret + ([out.log_weight.detach().cpu()])
+        return _log_weights(out.q.q2, _ret)
+    else:
+        _ret = ret + ([out.log_weight.detach().cpu()])
+        return _ret
 
 def report(writer, ess, lzh, loss_scalar, i, eval_break, targets, forwards):
     with torch.no_grad():
@@ -42,7 +48,6 @@ def report(writer, ess, lzh, loss_scalar, i, eval_break, targets, forwards):
             fig = V.scatter_along(samples)
             writer.add_figure('overview', fig, global_step=i, close=True)
 
-
 def bar_report(i, lvss, loss):
     with torch.no_grad():
         lvs = torch.stack(lvss, dim=0)
@@ -54,32 +59,21 @@ def bar_report(i, lvss, loss):
 
         return ess, lzh, loss_scalar
 
-def nvi_eager_resample(i, targets, forwards, reverses, sample_shape):
-    q0 = targets[0]
-    p_prv_tr = q0(sample_shape=sample_shape).trace
+def print_and_sum_loss(out, loss):
+    loss = loss + nvo_avo(out.lv)
+    print(loss)
+    return loss
 
-    loss = torch.zeros(1, **kw_autodevice())
-    lw, lvss = torch.zeros(sample_shape, **kw_autodevice()), []
+def nvi_declarative(targets, forwards, reverses, sample_shape, batch_dim, sample_dims):
+    q = targets[0]
+    for k, (fwd, rev, p) in enumerate(zip(forwards, reverses, targets[1:])):
+        q = Propose(p=Extend(p, rev),
+                    q=Compose(fwd, q),
+                    loss_fn=print_and_sum_loss, _debug=True, ix=k, loss0=torch.zeros(1, **kw_autodevice()))
 
-    for k, (fwd, rev, q, p) in enumerate(zip(forwards, reverses, targets[:-1], targets[1:])):
-        q_ext = Forward(fwd, Condition(q, p_prv_tr, requires_grad=RequiresGrad.NO), ix=k)
-        p_ext = Reverse(p, rev, ix=k)
-        extend = Resample(Propose(target=p_ext, proposal=q_ext, ix=k))
+    out = q(None, sample_shape=sample_shape, sample_dims=sample_dims, batch_dim=batch_dim)
 
-        state = extend(sample_shape=sample_shape, sample_dims=0)
-        lv = state.log_prob
-
-        p_prv_tr = state.trace
-
-        lw += lv
-
-        loss += nvo_rkl(lw, lv, state.proposal.trace[f'g{k}'], state.target.trace[f'g{k+1}'])
-        # objective_loss = nvo_avo(lv)
-        # loss += objective_loss
-
-        lvss.append(lv)
-
-    return lvss, loss
+    return _log_weights(out), out.loss, out
 
 def main(trainer, K=8, seed=1, eval_break=50, num_iterations=10000, num_samples = 256):
     # Setup
@@ -117,4 +111,10 @@ def main(trainer, K=8, seed=1, eval_break=50, num_iterations=10000, num_samples 
                 ]))
 
 if __name__ == '__main__':
-    main(nvi_eager_resample, K=8, seed=1, eval_break=50, num_iterations=10000)
+    batch_dim=0
+    sample_dims=1
+    sample_shape = (3, 100, 2)
+    out = paper_model()
+    targets, forwards, reverses = [[m.to(autodevice()) for m in out[n]] for n in ['targets', 'forwards', 'reverses']]
+    nvi_declarative(targets, forwards, reverses, sample_shape, batch_dim=batch_dim, sample_dims=sample_dims)
+    # main(nvi_eager_resample, K=8, seed=1, eval_break=50, num_iterations=10000)

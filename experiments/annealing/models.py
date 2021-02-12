@@ -11,17 +11,15 @@ import combinators.trace.utils as trace_utils
 from combinators.trace.utils import RequiresGrad
 from combinators.tensor.utils import autodevice, kw_autodevice, copy, show
 from combinators.densities import MultivariateNormal, Tempered, RingGMM, Normal
-from combinators.densities.kernels import MultivariateNormalKernel, MultivariateNormalLinearKernel, NormalLinearKernel
+from combinators.densities.kernels import ConditionalMultivariateNormal, ConditionalMultivariateNormalLinear
 from combinators.nnets import ResMLPJ
 from combinators.objectives import nvo_rkl, nvo_avo
-from combinators import Forward, Reverse, Propose
 from combinators.stochastic import RandomVariable, ImproperRandomVariable
 from combinators.metrics import effective_sample_size, log_Z_hat
-from combinators import Forward
 
 def mk_kernel(from_:int, to_:int, std:float, num_hidden:int, learn_cov=True, activation=nn.ReLU):
     embedding_dim = 2
-    return MultivariateNormalKernel(
+    return ConditionalMultivariateNormal(
         ext_from=f'g{from_}',
         ext_to=f'g{to_}',
         loc=torch.zeros(2, **kw_autodevice()),

@@ -411,6 +411,8 @@ class Trace(MutableMapping):
         """
         if nodes is None:
             nodes = self._nodes
+        # FIXME: Discuss this fix with JW
+        nodes = set(nodes)
         log_prob = torch.zeros(1)
         for n in nodes:
             if n in self._nodes:
