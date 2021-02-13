@@ -307,7 +307,12 @@ class Propose(Inf):
                 tau_1=tau_1,
                 tau_2=tau_2,
                 nodes=nodes,
-                ####
+                ## stats ##
+                ess = effective_sample_size(lw_out, sample_dims=sample_dims),
+                ## apg ##
+                q_den=None,
+                p_num=None,
+                #########
                 trace_original=p_out.trace,
                 lv=lv,
                 q_out=q_out,
