@@ -23,10 +23,10 @@ class Distribution(Program):
         self.dist = dist
         self.RandomVariable = RandomVariable
 
-    def model(self, trace, c, sample_shape=torch.Size([1,1])):
+    def model(self, trace, c, sample_shape=torch.Size([1,1]), reparameterized=None):
         dist = self.dist
 
-        value, provenance = trace_utils.maybe_sample(trace, sample_shape)(dist, self.name)
+        value, provenance = trace_utils.maybe_sample(self._cond_trace, sample_shape, reparameterized=reparameterized)(dist, self.name)
 
         rv = self.RandomVariable(dist=dist, value=value, provenance=provenance) # <<< rv.log_prob = dist.log_prob(value)
         trace.append(rv, name=self.name)

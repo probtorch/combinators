@@ -89,8 +89,11 @@ class Condition(Inf):
         out = dispatch(self.program)(c, **kwargs)
 
         out['type']=type(self).__name__ + "(" + type(self.program).__name__ + ")"
+        # out['cond_trace']=self.program._cond_trace
 
         self.program._cond_trace = None
+        # Also clear cond_trace reference in trace to not introduce a space leak
+        out.trace._cond_trace = None
 
         return out
 
@@ -106,11 +109,11 @@ class Resample(Inf):
             ix=None,
             _debug:bool=False,
             loss0=None,
-            strategy=rstrat.Systematic()
+            strategy=None
     ):
         Inf.__init__(self, ix=ix, _debug=_debug, loss0=loss0)
         self.q = q
-        self.strategy = strategy
+        self.strategy = rstrat.Systematic()
 
     def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Resample """
@@ -124,6 +127,14 @@ class Resample(Inf):
 
         tr_2, lw_2 = self.strategy(q_out.trace, q_out.log_weight, **passable_kwargs)
 
+        c1 = q_out.output
+        assert isinstance(c1, dict)
+        c2 = {k: v for k, v in c1.items()}
+        rs_out_addrs = set(c1.keys()).intersection(set(tr_2.keys()))
+        for rs_out_addr in rs_out_addrs:
+            assert isinstance(c2[rs_out_addr], torch.Tensor)
+            c2[rs_out_addr] = tr_2[rs_out_addr].value
+
         self._out = Out(
             extras=dict(
                 q_out=q_out,
@@ -132,7 +143,8 @@ class Resample(Inf):
                 ),
             trace=tr_2,
             log_weight=lw_2,
-            output=q_out.output)
+            output=c2,
+        )
 
         self._out['loss'] = self.foldr_loss(self._out, maybe(q_out, 'loss', self.loss0))
 
@@ -262,14 +274,14 @@ class Propose(Inf):
 
         p_out = dispatch(p_condition)(c, **inf_kwargs,  **shared_kwargs)
 
-        nodes = set(q_out.trace.keys()) - (
-            set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED}) \
-            - set({k for k, v in p_out.trace.items() if v.provenance != Provenance.OBSERVED})
-        )
+        rho_1 = set(q_out.trace.keys())
+        tau_1 = set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED})
+        tau_2 = set({k for k, v in p_out.trace.items() if v.provenance != Provenance.OBSERVED})
+        nodes = rho_1 - (tau_1 - tau_2)
         lu_1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
 
         # τ*, by definition, can't have OBSERVE or REUSED random variables
-        lu_star = 0 if 'trace_star' not in p_out else p_out.trace_star.log_joint(**shape_kwargs)
+        lu_star = torch.zeros(1) if 'trace_star' not in p_out else q_out.trace.log_joint(nodes=set(p_out.trace_star.keys()), **shape_kwargs)
 
         lw_1 = q_out.log_weight
         # We call that lv because its the incremental weight in the IS sense
@@ -281,6 +293,15 @@ class Propose(Inf):
             log_weight=lw_1 + lv,
             output=p_out.output,
             extras=dict(
+                # FIXME: Delete before publishing - this is for debugging only
+                lu=(lu_1 + lu_star),
+                lu_1=lu_1,
+                lu_star=lu_star,
+                rho_1=rho_1,
+                tau_1=tau_1,
+                tau_2=tau_2,
+                nodes=nodes,
+                ####
                 lv=lv,
                 q_out=q_out,
                 p_out=p_out,

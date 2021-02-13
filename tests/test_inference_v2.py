@@ -76,7 +76,7 @@ def test_propose():
 
     # Compute stuff the same way as in the propose combinator to ensure numeric reproduceability 
     lu_1 = out.q_out.trace.log_joint(nodes=nodes)
-    lu_star = 0
+    lu_star = torch.zeros(1)
     lw_1 = out.q_out.log_weight
     lv = out.p_out.log_weight - (lu_1 + lu_star)
     lw_out = lw_1 + lv
@@ -155,7 +155,7 @@ def test_extend_propose():
     lv = lw_2 - (lu_1 + lu_star)
     lw_out = lw_1 + lv
     #   (x_1 x_2 x_3) * ((z_2 z_3  *  x_2 x_3) * (z_1))
-    #  ---------------------------------------    
+    #  ------------------------------------------------
     #  ((x_1 x_2 x_3  *   z_2 z_3)             * (z_1))
     assert lw_out == out.log_weight, "final is weight"
     print(lw_out)

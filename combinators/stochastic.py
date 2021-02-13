@@ -399,7 +399,14 @@ class Trace(MutableMapping):
             if not isinstance(node, RandomVariable) or node.observed:
                 yield name
 
-    def log_joint(self, sample_dims=None, batch_dim=None, nodes=None,
+    def log_joint(self, sample_dims=None, batch_dim=None, nodes=None, reparameterized=True):
+        assert isinstance(sample_dims, int), "probtoch does currently no work properly for multiple batch or sample dims"
+        assert isinstance(batch_dim, int), "probtoch does currently no work properly for multiple batch or sample dims"
+        assert sample_dims < batch_dim, "probtorch currently only works if sample_dims < batch_dim"
+        return self._log_joint(sample_dims=sample_dims, batch_dim=batch_dim, nodes=nodes, reparameterized=reparameterized)
+
+
+    def _log_joint(self, sample_dims=None, batch_dim=None, nodes=None,
                   reparameterized=True):
         """Returns the log joint probability, optionally for a subset of nodes.
 

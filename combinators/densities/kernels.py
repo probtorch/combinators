@@ -3,7 +3,6 @@
 import torch
 import combinators.trace.utils as trace_utils
 from combinators.tensor.utils import autodevice
-from combinators.stochastic import Provenance
 from torch import nn
 from torch import Tensor
 from combinators.program import Program

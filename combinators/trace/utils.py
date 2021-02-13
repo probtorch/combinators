@@ -20,14 +20,16 @@ def distprops(dist):
     ]
 
 @typechecked
-def maybe_sample(trace:Trace, sample_shape:Union[Tuple[int], None, tuple]) -> Callable[[D.Distribution, str], Tuple[Tensor, Provenance]]:
+def maybe_sample(trace:Optional[Trace], sample_shape:Union[Tuple[int], None, tuple], reparameterized:Optional[bool]=None) -> Callable[[D.Distribution, str], Tuple[Tensor, Provenance]]:
+
     def curried(dist:D.Distribution, name:str) -> Tuple[Tensor, Provenance]:
-        if name in trace:
-            return trace[name].value, Provenance.OBSERVED
+        _reparameterized = reparameterized if reparameterized is not None else dist.has_rsample
+        if trace is not None and name in trace:
+            return trace[name].value, Provenance.REUSED
         elif sample_shape is None:
-            return (dist.rsample() if dist.has_rsample else dist.sample(), Provenance.SAMPLED)
+            return (dist.rsample() if _reparameterized else dist.sample(), Provenance.SAMPLED)
         else:
-            return (dist.rsample(sample_shape) if dist.has_rsample else dist.sample(sample_shape), Provenance.SAMPLED)
+            return (dist.rsample(sample_shape) if _reparameterized else dist.sample(sample_shape), Provenance.SAMPLED)
     return curried
 
 @typechecked
