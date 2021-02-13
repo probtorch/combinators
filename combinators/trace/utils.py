@@ -178,8 +178,14 @@ def detach(tr:Trace):
     def detachrv(rv):
         rv._value = rv._value.detach()
         return rv
-
     return {k: detachrv(rv) for k, rv in tr.items()}
+
+@typechecked
+def rerun_with_detached_values(trace:Trace):
+    def rerun_rv(rv):
+        if isinstance(rv, RandomVariable):
+            value = rv.value.detach()
+            rv.dist.log_prob(value)
 
 
 @typechecked

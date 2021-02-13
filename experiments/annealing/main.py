@@ -75,7 +75,8 @@ def nvi_declarative(targets, forwards, reverses, sample_shape, batch_dim, sample
         q = Propose(p=Extend(p, rev),
                     q=Compose(fwd, q),
                     loss_fn=print_and_sum_loss, _debug=True, ix=k, loss0=torch.zeros(1, **kw_autodevice()))
-        q = Resample(q)
+        if resample:
+            q = Resample(q)
     out = q(None, sample_shape=sample_shape, sample_dims=sample_dims, batch_dim=batch_dim)
     return out
 
@@ -156,11 +157,11 @@ def test_1_step_nvi(sample_shape=(10, 5), batch_dim=0, sample_dims=1):
 
     # main(nvi_eager_resample, K=8, seed=1, eval_break=50, num_iterations=10000)
 
-def test_K_step_nvi(K, sample_shape=(10, 5), batch_dim=0, sample_dims=1, resample=False):
+def test_K_step_nvi(K, sample_shape=(10, 5), batch_dim=0, sample_dims=1, resample=False, num_seeds=10):
     out = mk_model(K+1)
     targets, forwards, reverses = [[m.to(autodevice()) for m in out[n]] for n in ['targets', 'forwards', 'reverses']]
 
-    seeds = torch.arange(10)
+    seeds = torch.arange(num_seeds)
     for seed in seeds:
         debug.seed(seed)
         out = nvi_declarative(targets, forwards, reverses,
@@ -192,12 +193,56 @@ def test_K_step_nvi(K, sample_shape=(10, 5), batch_dim=0, sample_dims=1, resampl
             proposal_outs.append(proposal_out)
             fwd_outs.append(fwd_out)
             rev_outs.append(rev_out)
-            out_refs.append(out_refs[-1].q_out.q_out.q1_out)
+            if resample:
+                out_refs.append(out_refs[-1].q_out.q_out.q1_out)
+            else:
+                out_refs.append(out_refs[-1].q_out.q1_out)
         assert (lw == out.log_weight).all()
 
+def test_nvi_sampling_scheme(num_seeds=100):
+    print(f"Testing NVI sampling scheme without resampling (num_seeds: {num_seeds})")
+    test_K_step_nvi(8, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=True, num_seeds=num_seeds)
+    print(f"Testing NVI sampling scheme with resampling (num_seeds: {num_seeds})")
+    test_K_step_nvi(8, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=False, num_seeds=num_seeds)
+
+
+def test_nvi_grads(K, sample_shape=(10,), batch_dim=1, sample_dims=0, resample=False):
+    out = mk_model(K+1)
+    targets, forwards, reverses = [[m.to(autodevice()) for m in out[n]] for n in ['targets', 'forwards', 'reverses']]
+    optimizer = adam([*targets, *forwards, *reverses])
+
+    esss = []
+    losses= []
+    lws = []
+    interations = 10000
+    for i in range(interations):
+        out = nvi_declarative(targets, forwards, reverses,
+                            sample_shape, batch_dim=batch_dim, sample_dims=sample_dims,
+                            resample=resample)
+        loss = out.loss.mean()
+        lw = out.log_weight
+        ess = effective_sample_size(lw, sample_dims=sample_dims)
+
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
+        losses.append(loss)
+        lws.append(lw)
+        esss.append(ess)
+        print(loss, ess)
+
+    breakpoint()
+    print()
+    fig = plt.figure()
+    ax1 = fig.add_subplot(1, 2, 1)
+    ax1.plot(torch.tensor(losses), label="loss")
+    ax2 = fig.add_subplot(1, 2, 2)
+    ax2.plot(torch.tensor(esss), label="ess")
+    plt.show()
 
 if __name__ == '__main__':
-    test_K_step_nvi(8, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=True)
+    test_nvi_grads(1, sample_shape=(10,1), batch_dim=1, sample_dims=0, resample=False)
 
 
 # check proposal log_probs

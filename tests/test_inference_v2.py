@@ -41,9 +41,9 @@ class Simple4(Program):
     def model(self, trace, c):
         z_1 = trace.normal(loc=torch.ones(1)*c, scale=torch.ones(1), name="z_1")
 
-# ============================================================================= #
-# FIXME: We should write some tests that use c since the following are kernels  #
-# ============================================================================= #
+# ===== #
+# TESTS #
+# ===== #
 
 def test_run_a_primitive_program():
     s1_out = Simple1()(None)
