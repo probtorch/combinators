@@ -106,10 +106,10 @@ class RandomVariable(GenericRandomVariable):
         observed(bool): Indicates whether the value was sampled or observed.
     """
 
-    def __init__(self, dist, value, provenance=Provenance.SAMPLED, mask=None, use_pmf=True, log_prob=None):
+    def __init__(self, dist, value, reparameterized, provenance=Provenance.SAMPLED, mask=None, use_pmf=True, log_prob=None):
         self._dist = dist
         self._use_pmf = use_pmf
-        self._reparameterized = dist.has_rsample
+        self._reparameterized = reparameterized #dist.has_rsample
         super().__init__(
             value=value,
             provenance=provenance,

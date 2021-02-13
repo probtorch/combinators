@@ -287,10 +287,11 @@ class Propose(Inf):
         # We call that lv because its the incremental weight in the IS sense
         # In the semantics this corresponds to lw_2 - (lu + [lu_star])
         lv = p_out.log_weight - (lu_1 + lu_star)
+        lw_out = lw_1 + lv
 
         self._out = Out(
             trace=p_out.trace,
-            log_weight=lw_1 + lv,
+            log_weight=lw_out.detach(),
             output=p_out.output,
             extras=dict(
                 # FIXME: Delete before publishing - this is for debugging only
@@ -302,6 +303,7 @@ class Propose(Inf):
                 tau_2=tau_2,
                 nodes=nodes,
                 ####
+                trace_original=p_out.trace,
                 lv=lv,
                 q_out=q_out,
                 p_out=p_out,
@@ -311,7 +313,7 @@ class Propose(Inf):
                 ix=ix,
                 ),
         )
-
+        # This uses the trace which still holds the 'attached' RVS
         self._out['loss'] = self.foldr_loss(self._out, maybe(q_out, 'loss', self.loss0))
 
         return self._out

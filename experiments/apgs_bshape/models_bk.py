@@ -20,6 +20,7 @@ ix = sweepix
 
 getmap = lambda name: (lambda ix: (f'{name}{ix.sweep if ix.rev else ix.sweep-1}', f'{name}{ix.sweep-1 if ix.rev else ix.sweep}'))
 
+# Encoder for z_where - Hao's version
 class Enc_coor(nn.Module):
     """
     encoder of the digit positions
@@ -96,6 +97,7 @@ class Enc_coor(nn.Module):
         #     ppr(q_new, desc=f"Enc_coor out {timestep}->{timestep+1}")
         return q_new
 
+# Encoder for z_where in (old) Combinators
 class Enc_coor2(Kernel):
     """
     encoder of the digit positions
@@ -119,6 +121,9 @@ class Enc_coor2(Kernel):
 #         self.conv_kernel = conv_kernel
         self.AT = AT
 
+    # apply_kernel --rename-> model
+    # cond_output --rename-> c
+    # cond_trace is not there anymore
     def apply_kernel(self, trace, cond_trace, cond_output, ix=None):
         debug.seed(ix.t);
         try:
@@ -178,6 +183,7 @@ class Enc_coor2(Kernel):
         output[f'z_where_{ix.t+1}'] = z_where_tp1
         return output
 
+# This can be deleted
 class Noop(Program):
     def __init__(self):
         super().__init__()
@@ -190,6 +196,7 @@ class Noop(Program):
         else:
             raise RuntimeError()
 
+# This can be deleted as well
 class Memo(Kernel):
     """ turns a program into a kernel """
     def __init__(self, program):
