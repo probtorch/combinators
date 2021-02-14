@@ -1,24 +1,21 @@
 import os
-import gzip
 import math
 import time
-import requests
+import imageio
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+from skimage.transform import resize
 import torch
 from torch.distributions.uniform import Uniform
 from torch.nn.functional import affine_grid, grid_sample
-from combinators.utils import git_root
 
 
 """
-==========
-simulate bouncing mnist using the training dataset in mnist
-==========
+simulate bouncing shapes.
 """
 class Sim_BShape():
-    def __init__(self, timesteps, num_objects, frame_size, object_size, offset, dv, chunk_size):
+    def __init__(self, timesteps, num_objects, frame_size, shape_size, padding_size, blacklist_shapes, shape_dir, dv, chunk_size):
         '''
         X : coordinates
         V : velocity
@@ -27,90 +24,40 @@ class Sim_BShape():
         self.timesteps = timesteps
         self.num_objects = num_objects
         self.frame_size = frame_size
-        self.object_size = object_size ## by default
-        self.offset = offset
+        self.shape_size = shape_size
+        self.padding_size = padding_size
         self.dv = dv
         self.chunk_size = chunk_size ## datasets are dividied into pieces with this number and saved separately
-    def plot_square(self, size):
-        square = torch.ones((size,size))
-        return square
+        self.blacklist_shapes = blacklist_shapes
+        self.shapes = []
+        self.shape_dir = shape_dir
+        
+    def load_resize_shapes(self):
+        """
+        load and resize all shape images.
+        """
+        shape_paths = []
+        for file in os.listdir(self.shape_dir):
+            if file.endswith(".png"):
+                if file not in self.blacklist_shapes:
+                    shape_paths.append(os.path.join(self.shape_dir, file))
 
-    def plot_cross(self, size):
-        cross = torch.zeros((size, size))
-        for i in range(size):
-            cross[i, i] = 1.0
-            cross[i, int(size-1-i)] = 1.0
-        return cross
-
-    def plot_ball(self, size):
-        if size == 6:
-            ball = torch.ones((6,6))
-            for i in range(6):
-                if i == 0 or i == 5:
-                    ball[i, 0] = 0.0
-                    ball[i, 1] = 0.0
-                    ball[i, 4] = 0.0
-                    ball[i, 5] = 0.0
-                elif i == 1 or i == 4:
-                    ball[i, 0] = 0.0
-                    ball[i, 5] = 0.0
-                else:
-                    pass
-        elif size == 8:
-            ball = torch.ones((8,8))
-            for i in range(8):
-                if i == 0 or i == 7: 
-                    ball[i, 0] = 0.0
-                    ball[i, 1] = 0.0
-                    ball[i, 2] = 0.0
-                    ball[i, 5] = 0.0
-                    ball[i, 6] = 0.0
-                    ball[i, 7] = 0.0
-                elif i == 1 or i == 6:
-                    ball[i, 0] = 0.0
-                    ball[i, 1] = 0.0
-                    ball[i, 6] = 0.0
-                    ball[i, 7] = 0.0
-                elif i == 2 or i == 5:
-                    ball[i, 0] = 0.0
-                    ball[i, 7] = 0.0
-                else:
-                    pass
-        elif size == 10:
-            ball = torch.ones((10,10))
-            for i in range(10):
-                if i == 0 or i == 9: 
-                    ball[i, 0] = 0.0
-                    ball[i, 1] = 0.0
-                    ball[i, 2] = 0.0
-                    ball[i, 3] = 0.0
-                    ball[i, 6] = 0.0
-                    ball[i, 7] = 0.0
-                    ball[i, 8] = 0.0
-                    ball[i, 9] = 0.0
-                elif i == 1 or i == 8:
-                    ball[i, 0] = 0.0
-                    ball[i, 1] = 0.0
-                    ball[i, 2] = 0.0
-                    ball[i, 7] = 0.0
-                    ball[i, 8] = 0.0
-                    ball[i, 9] = 0.0
-                elif i == 2 or i == 7:
-                    ball[i, 0] = 0.0
-                    ball[i, 1] = 0.0
-                    ball[i, 8] = 0.0
-                    ball[i, 9] = 0.0
-                elif i == 3 or i == 6:
-                    ball[i, 0] = 0.0
-                    ball[i, 9] = 0.0
-                else:
-                    pass
-        else:
-            raise ValueError
-        return ball
-
+        for p in shape_paths:
+            img = imageio.imread(p)
+            resized_img = resize(img, (self.shape_size, self.shape_size))[:,:,3]
+            if self.padding_size > 0 and isinstance(self.padding_size, int):
+                padded_size = self.shape_size + 2 * self.padding_size
+                padded_img = np.zeros((padded_size, padded_size))
+                padded_img[self.padding_size:self.padding_size+self.shape_size, self.padding_size:self.padding_size+self.shape_size] = resized_img
+            else:
+                padded_img = resized_img
+            self.shapes.append(padded_img[None,:,:])
+        self.shapes = torch.from_numpy(np.concatenate(self.shapes, 0)).float()
+        mean_shape = self.shapes.mean(0)
+        torch.save(mean_shape, 'mean_shape.pt')    
+            
     def sim_trajectory(self, init_xs):
-        ''' Generate a random sequence of a MNIST digit '''
+        ''' Generate a random trajectory '''
         v_norm = Uniform(0, 1).sample() * 2 * math.pi
         #v_norm = torch.ones(1) * 2 * math.pi
         v_y = torch.sin(v_norm).item()
@@ -121,7 +68,7 @@ class Sim_BShape():
         X[0] = init_xs
         V[0] = V0
         for t in range(0, self.timesteps -1):
-            X_new = X[t] + V[t]
+            X_new = X[t] + V[t] 
             V_new = V[t]
 
             if X_new[0] < -1.0:
@@ -144,11 +91,11 @@ class Sim_BShape():
         Xs = []
         Vs = []
         x0 = Uniform(-1, 1).sample((num_tjs, 2))
-        # a2 = 0.5**2
-        # while(True):
-        #     if ((x0[0] - x0[1])**2).sum() > a2:
-        #         break
-        #     x0 = Uniform(-1, 1).sample((num_tjs, 2))
+        a2 = 0.5
+        while(True):
+            if ((x0[0] - x0[1])**2).sum() > a2 and ((x0[2] - x0[1])**2).sum() > a2 and ((x0[0] - x0[2])**2).sum() > a2:
+                break
+            x0 = Uniform(-1, 1).sample((num_tjs, 2))
         for i in range(num_tjs):
             x, v = self.sim_trajectory(init_xs=x0[i])
             Xs.append(x.unsqueeze(0))
@@ -158,12 +105,13 @@ class Sim_BShape():
             np.save('disp', torch.cat(Vs, 0).data.numpy())
         return torch.cat(Xs, 0), torch.cat(Vs, 0)
 
-    def sim_one_bshape(self, objects):
+    def sim_one_sequence(self, objects):
         '''
-        Get random trajectories for the digits and generate a video.
+        Get random trajectories for the objects and generate a video.
         '''
-        s_factor = self.frame_size / (self.object_size+self.offset)
-        t_factor = (self.frame_size - (self.object_size+self.offset)) / (self.object_size+self.offset)
+        patch_size = self.shape_size + self.padding_size * 2
+        s_factor = self.frame_size / (patch_size)
+        t_factor = (self.frame_size - (patch_size)) / (patch_size)
         bshape = []
         Xs, Vs = self.sim_trajectories(num_tjs=self.num_objects)
         for k in range(self.num_objects):
@@ -176,30 +124,7 @@ class Sim_BShape():
             # Init_V.append(V[0.unsqueeze()])
         bshape = torch.cat(bshape, 1).sum(1).clamp(min=0.0, max=1.0)
         return bshape
-
-    def generate_objects(self):
-        """
-        randomly create one object
-        """
-        ind = np.random.randint(2, size=self.num_objects)
-#         ind = np.arange(3)
-        objects = []
-        for i in range(len(ind)):
-            if ind[i] == 0:
-                ball = self.plot_ball(size=self.object_size)
-            elif ind[i] == 1:
-                ball = self.plot_square(size=self.object_size)
-#             elif ind[i] == 2:
-#                 ball = self.plot_cross(size=self.object_size)
-            else:
-                raise ValueError
-            ob = torch.zeros(self.object_size+self.offset, self.object_size+self.offset)
-
-            ob[int(self.offset/2):int(self.object_size+self.offset/2), int(self.offset/2):int(self.object_size+self.offset/2)] = ball
-            objects.append(ob[None, :, :])
-        objects = torch.cat(objects, 0)
-        return objects
-
+    
     def sim_save_data(self, num_seqs, PATH):
         """
         ==========
@@ -208,6 +133,7 @@ class Sim_BShape():
         if num_seqs > N, then more than one round is needed
         ==========
         """
+        self.load_resize_shapes()
         if not os.path.exists(PATH):
             os.makedirs(PATH)
         num_seqs_left = num_seqs
@@ -218,25 +144,28 @@ class Sim_BShape():
             num_this_round = min(self.chunk_size, num_seqs_left)
             seqs = []
             for i in range(num_this_round):
-                bshape = self.sim_one_bshape(self.generate_objects())
+                indices = np.random.permutation(len(self.shapes))[:self.num_objects]
+                bshape = self.sim_one_sequence(self.shapes[indices])
                 seqs.append(bshape.unsqueeze(0))
             seqs = torch.cat(seqs, 0)
             assert seqs.shape == (num_this_round, self.timesteps, self.frame_size, self.frame_size), "ERROR! unexpected chunk shape."
-            incremental_PATH = PATH + 'ob-%d' % counter
+            incremental_PATH = PATH + 'seq-%dtimesteps-%dobjects-p%d' % (self.timesteps, self.num_objects, counter)
             np.save(incremental_PATH, seqs)
             counter += 1
             num_seqs_left = max(num_seqs_left - num_this_round, 0)
             time_end = time.time()
             print('(%ds) Simulated %d sequences, saved to \'%s\', %d sequences left.' % ((time_end - time_start), num_this_round, incremental_PATH, num_seqs_left))
 
-    def viz_data(self, num_seqs=5, fs=2):
+    def viz_data(self, num_seqs=5, fs=1.5):
+        self.load_resize_shapes()
         num_cols = self.timesteps
         num_rows = num_seqs
         gs = gridspec.GridSpec(num_rows, num_cols)
         gs.update(left=0.0 , bottom=0.0, right=1.0, top=1.0, wspace=0.05, hspace=0.05)
         fig = plt.figure(figsize=(fs * num_cols, fs * num_rows))
         for i in range(num_rows):
-            bshape = self.sim_one_bshape(self.generate_objects())
+            indices = np.random.permutation(len(self.shapes))[:self.num_objects]
+            bshape = self.sim_one_sequence(self.shapes[indices])
             for j in range(num_cols):
                 ax = fig.add_subplot(gs[i, j])
                 ax.set_xticks([])
@@ -247,14 +176,17 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser('Bouncing Shapes')
     parser.add_argument('--num_instances', default=10000, type=int)
-    parser.add_argument('--data_path', default=f'{git_root()}/data/bshape/')
-    parser.add_argument('--timesteps', default=10, help='number of video frames in one video')
-    parser.add_argument('--num_objects', default=2, help='number of objects in one video')
-    parser.add_argument('--dv', default=0.3, help='constant velocity of the digits')
-    parser.add_argument('--frame_size', default=40, help='squared size of the canvas')
-    parser.add_argument('--object_size', default=6)
-    parser.add_argument('--offset', default=4)
+    parser.add_argument('--saving_path', default='video/')
+    parser.add_argument('--timesteps', default=10, type=int, help='number of video frames in one video')
+    parser.add_argument('--num_objects', default=3, type=int, help='number of objects in one video')
+    parser.add_argument('--dv', default=0.1, type=float, help='constant velocity of the digits')
+    parser.add_argument('--frame_size', default=96, type=int, help='squared size of the canvas')
+    parser.add_argument('--shape_size', default=20, type=int, help='size of the shape')
+    parser.add_argument('--padding_size', default=4, type=int, help='padding size')
+    parser.add_argument('--blacklist_shapes', default='[]')
+    parser.add_argument('--shape_dir', default='shapes/')
     parser.add_argument('--chunk_size', default=1000, type=int, help='number of sqeuences that are stored in one single file (for the purpose of memory saving)')
     args = parser.parse_args()
-    simulator = Sim_BShape(args.timesteps, args.num_objects, args.frame_size, args.object_size, args.offset, args.dv, args.chunk_size)
-    simulator.sim_save_data(args.num_instances, args.data_path)
+    simulator = Sim_BShape(args.timesteps, args.num_objects, args.frame_size, args.shape_size, args.padding_size, eval(args.blacklist_shapes), args.shape_dir, args.dv, args.chunk_size)
+    print('simulating with %d objects, %d timesteps, dv=%.1f' % (args.num_objects, args.timesteps, args.dv))
+    simulator.sim_save_data(args.num_instances, args.saving_path)
