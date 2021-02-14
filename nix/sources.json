@@ -1,0 +1,75 @@
+{
+    "hydra": {
+        "branch": "master",
+        "description": "Hydra is a framework for elegantly configuring complex applications",
+        "homepage": "https://hydra.cc",
+        "owner": "facebookresearch",
+        "repo": "hydra",
+        "rev": "v1.0.5",
+        "sha256": "1xzq2hpsz4y73nljk4hfsasymphxagwxarcvdhj5y060d5wsdxji",
+        "type": "tarball",
+        "url": "https://github.com/facebookresearch/hydra/archive/v1.0.5.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "jupyterWith": {
+        "branch": "master",
+        "description": "declarative and reproducible Jupyter environments - powered by Nix",
+        "homepage": "",
+        "owner": "tweag",
+        "repo": "jupyterWith",
+        "rev": "35eb565c6d00f3c61ef5e74e7e41870cfa3926f7",
+        "sha256": "15zpprs0blvlvbqapkyn92x6dpfa6va2xz25v24z67lqs96ii4jm",
+        "type": "tarball",
+        "url": "https://github.com/tweag/jupyterWith/archive/35eb565c6d00f3c61ef5e74e7e41870cfa3926f7.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "mach-nix": {
+        "branch": "master",
+        "description": "Tool to create highly reproducible python environments",
+        "homepage": "",
+        "owner": "DavHau",
+        "repo": "mach-nix",
+        "rev": "c4ef8f4a01f8ca8df857f6318fecb6cdbee37d58",
+        "sha256": "0kwbs2b219qrpszzdm514dfcyl5x9f7w6rw2wbbxn5q2jffp2q71",
+        "type": "tarball",
+        "url": "https://github.com/DavHau/mach-nix/archive/c4ef8f4a01f8ca8df857f6318fecb6cdbee37d58.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
+        "version": "3.1.0"
+    },
+    "niv": {
+        "branch": "master",
+        "description": "Easy dependency management for Nix projects",
+        "homepage": "https://github.com/nmattia/niv",
+        "owner": "nmattia",
+        "repo": "niv",
+        "rev": "ba57d5a29b4e0f2085917010380ef3ddc3cf380f",
+        "sha256": "1kpsvc53x821cmjg1khvp1nz7906gczq8mp83664cr15h94sh8i4",
+        "type": "tarball",
+        "url": "https://github.com/nmattia/niv/archive/ba57d5a29b4e0f2085917010380ef3ddc3cf380f.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "nixpkgs": {
+        "branch": "release-20.09",
+        "description": "Nix Packages collection",
+        "homepage": "",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "b00b8f07ac2f76f0763c07ca66b206f761f36f0f",
+        "sha256": "0cb5419hsxgdyvhfl33wnmxby5f0dr5ff222blilk07zbrgqxgcm",
+        "type": "tarball",
+        "url": "https://github.com/NixOS/nixpkgs/archive/b00b8f07ac2f76f0763c07ca66b206f761f36f0f.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "unstable": {
+        "branch": "nixpkgs-unstable",
+        "description": "Nix Packages collection",
+        "homepage": "",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "5000e5707bcd9010669e2ad7da8042dbf68f85c7",
+        "sha256": "0v0l69q1jmwpr7j056dvs94mljz8k045x5hz0ivq945b5qbjab5v",
+        "type": "tarball",
+        "url": "https://github.com/NixOS/nixpkgs/archive/5000e5707bcd9010669e2ad7da8042dbf68f85c7.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    }
+}
