@@ -17,18 +17,20 @@ from combinators.types import TraceLike
 class Distribution(Program):
     """ Normalized version of Density but trying to limit overly-complex class heirarchies """
 
-    def __init__(self, name:str, dist:distributions.Distribution):
+    def __init__(self, name:str, dist:distributions.Distribution, reparameterized=None):
         super().__init__()
         self.name = name
         self.dist = dist
         self.RandomVariable = RandomVariable
+        self.reparameterized = reparameterized
 
     def model(self, trace, c, sample_shape=torch.Size([1,1]), reparameterized=None):
+        reparameterized = self.reparameterized if reparameterized is None else reparameterized
         dist = self.dist
 
-        value, provenance = trace_utils.maybe_sample(self._cond_trace, sample_shape, reparameterized=reparameterized)(dist, self.name)
+        value, provenance, reparameterized = trace_utils.maybe_sample(self._cond_trace, sample_shape, reparameterized=reparameterized)(dist, self.name)
 
-        rv = self.RandomVariable(dist=dist, value=value, provenance=provenance) # <<< rv.log_prob = dist.log_prob(value)
+        rv = self.RandomVariable(dist=dist, value=value, provenance=provenance, reparameterized=reparameterized) # <<< rv.log_prob = dist.log_prob(value)
         trace.append(rv, name=self.name)
         return {self.name: rv.value}
 
@@ -69,36 +71,6 @@ class OneHotCategorical(Distribution):
         self.logits = logits
         self.validate_args = validate_args
         super().__init__(name, distributions.OneHotCategorical(probs, logits, validate_args))
-
-
-class NormalGamma(Distribution):
-    """ The generative model of GMM """
-    PRECISIONS = 'precisions'
-    MEANS = 'means'
-
-    def __init__(self, mu, nu, alpha, beta, prefix=""):
-        self.prefix = '' if len(prefix) == 0 else prefix + "_"
-        self.PRECISIONS = self.prefix + NormalGamma.PRECISIONS
-        self.MEANS = self.prefix + NormalGamma.MEANS
-        super().__init__(dist=None, name=f"{{{self.PRECISIONS}, {self.MEANS}}}")
-
-        self.mu = mu
-        self.nu = nu
-        self.alpha = alpha
-        self.beta = beta
-
-    def model(self, trace, c, sample_shape=None):
-        gamma = D.Gamma(self.alpha, self.beta)
-        precisions, provenance = trace_utils.maybe_sample(trace, sample_shape)(gamma, self.PRECISIONS)
-        trace.append(RandomVariable(dist=gamma, value=precisions, provenance=provenance), name=self.PRECISIONS)
-
-        normal = D.Normal(self.mu, 1. / (self.nu * precisions).sqrt())
-        means, provenance = trace_utils.maybe_sample(trace, None)(normal, self.MEANS)
-        trace.append(RandomVariable(dist=normal, value=means, provenance=provenance), name=self.MEANS)
-
-        return (precisions, means)
-
-
 class Density(Program):
     """ A program that represents a single unnormalized distribution that you can query logprobs on. """
 

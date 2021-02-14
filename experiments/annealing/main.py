@@ -22,17 +22,23 @@ from combinators.resampling.strategies import Systematic
 import experiments.visualize as V
 from experiments.annealing.models import mk_model, sample_along, paper_model
 
-def _log_weights(out, ret=[])->[Tensor]:
-    _ret = [out.log_weight.detach().cpu()] + ret
+def _get_stats(out, lw=[], loss=[], resample=False)->[Tensor]:
+    if resample:
+        out=out.q_out
+    assert out.type == "Propose"
 
-    if out.q_out.q1_out.type == "Propose":
-        use = out.q_out.q1_out
-        return _log_weights(use, _ret)
-    elif out.q_out.q2_out.type == "Propose":
-        use = out.q_out.q2_out
-        return _log_weights(use, _ret)
+    _lw = [out.log_weight.detach().cpu()] + lw
+    _loss = [out.loss.detach().cpu()] + loss
+
+    if out.q_out.q1_out.type == "Propose" or (resample and out.q_out.q1_out.type == "Resample"):
+        out = out.q_out.q1_out
+        return _get_stats(out, lw=_lw, loss=_loss, resample=resample)
+    elif out.q_out.q2_out.type == "Propose" or (resample and out.q_out.q2_out.type == "Resample"):
+        out = out.q_out.q2_out
+        return _get_stats(out, lw=_lw, loss=_loss, resample=resample)
     else:
-        return _ret
+        return (_lw, _loss)
+    #FIXME: It is this gd fn
 
 def report(writer, ess, lzh, loss_scalar, i, eval_break, targets, forwards):
     with torch.no_grad():
@@ -53,19 +59,10 @@ def report(writer, ess, lzh, loss_scalar, i, eval_break, targets, forwards):
             fig = V.scatter_along(samples)
             writer.add_figure('overview', fig, global_step=i, close=True)
 
-def bar_report(i, lvss, loss):
-    with torch.no_grad():
-        lvs = torch.stack(lvss, dim=0)
-        lws = torch.cumsum(lvs, dim=1)
-        ess = effective_sample_size(lws, sample_dims=-1)
-        lzh = log_Z_hat(lws, sample_dims=-1)
-
-        loss_scalar = loss.detach().cpu().mean().item()
-
-        return ess, lzh, loss_scalar
-
 def print_and_sum_loss(out, loss):
-    loss = loss + nvo_avo(out.lv)
+    step_loss = nvo_avo(out.lv)
+    # step_loss = step_loss if not loss == 0. else step_loss.detach()
+    loss = loss + step_loss
     # print(loss)
     return loss
 
@@ -205,79 +202,51 @@ def test_nvi_sampling_scheme(num_seeds=100):
     print(f"Testing NVI sampling scheme with resampling (num_seeds: {num_seeds})")
     test_K_step_nvi(8, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=False, num_seeds=num_seeds)
 
-
-def test_nvi_grads(K, sample_shape=(10,), batch_dim=1, sample_dims=0, resample=False):
+def test_nvi_grads(K, sample_shape=(11,), batch_dim=1, sample_dims=0, resample=False, interations=100):
     out = mk_model(K+1)
     targets, forwards, reverses = [[m.to(autodevice()) for m in out[n]] for n in ['targets', 'forwards', 'reverses']]
     optimizer = adam([*targets, *forwards, *reverses])
 
-    esss = []
     losses= []
     lws = []
-    interations = 10000
     for i in range(interations):
         out = nvi_declarative(targets, forwards, reverses,
-                            sample_shape, batch_dim=batch_dim, sample_dims=sample_dims,
-                            resample=resample)
+                              sample_shape, batch_dim=batch_dim, sample_dims=sample_dims,
+                              resample=resample)
         loss = out.loss.mean()
-        lw = out.log_weight
+        lw = out.q_out.log_weight if out.type == "Resample" else out.log_weight
         ess = effective_sample_size(lw, sample_dims=sample_dims)
 
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
-
-        losses.append(loss)
-        lws.append(lw)
-        esss.append(ess)
         print(loss, ess)
 
-    breakpoint()
-    print()
+        lw, loss = _get_stats(out, resample=resample)
+        losses.append(torch.stack(loss, dim=0))
+        lws.append(torch.stack(lw, dim=0))
+    lws = torch.stack(lws, dim=0)
+    losses = torch.stack(losses, dim=0)
+    ess = effective_sample_size(lws, sample_dims=2)
+    # test_weights_after_training = forwards[0].net.map_cov[0].weight
+
     fig = plt.figure()
-    ax1 = fig.add_subplot(1, 2, 1)
-    ax1.plot(torch.tensor(losses), label="loss")
-    ax2 = fig.add_subplot(1, 2, 2)
-    ax2.plot(torch.tensor(esss), label="ess")
+    for k in range(K):
+        ax1 = fig.add_subplot(2, K, k+1)
+        ax1.plot(torch.tensor(losses[:, k]).squeeze(), label="loss")
+        ax1.legend()
+        ax2 = fig.add_subplot(2, K, k+1+K)
+        ax2.plot(torch.tensor(ess[:, k]).squeeze(), label="ess")
+        ax2.legend()
     plt.show()
+    print()
+
+    # AVO seems to do the right thing without resampling.
+    # But with resampling the ess is always at max, hence our hypotheses is that we degenerate to 1 sample. why?
+    # -> we compute ess on final log_weight before resampling -> so it should not be one and the same for all samples -> weight variacne > 0 ->ess < 96
 
 if __name__ == '__main__':
-    test_nvi_grads(1, sample_shape=(10,1), batch_dim=1, sample_dims=0, resample=False)
-
-
-# check proposal log_probs
-#   proposal_outs[-1].trace['g1'].log_prob
-#   out.q_out.q_out.trace['g1'].log_prob
-# check fwd log_probs
-#   out.q_out.q_out.trace['g2'].log_prob
-#   fwd_outs[-1].trace['g2'].log_prob
-# check target log_probs
-#   out.q_out.p_out.trace['g2'].log_prob
-#   target_outs[-1].trace['g2'].log_prob
-# check rev log_probs
-#   out.q_out.p_out.trace_star['g1'].log_prob
-#   rev_outs[-1].trace['g1'].log_prob
-# --> log_prob are all good individually but weight is not
-# => Check individual parts of the weight now
-# lw_1 - incomming log weight (after resampling) of last step
-#   out.q_out.q_out.log_weight
-#   lws[0]
-# lw_2 - log weight of extend in last propose
-#   out.q_out.p_out.log_weight
-#   target_outs[-1].trace['g2'].log_prob + rev_outs[-1].trace['g1'].log_prob
-# lu - log weight for reused variables under the proposal
-#   fwd_outs[-1].trace['g2'].log_prob + proposal_outs[-1].trace['g1'].log_prob
-#   out.q_out.lu
-# -> This is not correct -> lu_star somehow double counts
-
-## Old story -> fixed!!!
-# Compare fwd_kernels before faleure
-#   out_refs[-3].q_out.q_out.q2_out.trace['g2'].dist.loc[:, 0]
-#   fwd_outs[-1].trace['g2'].dist.loc[:, 0]
-# -> forward kernels should use inputs (both seem to be resampled):
-#   out_refs[-2].trace['g1'].value[:, 0]
-#   cond_traces[1]['g1'].value[:, 0]
-# -> However, combinator kernel uses
-#   out_refs[-2].q_out.trace['g1'].value[:, 0]
-# -> This is the input before it was resampled!!!
-
+    S = 288
+    K = 3
+    # test_nvi_grads(K, sample_shape=(S//K,1), interations=10, batch_dim=1, sample_dims=0, resample=False)
+    test_nvi_grads(K, sample_shape=(S//K,1), interations=1000, batch_dim=1, sample_dims=0, resample=True)

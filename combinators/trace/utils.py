@@ -25,11 +25,11 @@ def maybe_sample(trace:Optional[Trace], sample_shape:Union[Tuple[int], None, tup
     def curried(dist:D.Distribution, name:str) -> Tuple[Tensor, Provenance]:
         _reparameterized = reparameterized if reparameterized is not None else dist.has_rsample
         if trace is not None and name in trace:
-            return trace[name].value, Provenance.REUSED
+            return trace[name].value, Provenance.REUSED, _reparameterized
         elif sample_shape is None:
-            return (dist.rsample() if _reparameterized else dist.sample(), Provenance.SAMPLED)
+            return (dist.rsample() if _reparameterized else dist.sample(), Provenance.SAMPLED, _reparameterized)
         else:
-            return (dist.rsample(sample_shape) if _reparameterized else dist.sample(sample_shape), Provenance.SAMPLED)
+            return (dist.rsample(sample_shape) if _reparameterized else dist.sample(sample_shape), Provenance.SAMPLED, _reparameterized)
     return curried
 
 @typechecked
@@ -179,14 +179,6 @@ def detach(tr:Trace):
         rv._value = rv._value.detach()
         return rv
     return {k: detachrv(rv) for k, rv in tr.items()}
-
-@typechecked
-def rerun_with_detached_values(trace:Trace):
-    def rerun_rv(rv):
-        if isinstance(rv, RandomVariable):
-            value = rv.value.detach()
-            rv.dist.log_prob(value)
-
 
 @typechecked
 def copytraces(*traces: Trace, requires_grad:RequiresGrad=RequiresGrad.DEFAULT, detach:Set[str]=set(), overwrite=False, mapper=(lambda x: x))->Trace:

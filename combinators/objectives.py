@@ -16,12 +16,12 @@ def _estimate_mc(values: Tensor, log_weights: Tensor, sample_dims: Tuple[int], r
         return (nw * values).sum(dim=reducedims, keepdim=keepdims)
 
 def nvo_avo(lv: Tensor, sample_dims=0) -> Tensor:
-    # values = -lv
-    # log_weights = torch.zeros_like(lv)
+    values = -lv
+    log_weights = torch.zeros_like(lv)
 
-    # nw = torch.nn.functional.softmax(log_weights, dim=sample_dims)
-    # loss = (nw * values).sum(dim=(sample_dims,), keepdim=False)
-    loss = (-lv).sum(dim=(sample_dims,), keepdim=False)
+    nw = torch.nn.functional.softmax(log_weights, dim=sample_dims)
+    loss = (nw * values).sum(dim=(sample_dims,), keepdim=False)
+    # loss = (-lv).sum(dim=(sample_dims,), keepdim=False)
     return loss
 
 def mb0(e):

@@ -14,10 +14,11 @@ import combinators.resampling.strategies as rstrat
 from combinators.types import check_passable_kwarg, Out
 from combinators.trace.utils import RequiresGrad
 from combinators.tensor.utils import autodevice, kw_autodevice
-from combinators.stochastic import Trace, Provenance
+from combinators.stochastic import Trace, Provenance, RandomVariable, ImproperRandomVariable
 from combinators.program import Program, dispatch
 from combinators.kernel import Kernel
 from combinators.traceable import Conditionable
+from combinators.metrics import effective_sample_size
 
 def copytraces(*traces, exclude_node=None):
     newtrace = Trace()
@@ -29,6 +30,20 @@ def copytraces(*traces, exclude_node=None):
             if k in exclude_node:
                 break
             newtrace.append(rv, name=k)
+    return newtrace
+
+def rerun_with_detached_values(trace:Trace):
+    newtrace = Trace()
+    def rerun_rv(rv):
+        value = rv.value.detach()
+        if isinstance(rv, RandomVariable):
+            return RandomVariable(value=value, dist=rv.dist, provenance=rv.provenance, reparameterized=rv.reparameterized)
+        elif isinstance(rv, ImproperRandomVariable):
+            return ImproperRandomVariable(value=value, log_density_fn=rv.log_density_fn, provenance=rv.provenance)
+        else:
+            raise NotImplementedError("Only supports RandomVariable and ImproperRandomVariable")
+    for k, v in trace.items():
+        newtrace.append(rerun_rv(v), name=k)
     return newtrace
 
 def maybe(obj, name, default, fn=(lambda x: x)):
@@ -265,6 +280,7 @@ class Propose(Inf):
             ix=None,
             _debug:bool=False):
         Inf.__init__(self, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
+        assert not isinstance(p, Compose)
         self.p = p
         self.q = q
 
@@ -295,7 +311,7 @@ class Propose(Inf):
         lw_out = lw_1 + lv
 
         self._out = Out(
-            trace=p_out.trace,
+            trace=rerun_with_detached_values(p_out.trace),
             log_weight=lw_out.detach(),
             output=p_out.output,
             extras=dict(
@@ -310,8 +326,8 @@ class Propose(Inf):
                 ## stats ##
                 ess = effective_sample_size(lw_out, sample_dims=sample_dims),
                 ## apg ##
-                q_den=None,
-                p_num=None,
+                p_num=p_out.p_out.log_weight if (p_out.type == "Extend") else p_out.log_weight,
+                q_den=lu_star,
                 #########
                 trace_original=p_out.trace,
                 lv=lv,
@@ -323,7 +339,5 @@ class Propose(Inf):
                 ix=ix,
                 ),
         )
-        # This uses the trace which still holds the 'attached' RVS
         self._out['loss'] = self.foldr_loss(self._out, maybe(q_out, 'loss', self.loss0))
-
         return self._out
