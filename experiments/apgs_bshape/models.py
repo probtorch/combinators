@@ -6,9 +6,33 @@ from combinators.stochastic import Trace
 from combinators.program import Program
 from torch.distributions.normal import Normal
 from torch.distributions.bernoulli import Bernoulli
+from experiments.apgs_bshape.affine_transformer import Affine_Transformer
 
 # from combinators.inference import Program, Compose, Extend, Propose, Resample, Condition
 # Path to example programs: 
+
+def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, device):
+    models = dict()
+    AT = Affine_Transformer(frame_pixels, shape_pixels, device)
+
+    models['enc-coor'] = Enc_coor(num_pixels=(frame_pixels-shape_pixels+1)**2, 
+                                    num_hidden=num_hidden_coor, 
+                                    z_where_dim=z_where_dim, 
+                                    AT=AT).cuda().to(device)
+    
+    models['enc-digit'] = Enc_digit(num_pixels=shape_pixels**2, 
+                                      num_hidden=num_hidden_digit, 
+                                      z_what_dim=z_what_dim, 
+                                      AT=AT).cuda().to(device)
+
+    models['dec'] = Decoder(num_pixels=shape_pixels**2, 
+                              num_hidden=num_hidden_digit, 
+                              z_where_dim=z_where_dim, 
+                              z_what_dim=z_what_dim, 
+                              AT=AT,
+                              device=device).cuda().to(device)
+    return models
+    
 class Enc_coor(nn.Module):
     """
     encoder of the digit positions
@@ -125,7 +149,7 @@ class Decoder(nn.Module):
     """
     decoder 
     """
-    def __init__(self, num_pixels, num_hidden, z_where_dim, z_what_dim, AT):
+    def __init__(self, num_pixels, num_hidden, z_where_dim, z_what_dim, AT, device):
         super(self.__class__, self).__init__()
         self.dec_digit_mean = nn.Sequential(nn.Linear(z_what_dim, int(0.5*num_hidden)),
                                     nn.ReLU(),
@@ -140,13 +164,13 @@ class Decoder(nn.Module):
         self.prior_what_mu = torch.zeros(z_what_dim)
         self.prior_what_std = torch.ones(z_what_dim)
         
-#         if CUDA:
-#             with torch.cuda.device(device):
-#                 self.prior_where0_mu  = self.prior_where0_mu.cuda()
-#                 self.prior_where0_Sigma = self.prior_where0_Sigma.cuda()
-#                 self.prior_wheret_Sigma = self.prior_wheret_Sigma.cuda()
-#                 self.prior_what_mu = self.prior_what_mu.cuda()
-#                 self.prior_what_std = self.prior_what_std.cuda()
+        if torch.cuda.is_available():
+            with torch.cuda.device(device):
+                self.prior_where0_mu  = self.prior_where0_mu.cuda()
+                self.prior_where0_Sigma = self.prior_where0_Sigma.cuda()
+                self.prior_wheret_Sigma = self.prior_wheret_Sigma.cuda()
+                self.prior_what_mu = self.prior_what_mu.cuda()
+                self.prior_what_std = self.prior_what_std.cuda()
         self.AT = AT
         
     def forward(self, q, frames, recon_level, timestep=None):

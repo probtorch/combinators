@@ -4,15 +4,10 @@ import torch
 import argparse
 import numpy as np
 from random import shuffle
-from experiments.apgs_bshape.models import Enc_coor, Enc_digit, Decoder
-from experiments.apgs_bshape.affine_transformer import Affine_Transformer
-
 from combinators.tensor.utils import autodevice
 from combinators.utils import adam, git_root, save_models, load_models
 from combinators import debug
 # from combinators.resampling.strategies import APGSResamplerOriginal
-
-
 # if debug.runtime() == 'jupyter':
 #     from tqdm.notebook import trange, tqdm
 # else:
@@ -76,34 +71,16 @@ def train(optimizer, models, AT, resampler, num_sweeps, data_paths, shape_mean, 
 
 
             
-def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, device):
-    models = dict()
-    AT = Affine_Transformer(frame_pixels, shape_pixels).cuda().to(device)
 
-    models['enc-coor'] = Enc_coor(num_pixels=(frame_pixels-shape_pixels+1)**2, 
-                                    num_hidden=num_hidden_coor, 
-                                    z_where_dim=z_where_dim, 
-                                    AT=AT).cuda().to(device)
-    
-    models['enc-digit'] = Enc_digit(num_pixels=shape_pixels**2, 
-                                      num_hidden=num_hidden_digit, 
-                                      z_what_dim=z_what_dim, 
-                                      AT=AT).cuda().to(device)
-
-    models['dec'] = Decoder(num_pixels=shape_pixels**2, 
-                              num_hidden=num_hidden_digit, 
-                              z_where_dim=z_where_dim, 
-                              z_what_dim=z_what_dim, 
-                              AT=AT).cuda().to(device)
     return models
 
-def save_models(models, save_version):
-    checkpoint = dict()
-    for k,v in models.items():
-        checkpoint[k] = v.state_dict()
-    if not os.path.exists('./weights/'):
-        os.makedirs('./weights/')
-    torch.save(checkpoint, 'weights/cp-%s' % save_version)
+# def save_models(models, save_version):
+#     checkpoint = dict()
+#     for k,v in models.items():
+#         checkpoint[k] = v.state_dict()
+#     if not os.path.exists('./weights/'):
+#         os.makedirs('./weights/')
+#     torch.save(checkpoint, 'weights/cp-%s' % save_version)
     
 
 
@@ -135,10 +112,7 @@ if __name__ == '__main__':
         model_version = 'apg-bshape-num_objects=%s-num_sweeps=%s-num_samples=%s' % (args.num_objects, args.num_sweeps, sample_size)
     else:
         raise ValueError
-
-    data_paths = datapaths(data_dir=args.data_dir, subfolder='')
     mean_shape = torch.load('./dataset/mean_shape.pt').cuda().to(device)
-
     models = init_models(args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, device)
     
     optimizer = torch.optim.Adam([v.parameters() for k,v in models.items()],lr=args.lr,betas=(0.9, 0.99))

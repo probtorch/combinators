@@ -21,8 +21,8 @@ grid_sample https://pytorch.org/docs/1.3.0/nn.functional.html?highlight=affine_g
 !!!Note that these two functions will be overwritten in pytorch 1.4.0!!!
 ==========
 """
-class Affine_Transformer(nn.Module):
-    def __init__(self, frame_pixels, digit_pixels):
+class Affine_Transformer():
+    def __init__(self, frame_pixels, digit_pixels, device):
         """
         scale_dtof, translation_dtof: scaling and translation factors in transformation from digit to frame
         scale_ftod, translation_ftod: scaling and translation factors in transformation from frame to digit
@@ -34,6 +34,9 @@ class Affine_Transformer(nn.Module):
         self.translation_ftod = (self.frame_pixels - self.digit_pixels) / self.frame_pixels
         self.scale_dtof = torch.FloatTensor([[self.frame_pixels / self.digit_pixels, 0], [0, self.frame_pixels / self.digit_pixels]])
         self.scale_ftod = torch.FloatTensor([[self.digit_pixels / self.frame_pixels, 0], [0, self.digit_pixels / self.frame_pixels]])
+        if torch.cuda.is_available():
+            self.scale_dtof = self.scale_dtof.to(device)
+            self.scale_ftod = self.scale_ftod.to(device)
 
     def digit_to_frame(self, digit, z_where):
         """
