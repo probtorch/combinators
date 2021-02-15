@@ -39,9 +39,8 @@ class Enc_coor(Program):
     """
     encoder of the digit positions
     """
-    def __init__(self, num_pixels, num_hidden, z_where_dim, AT, dec, reparameterized=False):
+    def __init__(self, num_pixels, num_hidden, z_where_dim, AT, dec, mean_shape):
         super(self.__class__, self).__init__()
-        self.dec = dec
         self.enc_coor_hidden = nn.Sequential(
                             nn.Linear(num_pixels, num_hidden),
                             nn.ReLU())
@@ -56,14 +55,18 @@ class Enc_coor(Program):
                             nn.ReLU(),
                             nn.Linear(int(0.5*num_hidden), z_where_dim))
         self.reparameterized = reparameterized
-#         self.conv_kernel = mean_shape
         self.AT = AT
+        self.dec = dec
+        self.mean_shape = mean_shape
 
     #FIXME:
     def model(self, trace, c, ix):
-        # unpack inputs
         frames = c["frames"]
-        conv_kernel = c["conv_kernel"]
+        if ix.sweep == 0:
+            conv_kernel = self.mean_shape
+        else:
+            z_what = c['z_what_%d' % (ix.sweep-1)]
+            conv_kernel = self.dec.get_conv_kernel(z_what)
 
         # rethink q
         _, _, K, DP, _ = conv_kernel.shape
@@ -124,8 +127,8 @@ class Enc_digit(Program):
         self.reparameterized = reparameterized
         self.AT = AT
 
-    def model(self, trace, c, kernel_dir):
-        frames = c["frame"]
+    def model(self, trace, c, ix):
+        frames = c["frames"]
         z_where = ["z_where"]
         for t in range(frames.shape[2]):
             z_where.append(q['z_where_%d' % (t+1)].value.unsqueeze(2))
@@ -146,9 +149,8 @@ class Decoder(Program):
     """
     decoder
     """
-    def __init__(self, num_pixels, num_hidden, z_where_dim, z_what_dim, AT, conv_kernel, device):
+    def __init__(self, num_pixels, num_hidden, z_where_dim, z_what_dim, AT, device):
         super(self.__class__, self).__init__()
-        self.conv_kernel = conv_kernel
         self.dec_digit_mean = nn.Sequential(nn.Linear(z_what_dim, int(0.5*num_hidden)),
                                     nn.ReLU(),
                                     nn.Linear(int(0.5*num_hidden), num_hidden),
@@ -170,27 +172,38 @@ class Decoder(Program):
                 self.prior_what_mu = self.prior_what_mu.cuda()
                 self.prior_what_std = self.prior_what_std.cuda()
         self.AT = AT
-
-    def model(self, trace, c, timestep=None):
-        frames = c["frame"]
+        
+    def get_conv_kernel(self, z_what):
+        digit_mean = self.dec_digit_mean(z_what)  # S * B * K * (28*28)
+        S, B, K, DP2 = digit_mean.shape
+        DP = int(math.sqrt(DP2))
+        digit_mean = digit_mean.view(S, B, K, DP, DP)
+        return digit_mean.detach()
+        
+    def model(self, trace, c, ix):
+        frames = c["frames"]
         recon_level = c["recon_level"]
 
-        if not (recon_level=="object" and "z_what" not in c):
-            p = probtorch.Trace()
-            digit_mean = self.dec_digit_mean(q['z_what'].value)  # S * B * K * (28*28)
-            S, B, K, DP2 = digit_mean.shape
-            DP = int(math.sqrt(DP2))
-            digit_mean = digit_mean.view(S, B, K, DP, DP)
+#         if not (recon_level=="object" and "z_what" not in c):
+#             digit_mean = self.dec_digit_mean(q['z_what'].value)  # S * B * K * (28*28)
+#             S, B, K, DP2 = digit_mean.shape
+#             DP = int(math.sqrt(DP2))
+#             digit_mean = digit_mean.view(S, B, K, DP, DP)
 
-        # In q_\phi
-        if recon_level == 'object': ## return the reconstruction of objects
-            if "z_what" in c:
-                return {"digit_mean": digit_mean.detach()}
-            else:
-                return {"conv_kernel": self.conv_kernel}
+#         # In q_\phi
+#         if recon_level == 'object': ## return the reconstruction of objects
+#             if "z_what" in c:
+#                 z_what = c['z_what']
+#                 digit_mean = self.dec_digit_mean(z_what)  # S * B * K * (28*28)
+#                 S, B, K, DP2 = digit_mean.shape
+#                 DP = int(math.sqrt(DP2))
+#                 digit_mean = digit_mean.view(S, B, K, DP, DP)
+#                 return {"conv_kernel": digit_mean.detach()}
+#             else:
+#                 return {"conv_kernel": self.mean_shape}
 
         # In p_\theta
-        elif recon_level =='frame': # return the reconstruction of a single frame
+        if recon_level =='frame': # return the reconstruction of a single frame
             _, _, T, FP, _ = frames.shape
             # prior of z_where
             if ix.t == 0:
