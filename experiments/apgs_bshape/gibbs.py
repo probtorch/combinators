@@ -47,8 +47,8 @@ def gibbs_sweeps(models, K, T):
     q_t = q_is
     for k in (K-1): # Sweeps
         for t in range(T): # Time step
-            q_t = Propose(target=Extend(p_dec_os, q_enc_coor, idx=t, kernel_dir="reverse"),
-                          proposal=Compose(q_t, q_enc_coor, idx=t, kernel_dir="forward"),
+            q_t = Propose(target=Extend(p_dec_os, q_enc_coor, ix=t, kernel_dir="reverse"),
+                          proposal=Compose(q_t, q_enc_coor, ix=t, kernel_dir="forward"),
                           loss_fn=loss_fn)
             q_t = Resample(q_t)
         q_t = Propose(target=Extend(p_dec_os, q_enc_digit, kernel_dir="reverse"),

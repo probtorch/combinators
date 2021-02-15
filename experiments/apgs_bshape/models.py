@@ -56,7 +56,8 @@ class Enc_coor(Program):
 #         self.conv_kernel = mean_shape
         self.AT = AT
 
-    def model(self, trace, c):
+    #FIXME:
+    def model(self, trace, c, ix=(None, None)):
         # unpack inputs
         frames = c["frames"]
         timestep = c["timestep"]
@@ -98,7 +99,7 @@ class Enc_coor(Program):
             # We sampled all K RVs manually in for-loop above, and "simulate" a combinators sampling operation here.
             name='z_where_%d_prime'%(timestep+1)
             trace.normal(loc=q_mean, scale=q_std, value=z_where_t, name=name, provenance=Provenance.SAMPLED)
-            name_mod="_".join(name.split("_")[:3])
+            name_mod='z_where_%d'%(timestep+1)
             return {name_mod: trace[name].value}
         # Stuff happens in a Cond. Extend
         elif kernel_dir == 'reverse':
@@ -126,9 +127,9 @@ class Enc_digit(Program):
         self.reparameterized = reparameterized
         self.AT = AT
 
-    def model(self, trace, kernel_dir):
+    def model(self, trace, c, kernel_dir):
         frames = c["frame"]
-        z_where = []
+        z_where = ["z_where"]
         for t in range(frames.shape[2]):
             z_where.append(q['z_where_%d' % (t+1)].value.unsqueeze(2))
         z_where = torch.cat(z_where, 2)

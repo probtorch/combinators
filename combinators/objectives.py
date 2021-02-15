@@ -98,4 +98,3 @@ def _eval_nrep(rv):
         return ImproperRandomVariable(value=value, log_density_fn=rv.log_density_fn, provenance=rv.provenance)
     else:
         raise NotImplementedError("Only supports RandomVariable and ImproperRandomVariable")
-
