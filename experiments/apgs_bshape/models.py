@@ -7,6 +7,9 @@ from combinators.program import Program
 from torch.distributions.normal import Normal
 from torch.distributions.bernoulli import Bernoulli
 from experiments.apgs_bshape.affine_transformer import Affine_Transformer
+from collections import namedtuple
+
+apg_ix = namedtuple("apg_ix", ["sweep", "t", "dir"])
 
 # from combinators.inference import Program, Compose, Extend, Propose, Resample, Condition
 # Path to example programs: 
@@ -57,17 +60,15 @@ class Enc_coor(Program):
         self.AT = AT
 
     #FIXME:
-    def model(self, trace, c, ix=(None, None)):
+    def model(self, trace, c, ix):
         # unpack inputs
         frames = c["frames"]
-        timestep = c["timestep"]
         conv_kernel = c["conv_kernel"]
-        kernel_dir = c["kernel_dir"]
 
         # rethink q
         _, _, K, DP, _ = conv_kernel.shape
         S, B, T, FP, _ = frames.shape
-        frame_left = frames[:,:,timestep,:,:]
+        frame_left = frames[:,:,ix.t,:,:]
         q_mean, q_std = [], []
         z_where_t = []
         # K objects in frame
@@ -81,11 +82,11 @@ class Enc_coor(Program):
             q_mean.append(q_mean_k.unsqueeze(2))
 
             q_std.append(q_std_k.unsqueeze(2))
-            if kernel_dir == 'forward':
+            if ix.dir == 'forward':
                 z_where_k = Normal(q_mean_k, q_std_k).sample()
                 z_where_t.append(z_where_k.unsqueeze(2))
-            elif kernel_dir == 'reverse':
-                z_where_k = q['z_where_%d' % (timestep+1)].value[:,:,k,:]
+            elif ix.dir == 'reverse':
+                z_where_k = q['z_where_%d' % (ix.t+1)].value[:,:,k,:]
             recon_k = self.AT.digit_to_frame(conv_kernel[:,:,k,:,:].unsqueeze(2), z_where_k.unsqueeze(2).unsqueeze(2)).squeeze(2).squeeze(2)
             assert recon_k.shape ==(S,B,FP,FP), 'shape = %s' % recon_k.shape
             frame_left = frame_left - recon_k
@@ -93,18 +94,14 @@ class Enc_coor(Program):
         q_std = torch.cat(q_std, 2)
 
         # Stuff happens in a Compose
-        if kernel_dir == 'forward':
+        if ix.dir == 'forward':
             z_where_t = torch.cat(z_where_t, 2)
             # For performace reasons we want to add all K objects as one RV, hence we need to cheat here:
             # We sampled all K RVs manually in for-loop above, and "simulate" a combinators sampling operation here.
-            name='z_where_%d_prime'%(timestep+1)
-            trace.normal(loc=q_mean, scale=q_std, value=z_where_t, name=name, provenance=Provenance.SAMPLED)
-            name_mod='z_where_%d'%(timestep+1)
-            return {name_mod: trace[name].value}
-        # Stuff happens in a Cond. Extend
-        elif kernel_dir == 'reverse':
-            trace.normal(loc=q_mean, scale=q_std, name='z_where_%d'%(timestep+1))
-            # Don't output anything
+            trace.normal(loc=q_mean, scale=q_std,name='z_where_%d_%d'%(ix.t, ix.sweep),
+                         value=z_where_t, provenance=Provenance.SAMPLED)
+        elif ix.dir == 'reverse':
+            trace.normal(loc=q_mean, scale=q_std, name='z_where_%d_%d'%(ix.t, ix.sweep-1))
         else:
             raise ValueError("Kernel must be run either forward or reverse")
 
@@ -139,16 +136,15 @@ class Enc_digit(Program):
         q_mu = self.enc_digit_mean(hidden)
         q_std = self.enc_digit_log_std(hidden).exp()
         if kernel_dir == 'forward':
-            trace.normal(loc=q_mu, scale=q_std, name='z_what_prime')
-            return {"z_what": trace["z_what_prime"]}
+            trace.normal(loc=q_mu, scale=q_std, name='z_what_%d'%(ix.sweep))
         elif kernel_dir == 'reverse':
-            trace.normal(loc=q_mu, scale=q_std, name='z_what')
+            trace.normal(loc=q_mu, scale=q_std, name='z_what_%d'%(ix.sweep-1))
         else:
             raise ValueError
 
 class Decoder(Program):
     """
-    decoder 
+    decoder
     """
     def __init__(self, num_pixels, num_hidden, z_where_dim, z_what_dim, AT, conv_kernel, device):
         super(self.__class__, self).__init__()
@@ -186,43 +182,43 @@ class Decoder(Program):
             DP = int(math.sqrt(DP2))
             digit_mean = digit_mean.view(S, B, K, DP, DP)
 
-        if recon_level == 'object': ## return the recnostruction of objects
+        # In q_\phi
+        if recon_level == 'object': ## return the reconstruction of objects
             if "z_what" in c:
                 return {"digit_mean": digit_mean.detach()}
             else:
                 return {"conv_kernel": self.conv_kernel}
 
+        # In p_\theta
         elif recon_level =='frame': # return the reconstruction of a single frame
             _, _, T, FP, _ = frames.shape
             # prior of z_where
-            if timestep == 0:
+            if ix.t == 0:
                 trace.normal(loc=self.prior_where0_mu,
                              scale=self.prior_where0_Sigma,
-                             # value=q['z_where_%d' % (timestep+1)].value,
-                             name='z_where_%d' % (timestep+1))
+                             name='z_where_%d_%d' % (ix.t, ix.sweep))
 
             else:
-                trace.normal(loc=q['z_where_%d' % (timestep)].value,
+                trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (ix.t-1, ix.sweep)].value,
                              scale=self.prior_wheret_Sigma,
-                             # value=q['z_where_%d' % (timestep+1)].value,
-                             name='z_where_%d' % (timestep+1))
+                             name='z_where_%d_%d' % (ix.t, ix.sweep))
 
-            if timestep < (T-1):
-                trace.normal(loc=q['z_where_%d' % (timestep+1)].value,
+            if ix.t < (T-1):
+                trace.normal(loc=trace._cond_trace['z_where_%d' % (ix.t, ix.sweep)].value,
                              scale=self.prior_wheret_Sigma,
-                             # value=q['z_where_%d' % (timestep+2)].value,
-                             name='z_where_%d' % (timestep+2))
+                             name='z_where_%d_%d' % (ix.t+1, ix.sweep-1))
 
-            z_where = q['z_where_%d' % (timestep+1)].value.unsqueeze(2)
+            z_where = trace['z_where_%d' % (ix.t, ix.sweep)].value.unsqueeze(2)
             # prior of z_what
             trace.normal(loc=self.prior_what_mu,
                          scale=self.prior_what_std,
-                         # value=q['z_what'].value,
-                         name='z_what')
+                         name='z_what_%d'%(ix.sweep-1))
             recon_frames = torch.clamp(self.AT.digit_to_frame(digit_mean, z_where).squeeze(2).sum(-3), min=0.0, max=1.0) # S * B * FP * FP
-            _ = trace.variable(Bernoulli, probs=recon_frames, value=frames[:,:,timestep,:,:], name='recon',
+            _ = trace.variable(Bernoulli, probs=recon_frames, value=frames[:,:,ix.t,:,:], name='recon',
                                provenance=Provenance.OBSERVED)
+            return {}
 
+        # For z_what we need to reconstruct all frames
         elif recon_level =='frames': # return the reconstruction of the entire frames
             _, _, T, FP, _ = frames.shape
             z_wheres = []
@@ -249,20 +245,3 @@ class Decoder(Program):
             _= trace.variable(Bernoulli, probs=recon_frames, value=frames, name='recon', provenance=Provenance.OBSERVED)
         else:
             raise ValueError
-
-    # def log_prior(self, frames, z_where, z_what):
-    #     T = z_where.shape[2]
-    #     for t in range(T):
-    #         if t == 0:
-    #             log_p = Normal(loc=self.prior_where0_mu, scale=self.prior_where0_Sigma).log_prob(z_where[:,:,t,:,:]).sum(-1).sum(-1)
-    #         else:
-    #             log_p += Normal(loc=z_where[:,:,t-1,:,:], scale=self.prior_wheret_Sigma).log_prob(z_where[:,:,t,:,:]).sum(-1).sum(-1)
-
-    #     digit_mean = self.dec_digit_mean(z_what)  # S * B * K * (28*28)
-    #     S, B, K, DP2 = digit_mean.shape
-    #     DP = int(math.sqrt(DP2))
-    #     digit_mean = digit_mean.view(S, B, K, DP, DP)
-    #     recon_frames = torch.clamp(self.AT.digit_to_frame(digit=digit_mean, z_where=z_where).sum(-3), min=0.0, max=1.0) # S * B * T * FP * FP
-    #     log_p = Normal(self.prior_what_mu,self.prior_what_std).log_prob(z_what).sum(-1).sum(-1)
-    #     log_p += Bernoulli(probs=recon_frames).log_prob(frames).sum(-1).sum(-1).sum(-1)
-    #     return log_p
