@@ -232,11 +232,11 @@ def test_nvi_grads(K, sample_shape=(11,), batch_dim=1, sample_dims=0, resample=F
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
-        print(loss, ess)
+        tqdm_iterations.set_postfix(loss=loss.detach().cpu().item(), ess=ess.detach().cpu().item())
 
-        lw, loss = _get_stats(out, resample=resample)
-        losses.append(torch.stack(loss, dim=0))
-        lws.append(torch.stack(lw, dim=0))
+        rets = get_stats(out)
+        losses.append(torch.stack(rets['loss'], dim=0))
+        lws.append(torch.stack(rets['lw'], dim=0))
     lws = torch.stack(lws, dim=0)
     losses = torch.stack(losses, dim=0)
     ess = effective_sample_size(lws, sample_dims=2)
@@ -245,13 +245,13 @@ def test_nvi_grads(K, sample_shape=(11,), batch_dim=1, sample_dims=0, resample=F
     fig = plt.figure()
     for k in range(K):
         ax1 = fig.add_subplot(2, K, k+1)
-        ax1.plot(torch.tensor(losses[:, k]).squeeze(), label="loss")
+        ax1.plot(losses[:, k].detach().cpu().squeeze(), label="loss")
         ax1.legend()
         ax2 = fig.add_subplot(2, K, k+1+K)
-        ax2.plot(torch.tensor(ess[:, k]).squeeze(), label="ess")
+        ax2.plot(ess[:, k].detach().cpu().squeeze(), label="ess")
         ax2.legend()
     plt.show()
-    print()
+    # fig.savefig("results.pdf", bbox_inches='tight')
 
 if __name__ == '__main__':
     S = 288
