@@ -1,12 +1,19 @@
 import os
 import time
-import torch
 import argparse
+import torch
 import numpy as np
 from random import shuffle
-from combinators.tensor.utils import autodevice
-from combinators.utils import adam, git_root, save_models, load_models
+from torch import optim, Tensor, nn
+
 from combinators import debug
+from combinators import git_root, save_models, load_models
+from combinators import ImproperRandomVariable, RandomVariable, Trace, Program, Extend, Compose, Propose, Condition, Resample
+from combinators import trace_utils, adam, ppr, autodevice, kw_autodevice, nvo_rkl, nvo_avo, effective_sample_size, log_Z_hat
+
+from experiments.apgs_bshape.gibbs import gibbs_sweeps
+from experiments.apgs_bshape.models import init_models
+
 # from combinators.resampling.strategies import APGSResamplerOriginal
 # if debug.runtime() == 'jupyter':
 #     from tqdm.notebook import trange, tqdm
@@ -35,7 +42,7 @@ def train(optimizer, models, AT, resampler, num_sweeps, data_paths, shape_mean, 
                     with torch.cuda.device(device):
                         frames = frames.cuda()
                         shape_mean = shape_mean.cuda()
-                trace = apg_objective(models, AT, frames, K, result_flags, num_sweeps, resampler, shape_mean)
+                trace = gibbs_sweeps(models, K, T)
                 loss_phi = trace['loss_phi'].sum()
                 loss_theta = trace['loss_theta'].sum()
                 loss_phi.backward(retain_graph=True)
@@ -68,20 +75,7 @@ def train(optimizer, models, AT, resampler, num_sweeps, data_paths, shape_mean, 
             time_end = time.time()
             print("(%ds) Epoch=%d, Group=%d, " % (time_end - time_start, epoch, group) + metrics_print, file=log_file)
             log_file.close()
-
-
-            
-
     return models
-
-# def save_models(models, save_version):
-#     checkpoint = dict()
-#     for k,v in models.items():
-#         checkpoint[k] = v.state_dict()
-#     if not os.path.exists('./weights/'):
-#         os.makedirs('./weights/')
-#     torch.save(checkpoint, 'weights/cp-%s' % save_version)
-    
 
 
 if __name__ == '__main__':
@@ -114,175 +108,26 @@ if __name__ == '__main__':
         raise ValueError
     mean_shape = torch.load('./dataset/mean_shape.pt').cuda().to(device)
     models = init_models(args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, device)
-    
-    optimizer = torch.optim.Adam([v.parameters() for k,v in models.items()],lr=args.lr,betas=(0.9, 0.99))
-        
+
+    optimizer = optim.Adam([v.parameters() for k,v in models.items()],lr=args.lr,betas=(0.9, 0.99))
+
     print('Start training for bshape tracking task..')
     print('version=' + model_version)
-#     train(
-#         # objective=apg_comb,
-#         objective=apg_objective,
-#         optimizer=optimizer,
-#         models=models,
-#         AT1=AT1,
-#         AT2=AT2,
-#         resampler=resampler,
-#         num_sweeps=args.num_sweeps,
-#         data_paths=data_paths,
-#         shape_mean=shape_mean,
-#         num_objects=args.num_objects,
-#         num_epochs=args.num_epochs,
-#         sample_size=sample_size,
-#         batch_size=args.batch_size,
-#         device=device,
-#         model_version=model_version,
-#         checkpoint=False,
-#         checkpoint_filename=model_version)
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-# def apg_objective_declarative(models, AT, frames, K, result_flags, num_sweeps, resampler, shape_mean):
-#     # (enc_rws_eta, enc_apg_z, enc_apg_eta, generative, x, sample_size, num_sweeps, compare=True)
-#     compare = True
-#     if compare:
-#         # frames = frames[:,:,0:1,:,:]
-#         # frames = frames[:,:,:,:,:]
-#         pass
-#     T = frames.shape[2]
-#     if compare:
-#         debug.seed(1)
-#         from combinators.resampling.strategies import APGSResamplerOriginal
-#         sweeps, metrics = hao.apg_objective(models, AT, frames, K, result_flags, num_sweeps, resampler, shape_mean)
-#         print(sweeps[1]['trace']['iloss_phi'])
-#         print(sweeps[1]['trace']['iloss_theta'])
-#         debug.seed(1)
-#     print('hao done')
-#     sys.exit(0)
-#
-#     # xs ::  T * S * B * K * D
-#     isix = ix(sweep=1,rev=False,block='is',t=None)
-#
-#     T = frames.shape[2]
-#     S, B, K, DP, DP = digit.shape
-#     # for t in range(T):
-#
-#     # is_step_ = Propose(
-#     #     loss_fn=loss_fn,
-#     #     target=generative, ix=isix,
-#     #     #                   p(x,η_1,z_1)
-#     #     #        ---------------------------------------
-#     #     #            q(z_1 | η_1 x) q_rws(η_1 | x)
-#     #     proposal=Forward(enc_apg_z, enc_rws_eta, ix=isix))
-#
-#     # def loss_fn(cur, total_loss):
-#     #     ix = cur.proposal.ix
-#     #     jkwargs = dict(sample_dims=0, batch_dim=1, reparameterized=False)
-#     #
-#     #     log_w = cur.log_weight.detach()
-#     #     w = F.softmax(log_w, 0)
-#     #     log_q = cur.proposal.log_prob if ix.block == "is" else \
-#     #         cur.proposal.log_prob - cur.proposal.program.trace.log_joint(**jkwargs)
-#     #
-#     #     batch_loss = (w * (- log_q)).sum(0)
-#     #     if ix.block == 'z':
-#     #         batch_loss = batch_loss.sum(-1) # account for one-hot encoding
-#     #     return batch_loss.mean() + total_loss
-#
-#
-#     # propose = Resample(is_step)
-#     #
-#     # for sweep in range(2, num_sweeps+1):
-#     #     mkix = lambda block: (ix(sweep, True, block), ix(sweep, False, block))
-#     #     rix, fix = mkix('eta')
-#     #
-#     #     propose_eta = Propose(loss_fn=loss_fn,
-#     #         target=Reverse(propose, enc_apg_eta, ix=rix),
-#     #         #                p(x η_2 z_1) q(η_1 | z_1 x)
-#     #         #           --------------------------------------
-#     #         #                 q(η_2 | z_1 x) p(η_1,x,z_1)
-#     #         proposal=Resample(Forward(enc_apg_eta, propose, ix=fix), strategy=APGResampler))
-#     #
-#     #     rix, fix = mkix('z')
-#     #     propose_z = Propose(loss_fn=loss_fn,
-#     #         target=Reverse(generative, enc_apg_z, ix=rix),
-#     #         #             p(x η_2 z_2) q( z_1 | η_2 x)
-#     #         #        ----------------------------------------
-#     #         #            q(z_2 | η_2 x) p(η_2 x z_1)
-#     #         proposal=Resample(Forward(enc_apg_z, propose_eta)), ix=fix)
-#     #
-#     #     propose = propose_z
-#     out = propose(x=x, prior_ng=generative.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False, _debug=compare)
-#
-#     def traverse(out, getter):
-#         current = out
-#         returns = []
-#         while True:
-#             if current.type == "Propose":
-#                 returns.append(getter(current))
-#                 if isinstance(propose.target, Program):
-#                     returns.reverse()
-#                     return returns
-#                 current = current.proposal
-#             elif current.type in ["Resample", "Forward", "Reverse"]:
-#                 current = current.program
-#             else:
-#                 break
-#
-#         returns.reverse()
-#         return returns
-#
-#     losses = [out.loss] # traverse(out, lambda p: p.loss.squeeze())
-#     if compare:
-#         losses_hao = list(accumulate(sweeps[1]['metrics']['iloss'], operator.add))
-#         assert len(losses) == len(losses_hao)
-#         mismatch_losses = list(filter(lambda xs: not torch.equal(*xs), zip(losses, losses_hao)))
-#         if len(mismatch_losses) > 0:
-#             for l, r in mismatch_losses:
-#                 print(l, "!=", r)
-#             assert False
-#
-#
-#     return out.loss, {f"loss{i}":v.detach().cpu().item() for i, v in enumerate(losses)}
-#
-#
-#
-#
-#
-# # def apg():
-# #     propose = Resample(is_step)
-#
-# #     for sweep in range(2, num_sweeps+1):
-# #         mkix = lambda block: (ix(sweep, True, block), ix(sweep, False, block))
-# #         rix, fix = mkix('eta')
-# #         pr1 =
-# #         for t in range(timesteps):
-# #             pr1 = Propose(loss_fn=loss_fn,
-# #                 target=Reverse(propose, enc_apg_eta, ix=(rix, t)),
-# #                 #                p(x η_2 z_1) q(η_1 | z_1 x)
-# #                 #           --------------------------------------
-# #                 #                 q(η_2 | z_1 x) p(η_1,x,z_1)
-# #                 proposal=Resample(Forward(enc_apg_eta, pr1, ix=fix), strategy=APGResampler))
-#
-# #         rix, fix = mkix('z')
-# #         propose_z = Propose(loss_fn=loss_fn,
-# #             target=Reverse(generative, enc_apg_z, ix=rix),
-# #             #             p(x η_2 z_2) q( z_1 | η_2 x)
-# #             #        ----------------------------------------
-# #             #            q(z_2 | η_2 x) p(η_2 x z_1)
-# #             proposal=Resample(Forward(enc_apg_z, propose_eta)), ix=fix)
-#
-# #         propose = propose_z
-#     out = propose(x=x, prior_ng=generative.prior_ng, sample_dims=0, batch_dim=1, reparameterized=False, _debug=compare)
+    train(
+        objective=gibbs_sweeps,
+        optimizer=optimizer,
+        models=models,
+        AT1=AT1,
+        AT2=AT2,
+        resampler=resampler,
+        num_sweeps=args.num_sweeps,
+        data_paths=data_paths,
+        shape_mean=shape_mean,
+        num_objects=args.num_objects,
+        num_epochs=args.num_epochs,
+        sample_size=sample_size,
+        batch_size=args.batch_size,
+        device=device,
+        model_version=model_version,
+        checkpoint=False,
+        checkpoint_filename=model_version)

@@ -1,11 +1,13 @@
 import math
 import torch
 import torch.nn as nn
-from combinators.stochastic import Trace
-from combinators.program import Program
-from combinators.trace.utils import copytra
-from combinators.experiments.models import Enc_coor, Enc_digit, Decoder
+import torch.nn.functional as F
+from collections import namedtuple
+from combinators import Trace, Program, copytraces, Compose, Propose, Resample, Extend
+from experiments.apgs_bshape.models import Enc_coor, Enc_digit, Decoder
 
+loss_tuple = namedtuple('loss_tuple', ['phi', 'theta'])
+sweepix = namedtuple('sweepix', ['t', 'direction', 'is_step'])
 
 def loss_fn(out, total_loss):
     ix = out.p_out.ix
@@ -26,32 +28,31 @@ def loss_fn(out, total_loss):
     loss_phi = (w * (- log_q)).sum(0).mean()
     loss_theta = (w * (-log_p)).sum(0).mean()
 
-    return losstpl(phi=total_loss.phi + loss_phi, theta=total_loss.theta + loss_theta)
+    return loss_tuple(phi=total_loss.phi + loss_phi, theta=total_loss.theta + loss_theta)
 
 
 # Implement in a way that it extracts cov_kernel when t=0, and extracts z_where_{t-1} from c
 def gibbs_sweeps(models, K, T):
     q_enc_coor = models['enc_coor']
     q_enc_digit = models['enc_digit']
-    p_dec = models['dec']
+    p_dec_os = models['dec']
 
-    q_os = q_enc_coor(timestep=0, kernel_dir="forward")
+    q_os = q_enc_coor
     for t in range(1, T):
-        q_os = Compose(q_os, q_enc_coor, timestep=t, kernel_dir="forward")
-    q_os = Compose(q_is, q_enc_digit, kernel_dir="forward")
+        q_os = Compose(q_enc_coor, q_os, ix=sweepix(t, direction="forward", is_step=True))
+    q_os = Compose(q_enc_digit, q_os, ix=sweepix(t, direction="forward", is_step=True))
 
-    q_is = Propose(target=p_dec_os,
-                   proposal=q_os, loss_fn=loss_fn)
+    q_is = Propose(p=p_dec_os, q=q_os, loss_fn=loss_fn)
     q_is = Resample(q_is)
 
     q_t = q_is
     for k in (K-1): # Sweeps
         for t in range(T): # Time step
-            q_t = Propose(target=Extend(p_dec_os, q_enc_coor, ix=t, kernel_dir="reverse"),
-                          proposal=Compose(q_t, q_enc_coor, ix=t, kernel_dir="forward"),
+            q_t = Propose(p=Extend(p_dec_os, q_enc_coor, ix=sweepix(t=t, direction="reverse", is_step=False)),
+                          q=Compose(q_enc_coor, q_t, ix=sweepix(t=t, direction="forward", is_step=False)),
                           loss_fn=loss_fn)
             q_t = Resample(q_t)
-        q_t = Propose(target=Extend(p_dec_os, q_enc_digit, kernel_dir="reverse"),
-                      proposal=Compose(q_t, q_enc_digit, kernel_dir="forward"),
+        q_t = Propose(p=Extend(p_dec_os, q_enc_digit, ix=sweepix(t=T+1, direction="reverse", is_step=False)),
+                      q=Compose(q_enc_digit, q_t, ix=sweepix(t=T+1, direction="forward", is_step=False)),
                       loss_fn=loss_fn)
         q_t = Resample(q_t)
