@@ -76,8 +76,7 @@ def mk_mvn(i, loc, std=1):
 def mk_n(i, loc):
     return Normal(name=f'g{i}', loc=torch.ones(1, **kw_autodevice())*loc, scale=torch.ones(1, **kw_autodevice())**2)
 
-def paper_model():
-    num_targets = 8
+def paper_model(num_targets=8):
     g0 = mk_mvn(0, 0, std=5)
     gK = RingGMM(loc_scale=10, scale=0.5, count=8, name=f"g{num_targets - 1}").to(autodevice())
 

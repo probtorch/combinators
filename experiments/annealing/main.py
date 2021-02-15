@@ -218,7 +218,7 @@ def test_nvi_sampling_scheme(num_seeds=100):
     test_K_step_nvi(8, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=False, num_seeds=num_seeds)
 
 def test_nvi_grads(K, sample_shape=(11,), batch_dim=1, sample_dims=0, resample=False, iterations=100, loss_fn=nvo_avo):
-    out = mk_model(K+1)
+    out = paper_model(K+1)
     targets, forwards, reverses = [[m.to(autodevice()) for m in out[n]] for n in ['targets', 'forwards', 'reverses']]
     optimizer = adam([*targets, *forwards, *reverses])
 
@@ -303,5 +303,5 @@ if __name__ == '__main__':
     S = 288
     K = 3
     test_nvi_grads(K, sample_shape=(S//K,1), iterations=1000, batch_dim=1, sample_dims=0, resample=False)
-    test_nvi_grads(K, sample_shape=(S//K,1), iterations=1000, batch_dim=1, sample_dims=0, resample=True)
+    # test_nvi_grads(K, sample_shape=(S//K,1), iterations=1000, batch_dim=1, sample_dims=0, resample=True)
     print("done!")
