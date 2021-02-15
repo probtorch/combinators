@@ -9,27 +9,12 @@ from combinators.stochastic import Trace, RandomVariable
 from typing import Callable, Any, Tuple, Optional, Set
 from copy import deepcopy
 from typeguard import typechecked
-from combinators.types import check_passable_kwarg, Out
+from combinators.out import Out
+from combinators.program import check_passable_kwarg, Out
 import combinators.tensor.utils as tensor_utils
 import combinators.trace.utils as trace_utils
 import inspect
 
-
-@typechecked
-def remains_pure(tr: Trace) -> Callable[[Trace], bool]:
-    """ TODO """
-    cached = tr.detach().deepcopy()  # something like this to detach and copy all tensors
-
-    @typechecked
-    def check(tr: Trace) -> None:
-        if cached is not None:
-            # ensure check that everything is the same
-            del cached
-            return True
-        else:
-            raise RuntimeError("You can only perform this check once per operation")
-
-    return check
 
 def save_models(models, filename, weights_dir="./weights"):
     checkpoint = {k: v.state_dict() for k, v in models.items()}
@@ -90,21 +75,4 @@ def ppr(a:Any, m='dv', debug=False, desc='', **kkwargs):
 
 def pprm(a:Tensor, name='', **kkwargs):
     ppr(a, desc="{} ({: .4f})".format(name, a.detach().cpu().mean().item()), **kkwargs)
-
-# FIXME: currently not used, but currying the annotations might be nice
-def curry(func):
-    """ taken from: https://www.python-course.eu/currying_in_python.php """
-    curry.__curried_func_name__ = func.__name__
-    f_args, f_kwargs = [], {}
-    def f(*args, **kwargs):
-        nonlocal f_args, f_kwargs
-        if args or kwargs:
-            f_args += args
-            f_kwargs.update(kwargs)
-            return f
-        else:
-            result = func(*f_args, *f_kwargs)
-            f_args, f_kwargs = [], {}
-            return result
-    return f
 

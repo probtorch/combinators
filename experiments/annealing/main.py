@@ -9,15 +9,12 @@ from typing import Tuple
 from matplotlib import pyplot as plt
 from functools import partial
 
-import combinators.trace.utils as trace_utils
-from combinators.utils import adam, ppr
-from combinators.trace.utils import RequiresGrad
-from combinators.tensor.utils import autodevice, kw_autodevice, copy, show
-from combinators.objectives import nvo_rkl, nvo_avo
-from combinators.inference import *
-from combinators.stochastic import RandomVariable, ImproperRandomVariable
-from combinators.metrics import effective_sample_size, log_Z_hat
-from combinators.resampling.strategies import Systematic
+from combinators import adam, ppr
+from combinators import autodevice, kw_autodevice
+from combinators import nvo_rkl, nvo_avo
+from combinators import Propose, Extend, Compose, Resample
+from combinators import effective_sample_size, log_Z_hat
+from combinators import Systematic
 
 import experiments.visualize as V
 from experiments.annealing.models import mk_model, sample_along, paper_model

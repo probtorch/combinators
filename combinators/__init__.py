@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from combinators.stochastic import ImproperRandomVariable, RandomVariable, Trace
+from combinators.stochastic import ImproperRandomVariable, RandomVariable, Trace, Provenance
 from combinators.program import Program, dispatch
 from combinators.inference import Extend, Compose, Propose, Condition, Resample, copytraces, rerun_with_detached_values, maybe
 
@@ -18,7 +18,7 @@ from torch import Tensor
 _exports = \
   [Extend, Compose, Propose, Condition, Resample] + \
   [Program] + \
-  [Trace, RandomVariable, ImproperRandomVariable]
+  [Trace, RandomVariable, ImproperRandomVariable, Provenance]
 
 __all__ = [cls.__name__ for cls in _exports] + [
     "dispatch",

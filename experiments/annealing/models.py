@@ -7,15 +7,14 @@ from tqdm import trange
 from typing import Tuple
 from matplotlib import pyplot as plt
 
-import combinators.trace.utils as trace_utils
-from combinators.trace.utils import RequiresGrad
-from combinators.tensor.utils import autodevice, kw_autodevice, copy, show
+from combinators import autodevice, kw_autodevice
+from combinators import nvo_rkl, nvo_avo
+from combinators import RandomVariable, ImproperRandomVariable
+from combinators import effective_sample_size, log_Z_hat
+
 from combinators.densities import MultivariateNormal, Tempered, RingGMM, Normal
 from combinators.densities.kernels import ConditionalMultivariateNormal, ConditionalMultivariateNormalLinear
 from combinators.nnets import ResMLPJ
-from combinators.objectives import nvo_rkl, nvo_avo
-from combinators.stochastic import RandomVariable, ImproperRandomVariable
-from combinators.metrics import effective_sample_size, log_Z_hat
 
 def mk_kernel(from_:int, to_:int, std:float, num_hidden:int, learn_cov=True, activation=nn.ReLU):
     embedding_dim = 2

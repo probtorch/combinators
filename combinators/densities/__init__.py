@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 import math
 import torch
-import operator
-from functools import partial, reduce
-from torch import Tensor, distributions, Size, nn
+from torch import Tensor, distributions, nn
 import torch.distributions as D
 from typing import Optional, Dict, Union, Callable
 from combinators.tensor.utils import kw_autodevice, autodevice
@@ -12,7 +10,6 @@ import combinators.trace.utils as trace_utils
 from combinators.program import Program
 from combinators.embeddings import CovarianceEmbedding
 from combinators.stochastic import Trace, ImproperRandomVariable, RandomVariable, Provenance
-from combinators.types import TraceLike
 
 class Distribution(Program):
     """ Normalized version of Density but trying to limit overly-complex class heirarchies """

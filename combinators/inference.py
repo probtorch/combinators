@@ -6,17 +6,12 @@ from typing import Any, Tuple, Optional, Union, Set, Callable
 from abc import ABC
 from typing import NamedTuple
 
-import combinators.debug as debug
-import combinators.trace.utils as trace_utils
-import combinators.tensor.utils as tensor_utils
 import combinators.resampling.strategies as rstrat
 
-from combinators.types import check_passable_kwarg, Out
-from combinators.trace.utils import RequiresGrad
+from combinators.out import Out
 from combinators.tensor.utils import autodevice, kw_autodevice
 from combinators.stochastic import Trace, Provenance, RandomVariable, ImproperRandomVariable
-from combinators.program import Program, dispatch
-from combinators.kernel import Kernel
+from combinators.program import Program, dispatch, check_passable_kwarg
 from combinators.traceable import Conditionable
 from combinators.metrics import effective_sample_size
 
@@ -81,10 +76,6 @@ class Condition(Inf):
     def __init__(self,
             program: Conditionable,
             cond_trace: Optional[Trace]=None,
-            requires_grad:RequiresGrad=RequiresGrad.DEFAULT,
-            detach:Set[str]=set(),
-            as_trace=True,
-            full_trace_return=True,
             ix=None,
             _debug=False,
             loss_fn=(lambda x, fin: fin),
@@ -95,11 +86,6 @@ class Condition(Inf):
 
         # FIXME: do we actually need a copy of the trace?
         self.conditioning_trace = copytraces(cond_trace)
-
-        self._requires_grad = requires_grad
-        self._detach = detach
-        self.as_trace = as_trace
-        self.full_trace_return = full_trace_return
 
     def __call__(self, c:Any, _debug=False, **kwargs:Any) -> Out:
         """ Condition """

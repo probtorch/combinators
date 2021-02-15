@@ -4,9 +4,10 @@ import torch
 from torch import nn, Tensor
 from typing import Any
 from abc import abstractmethod
+import inspect
 
 from combinators.stochastic import Trace, Provenance
-from combinators.types import Out, check_passable_kwarg
+from combinators.out import Out
 
 from combinators.traceable import Conditionable
 
@@ -45,6 +46,9 @@ class Program(nn.Module, Conditionable):
 
         return Out(trace=trace, log_weight=log_weight, output=out, extras=dict(type=type(self).__name__, pytype=type(self)))
 
+def check_passable_kwarg(name, fn):
+    fullspec = inspect.getfullargspec(fn)
+    return fullspec.varkw is not None or name in fullspec.kwonlyargs or name in fullspec.args
 
 def dispatch(fn):
     def runit(*args:Any, **kwargs:Any):

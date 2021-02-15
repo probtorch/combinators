@@ -50,27 +50,3 @@ def prettyshape(size):
 def show(aten:Tensor, fix_width:bool=True)->str:
     t = str(aten.dtype).split(".")[-1]
     return f"{t}{prettyshape(aten.size())}{thash(aten)}"
-
-@typechecked
-def copy(aten:Tensor, requires_grad=False, deepcopy=False)->Tensor:
-    """
-    A copy that will deep- or shallow- copy depending on if you want the output tensor on the computation
-    graph.
-
-    Ref: https://stackoverflow.com/questions/55266154/pytorch-preferred-way-to-copy-a-tensor
-    """
-    if (requires_grad and not aten.requires_grad):
-        ret = aten.clone().detach()
-        ret.requires_grad_(True)
-        return ret
-    elif (requires_grad and aten.requires_grad) or (not requires_grad and not aten.requires_grad):
-        return aten.clone() if deepcopy else aten
-    else: # (not requires_grad and rv.value.requires_grad):
-        return aten.detach().clone() if deepcopy else aten.detach()
-
-def dim_contract(fn, expected_dims):
-    def wrapper(*args, **kwargs):
-        tr, out = fn(*args, **kwargs)
-        assert len(out.shape) == expected_dims, f"expected shape should be of length {expected_dims}"
-        return tr, out
-    return wrapper
