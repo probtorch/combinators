@@ -30,6 +30,12 @@ def loss_fn(out, total_loss):
 
     return loss_tuple(phi=total_loss.phi + loss_phi, theta=total_loss.theta + loss_theta)
 
+class Noop(Program):
+    def __init__(self):
+        super().__init__()
+    def model(self, trace, c):
+        return c
+
 
 # Implement in a way that it extracts cov_kernel when t=0, and extracts z_where_{t-1} from c
 def gibbs_sweeps(models, sweeps, T):
@@ -37,23 +43,25 @@ def gibbs_sweeps(models, sweeps, T):
     q_enc_digit = models['enc_digit']
     p_dec_os = models['dec']
 
-    q_os = q_enc_coor
-    for t in range(T):
-        q_os = Compose(q_enc_coor, q_os, ix=apg_ix(t, 0, "forward"))
-    q_os = Compose(q_enc_digit, q_os, ix=apg_ix(T, 0, "forward"))
+    # We need this because Enc_coor to swallow first index
+    q_os = Noop()
+    for t in range(0, T):
+        q_os = Compose(q_os, q_enc_coor, ix=apg_ix(t, 0, "forward"))
+    q_os = Compose(q_os, q_enc_digit, ix=apg_ix(T, 0, "forward"))
 
-    q_is = Propose(p=p_dec_os, q=q_os, loss_fn=loss_fn)
+    q_is = Propose(p=p_dec_os, q=q_os, ix=apg_ix(T, 0, "forward"),
+                   loss_fn=loss_fn)
     q_is = Resample(q_is)
 
     q_t = q_is
-    for sweep in (1, sweeps+1): # Sweeps
+    for sweep in range(1, sweeps+1): # Sweeps
         for t in range(T): # Time step
             q_t = Propose(p=Extend(p_dec_os, q_enc_coor, ix=apg_ix(t, sweep, "reverse")),
-                          q=Compose(q_enc_coor, q_t, ix=apg_ix(t, sweep, "forward"),
+                          q=Compose(q_t, q_enc_coor, ix=apg_ix(t, sweep, "forward")),
                           loss_fn=loss_fn)
             q_t = Resample(q_t)
-        q_t = Propose(p=Extend(p_dec_os, q_enc_digit, ix=apg_ix(t=T, sweep, "reverse")),
-                      q=Compose(q_enc_digit, q_t, ix=apg_ix(t=T, sweep, "forward")),
+        q_t = Propose(p=Extend(p_dec_os, q_enc_digit, ix=apg_ix(T, sweep, "reverse")),
+                      q=Compose(q_t, q_enc_digit, ix=apg_ix(T, sweep, "forward")),
                       loss_fn=loss_fn)
         q_t = Resample(q_t)
     return q_t

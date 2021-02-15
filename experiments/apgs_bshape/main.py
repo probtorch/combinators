@@ -141,19 +141,25 @@ def test_gibbs_sweep(sweeps, T):
     parser.add_argument('--z_where_dim', default=2, type=int)
     parser.add_argument('--z_what_dim', default=10, type=int)
     parser.add_argument('--K', default=3, type=int)
+    parser.add_argument('--num_samples', default=10, type=int)
+    # parser.add_argument('--device', default=autodevice(), type=int)
     args = parser.parse_args()
 
-    device = torch.device('cuda:%d' % args.device)
-
-    mean_shape = torch.load('./dataset/mean_shape.pt').cuda().to(device)
-    models = init_models(args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, args.K, device)
+    device = torch.device('cpu')
+    mean_shape = torch.load('./dataset/mean_shape.pt').to(device)
+    models = init_models(args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, args.K, mean_shape, device)
 
     data_paths = []
-    for file in os.listdir(args.data_dir + '%dobjects/' % args.num_objects):
-        data_paths.append(os.path.join(args.data_dir, '%dobjects' % args.num_objects, file))
-    frames = data_paths[0]
-    out = gibbs_sweeps(models, sweeps, T)(frames)
+    for file in os.listdir(args.data_dir):
+        data_paths.append(os.path.join(args.data_dir, file))
+    frames_path = data_paths[0]
+    frames = torch.from_numpy(np.load(frames_path)).float()
+    frames = frames.repeat(args.num_samples, 1, 1, 1, 1)
+
+    apg = gibbs_sweeps(models, sweeps, T)
+    c = {"frames": frames}
+    apg(c, sample_dims=0, batch_dim=1, reparameterized=False)
 
 if __name__ == '__main__':
-    test_gibbs_sweep(3, 5)
+    test_gibbs_sweep(sweeps=0, T=10)
 

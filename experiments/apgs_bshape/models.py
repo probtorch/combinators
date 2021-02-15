@@ -2,19 +2,19 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from combinators.stochastic import Trace, Provenance
+from combinators.stochastic import Trace, Provenance, RandomVariable
 from combinators.program import Program
 from torch.distributions.normal import Normal
 from torch.distributions.bernoulli import Bernoulli
 from experiments.apgs_bshape.affine_transformer import Affine_Transformer
 from collections import namedtuple
 
-apg_ix = namedtuple("apg_ix", ["sweep", "t", "dir"])
+apg_ix = namedtuple("apg_ix", ["t", "sweep", "dir"])
 
 # from combinators.inference import Program, Compose, Extend, Propose, Resample, Condition
 # Path to example programs: 
 
-def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, K, device):
+def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, K, mean_shape, device):
     models = dict()
     AT = Affine_Transformer(frame_pixels, shape_pixels, device)
 
@@ -23,17 +23,18 @@ def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z
                             z_where_dim=z_where_dim,
                             z_what_dim=z_what_dim,
                             AT=AT,
-                            device=device).cuda().to(device)
-    models['enc-coor'] = Enc_coor(num_pixels=(frame_pixels-shape_pixels+1)**2,
+                            device=device).to(device)
+    models['enc_coor'] = Enc_coor(num_pixels=(frame_pixels-shape_pixels+1)**2,
+                                  mean_shape=mean_shape,
                                   num_hidden=num_hidden_coor,
                                   z_where_dim=z_where_dim,
                                   AT=AT,
                                   dec=models["dec"],
-                                  K=K).cuda().to(device)
-    models['enc-digit'] = Enc_digit(num_pixels=shape_pixels**2,
+                                  K=K).to(device)
+    models['enc_digit'] = Enc_digit(num_pixels=shape_pixels**2,
                                     num_hidden=num_hidden_digit,
                                     z_what_dim=z_what_dim,
-                                    AT=AT).cuda().to(device)
+                                    AT=AT).to(device)
     return models
 
 class Enc_coor(Program):
@@ -55,17 +56,18 @@ class Enc_coor(Program):
                             nn.Linear(num_hidden, int(0.5*num_hidden)),
                             nn.ReLU(),
                             nn.Linear(int(0.5*num_hidden), z_where_dim))
-        self.reparameterized = reparameterized
         self.AT = AT
         self.dec = dec
         self.mean_shape = mean_shape
-        self.K
+        self.K = K
 
     def model(self, trace, c, ix):
+        breakpoint()
         frames = c["frames"]
         S, B, T, FP, _ = frames.shape
         if ix.sweep == 0:
-            conv_kernel = self.mean_shape.expand(S, B, self.K, self.mean_shape.shape[0], self.mean_shape.shape[1])
+            # FIXME: FIgure out if we can use cheaper expand here
+            conv_kernel = self.mean_shape.repeat(S, B, self.K, 1, 1)
         else:
             z_what = c['z_what_%d' % (ix.sweep-1)]
             conv_kernel = self.dec.get_conv_kernel(z_what)
@@ -101,8 +103,15 @@ class Enc_coor(Program):
             z_where_t = torch.cat(z_where_t, 2)
             # For performace reasons we want to add all K objects as one RV, hence we need to cheat here:
             # We sampled all K RVs manually in for-loop above, and "simulate" a combinators sampling operation here.
-            trace.normal(loc=q_mean, scale=q_std,name='z_where_%d_%d'%(ix.t, ix.sweep),
-                         value=z_where_t, provenance=Provenance.SAMPLED)
+            trace.append(RandomVariable(Normal(loc=q_mean, scale=q_std),
+                                        value=z_where_t,
+                                        provenance=Provenance.SAMPLED,
+                                        reparameterized=False),
+                         name='z_where_%d_%d'%(ix.t, ix.sweep))
+            # We need this because in initial IS step this is not run as a "kernel"
+            if ix.sweep == 0:
+                return {**c, 'z_where_%d_%d'%(ix.t, ix.sweep): z_where_t}
+            return c
         elif ix.dir == 'reverse':
             trace.normal(loc=q_mean, scale=q_std, name='z_where_%d_%d'%(ix.t, ix.sweep-1))
         else:
@@ -112,7 +121,7 @@ class Enc_digit(Program):
     """
     encoder of digit features
     """
-    def __init__(self, num_pixels, num_hidden, z_what_dim, AT, reparameterized=False):
+    def __init__(self, num_pixels, num_hidden, z_what_dim, AT):
         super(self.__class__, self).__init__()
         self.enc_digit_hidden = nn.Sequential(
                         nn.Linear(num_pixels, num_hidden),
@@ -123,8 +132,6 @@ class Enc_digit(Program):
                         nn.Linear(int(0.5*num_hidden), z_what_dim))
         self.enc_digit_log_std = nn.Sequential(
                         nn.Linear(int(0.5*num_hidden), z_what_dim))
-
-        self.reparameterized = reparameterized
         self.AT = AT
 
     def model(self, trace, c, ix):
@@ -160,19 +167,11 @@ class Decoder(Program):
                                     nn.Linear(num_hidden, num_pixels),
                                     nn.Sigmoid())
 
-        self.prior_where0_mu = torch.zeros(z_where_dim)
-        self.prior_where0_Sigma = torch.ones(z_where_dim) * 1.0
-        self.prior_wheret_Sigma = torch.ones(z_where_dim) * 0.2
-        self.prior_what_mu = torch.zeros(z_what_dim)
-        self.prior_what_std = torch.ones(z_what_dim)
-
-        if torch.cuda.is_available():
-            with torch.cuda.device(device):
-                self.prior_where0_mu  = self.prior_where0_mu.cuda()
-                self.prior_where0_Sigma = self.prior_where0_Sigma.cuda()
-                self.prior_wheret_Sigma = self.prior_wheret_Sigma.cuda()
-                self.prior_what_mu = self.prior_what_mu.cuda()
-                self.prior_what_std = self.prior_what_std.cuda()
+        self.prior_where0_mu = torch.zeros(z_where_dim, device=device)
+        self.prior_where0_Sigma = torch.ones(z_where_dim, device=device) * 1.0
+        self.prior_wheret_Sigma = torch.ones(z_where_dim, device=device) * 0.2
+        self.prior_what_mu = torch.zeros(z_what_dim, device=device)
+        self.prior_what_std = torch.ones(z_what_dim, device=device)
         self.AT = AT
 
     # In q_\phi case
@@ -215,13 +214,13 @@ class Decoder(Program):
             recon_frames = torch.clamp(self.AT.digit_to_frame(digit_mean, z_where.unsqueeze(2)).squeeze(2).sum(-3), min=0.0, max=1.0) # S * B * FP * FP
             _ = trace.variable(Bernoulli, probs=recon_frames, value=frames[:,:,ix.t,:,:], name='recon',
                                provenance=Provenance.OBSERVED)
-            return {"z_where_%d_%d"%(ix.t, ix.sweep): z_where}
+            return {"z_where_%d_%d"%(ix.t, ix.sweep): z_where, "frames": c["frames"]}
 
         # In p_\theta - z_what case
         # For z_what we need to reconstruct all frames
         else:
-            z_what = trace._cond_trace["z_what_%d"%(ix.sweep)
-            digit_mean = self.get_conv_kernel(z_what], detach=False)
+            z_what = trace._cond_trace["z_what_%d"%(ix.sweep)]
+            digit_mean = self.get_conv_kernel(z_what, detach=False)
             # prior of z_where
             z_wheres = []
             for t in range(T):
@@ -241,6 +240,4 @@ class Decoder(Program):
             z_wheres = torch.cat(z_wheres, 2)
             recon_frames = torch.clamp(self.AT.digit_to_frame(digit_mean, z_wheres).sum(-3), min=0.0, max=1.0) # S * B * T * FP * FP
             _= trace.variable(Bernoulli, probs=recon_frames, value=frames, name='recon', provenance=Provenance.OBSERVED)
-            return {"z_what_%d"%(ix.sweep): z_what}
-        else:
-            raise ValueError
+            return {"z_what_%d"%(ix.sweep): z_what, "frames": c["frames"]}
