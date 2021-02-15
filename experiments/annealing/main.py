@@ -66,6 +66,13 @@ def get_stats(out):
     lws, losses, outs = zip(*ret)
     return dict(lw=lws, loss=losses, out=outs)
 
+def forward_sample(proposal, kernels, sample_shape=(2000,), sample_dims=None, batch_dim=None):
+    q = proposal
+    for k in kernels:
+        q = Compose(k, q)
+    out = q(None, sample_shape=sample_shape, sample_dims=sample_dims, batch_dim=batch_dim)
+    return out.trace
+
 def print_and_sum_loss(loss_fn, out, loss):
     step_loss = loss_fn(out)
     # step_loss = step_loss if not loss == 0. else step_loss.detach()
@@ -230,35 +237,71 @@ def test_nvi_grads(K, sample_shape=(11,), batch_dim=1, sample_dims=0, resample=F
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
+
+        # =================================================== #
+        #                    tqdm updates                     #
+        # +++++++++++++++++++++++++++++++++++++++++++++++++++ #
         tqdm_loss_tot += loss.detach().cpu().item()
         tqdm_ess_tot += ess.detach().cpu().item()
         if i % tqdm_window == 0:
             tqdm_iterations.set_postfix(loss=tqdm_loss_tot / 10., ess=tqdm_ess_tot / 10.)
             tqdm_loss_tot = 0.
             tqdm_ess_tot = 0.
+        # =================================================== #
 
-        rets = get_stats(out)
-        losses.append(torch.stack(rets['loss'], dim=0))
-        lws.append(torch.stack(rets['lw'], dim=0))
+        # rets = get_stats(out)
+        # losses.append(torch.stack(rets['loss'], dim=0))
+        # lws.append(torch.stack(rets['lw'], dim=0))
+        lw, loss = _get_stats(out, resample=resample)
+        losses.append(torch.stack(loss, dim=0))
+        lws.append(torch.stack(lw, dim=0))
     lws = torch.stack(lws, dim=0)
     losses = torch.stack(losses, dim=0)
     ess = effective_sample_size(lws, sample_dims=2)
     # test_weights_after_training = forwards[0].net.map_cov[0].weight
 
-    fig = plt.figure()
+    fig = plt.figure(figsize=(K*4, 3*4))
     for k in range(K):
-        ax1 = fig.add_subplot(2, K, k+1)
-        ax1.plot(losses[:, k].detach().cpu().squeeze(), label="loss")
-        ax1.legend()
-        ax2 = fig.add_subplot(2, K, k+1+K)
-        ax2.plot(ess[:, k].detach().cpu().squeeze(), label="ess")
-        ax2.legend()
-    plt.show()
-    # fig.savefig("results.pdf", bbox_inches='tight')
+        ax1 = fig.add_subplot(3, K, k+1)
+        ax1.plot(losses[:, k].detach().cpu().squeeze())
+        if k == 0:
+            ax1.set_ylabel("loss", fontsize=18)
+        ax2 = fig.add_subplot(3, K, k+1+K)
+        ax2.plot(ess[:, k].detach().cpu().squeeze())
+        if k == 0:
+            ax2.set_ylabel("ess", fontsize=18)
+
+    tr = forward_sample(targets[0], forwards, sample_shape=(10000,), batch_dim=batch_dim, sample_dims=sample_dims,)
+    samples = [(t.name, tr[t.name].value) for t in targets[1:]]  # skip the initial gaussian proposal
+
+    for k in range(K):
+        ax3 = fig.add_subplot(3, K, k+1+2*K)
+        label, X = samples[k]
+        plot_sample_hist(ax3, X)
+        ax3.set_xlabel(label, fontsize=18)
+        if k == 0:
+            ax3.set_ylabel("samples", fontsize=18)
+
+    fig.tight_layout(pad=1.0)
+    # plt.show()
+    fig.savefig("results.pdf", bbox_inches='tight')
+
+def plot_sample_hist(ax, samples, sort=True, bins=50, range=None, weight_cm=False, **kwargs):
+    import numpy as np
+    # ax.tick_params(bottom=False, top=False, left=False, right=False,
+    #                labelbottom=False, labeltop=False, labelleft=False, labelright=False)
+    # ax.grid(False)
+    x, y = samples.detach().cpu().numpy().T
+    mz, x_e, y_e = np.histogram2d(x, y, bins=bins, density=True, range=range)
+    X, Y = np.meshgrid(x_e, y_e)
+    if weight_cm:
+        raise NotImplemented()
+    else:
+        ax.imshow(mz, **kwargs)
 
 if __name__ == '__main__':
     S = 288
     K = 3
     test_nvi_grads(K, sample_shape=(S//K,1), iterations=1000, batch_dim=1, sample_dims=0, resample=False)
-    # test_nvi_grads(K, sample_shape=(S//K,1), iterations=1000, batch_dim=1, sample_dims=0, resample=True)
+    test_nvi_grads(K, sample_shape=(S//K,1), iterations=1000, batch_dim=1, sample_dims=0, resample=True)
     print("done!")
