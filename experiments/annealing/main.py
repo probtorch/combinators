@@ -217,10 +217,8 @@ def test_nvi_grads(K, sample_shape=(11,), batch_dim=1, sample_dims=0, resample=F
 
     losses= []
     lws = []
-
-    _losses= []
-    _lws = []
     tqdm_iterations = trange(iterations)
+    tqdm_window, tqdm_ess_tot, tqdm_loss_tot = 10, 0., 0.
     for i in tqdm_iterations:
         out = nvi_declarative(targets, forwards, reverses, loss_fn,
                               sample_shape, batch_dim=batch_dim, sample_dims=sample_dims,
@@ -232,7 +230,12 @@ def test_nvi_grads(K, sample_shape=(11,), batch_dim=1, sample_dims=0, resample=F
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
-        tqdm_iterations.set_postfix(loss=loss.detach().cpu().item(), ess=ess.detach().cpu().item())
+        tqdm_loss_tot += loss.detach().cpu().item()
+        tqdm_ess_tot += ess.detach().cpu().item()
+        if i % tqdm_window == 0:
+            tqdm_iterations.set_postfix(loss=tqdm_loss_tot / 10., ess=tqdm_ess_tot / 10.)
+            tqdm_loss_tot = 0.
+            tqdm_ess_tot = 0.
 
         rets = get_stats(out)
         losses.append(torch.stack(rets['loss'], dim=0))
