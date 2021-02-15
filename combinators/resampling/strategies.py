@@ -69,7 +69,7 @@ class Systematic(Strategy):
 
             if isinstance(rv, RandomVariable):
                 var = RandomVariable(dist=rv._dist, value=value, log_prob=log_prob,
-                                     provenance=rv.provenance)
+                                     provenance=rv.provenance, reparameterized=rv.reparameterized)
             elif isinstance(rv, ImproperRandomVariable):
                 var = ImproperRandomVariable(log_density_fn=rv.log_density_fn, value=value, log_prob=log_prob,
                                              provenance=rv.provenance)

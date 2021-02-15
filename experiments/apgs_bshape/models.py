@@ -62,15 +62,19 @@ class Enc_coor(Program):
         self.K = K
 
     def model(self, trace, c, ix):
-        breakpoint()
         frames = c["frames"]
         S, B, T, FP, _ = frames.shape
         if ix.sweep == 0:
             # FIXME: FIgure out if we can use cheaper expand here
             conv_kernel = self.mean_shape.repeat(S, B, self.K, 1, 1)
         else:
-            z_what = c['z_what_%d' % (ix.sweep-1)]
-            conv_kernel = self.dec.get_conv_kernel(z_what)
+            if ix.dir == "forward":
+                z_what_val = c['z_what_%d' % (ix.sweep-1)]
+            elif ix.dir == "reverse":
+                z_what_val = trace._cond_trace['z_what_%d' % (ix.sweep-1)].value
+            else:
+                raise ValueError("Kernel can only be run forward or in reverse")
+            conv_kernel = self.dec.get_conv_kernel(z_what_val)
 
         _, _, K, DP, _ = conv_kernel.shape
         frame_left = frames[:,:,ix.t,:,:]
@@ -88,11 +92,11 @@ class Enc_coor(Program):
 
             q_std.append(q_std_k.unsqueeze(2))
             if ix.dir == 'forward':
-                z_where_k = Normal(q_mean_k, q_std_k).sample()
-                z_where_t.append(z_where_k.unsqueeze(2))
+                z_where_val_k = Normal(q_mean_k, q_std_k).sample()
+                z_where_t.append(z_where_val_k.unsqueeze(2))
             elif ix.dir == 'reverse':
-                z_where_k = q['z_where_%d' % (ix.t+1)].value[:,:,k,:]
-            recon_k = self.AT.digit_to_frame(conv_kernel[:,:,k,:,:].unsqueeze(2), z_where_k.unsqueeze(2).unsqueeze(2)).squeeze(2).squeeze(2)
+                z_where_val_k = trace._cond_trace['z_where_%d_%d' % (ix.t, ix.sweep-1)].value[:,:,k,:]
+            recon_k = self.AT.digit_to_frame(conv_kernel[:,:,k,:,:].unsqueeze(2), z_where_val_k.unsqueeze(2).unsqueeze(2)).squeeze(2).squeeze(2)
             assert recon_k.shape ==(S,B,FP,FP), 'shape = %s' % recon_k.shape
             frame_left = frame_left - recon_k
         q_mean = torch.cat(q_mean, 2)
@@ -141,6 +145,7 @@ class Enc_digit(Program):
         z_where = []
         for t in range(frames.shape[2]):
             z_where.append(c["z_where_%d_%d"%(t, ix.sweep)].unsqueeze(2))
+
         z_where = torch.cat(z_where, 2)
         cropped = self.AT.frame_to_digit(frames=frames, z_where=z_where)
         cropped = torch.flatten(cropped, -2, -1)
@@ -152,7 +157,7 @@ class Enc_digit(Program):
         elif ix.dir == 'reverse':
             trace.normal(loc=q_mu, scale=q_std, name='z_what_%d'%(ix.sweep-1))
         else:
-            raise ValueError
+            raise ValueError("Kernel must be run either forward or reverse")
 
 class Decoder(Program):
     """
@@ -175,8 +180,8 @@ class Decoder(Program):
         self.AT = AT
 
     # In q_\phi case
-    def get_conv_kernel(self, z_what, detach=True):
-        digit_mean = self.dec_digit_mean(z_what)  # S * B * K * (28*28)
+    def get_conv_kernel(self, z_what_value, detach=True):
+        digit_mean = self.dec_digit_mean(z_what_value)  # S * B * K * (28*28)
         S, B, K, DP2 = digit_mean.shape
         DP = int(math.sqrt(DP2))
         digit_mean = digit_mean.view(S, B, K, DP, DP)
@@ -189,7 +194,8 @@ class Decoder(Program):
 
         # In p_\theta - z_where case
         if ix.sweep > 0 and ix.t != T:
-            digit_mean = self.get_conv_kernel(trace._cond_trace["z_what_%d"%(ix.sweep-1)], detach=False)
+            z_what = trace._cond_trace["z_what_%d"%(ix.sweep-1)]
+            digit_mean = self.get_conv_kernel(z_what.value, detach=False)
             # prior of z_where
             if ix.t == 0:
                 trace.normal(loc=self.prior_where0_mu,
@@ -202,25 +208,27 @@ class Decoder(Program):
                              name='z_where_%d_%d' % (ix.t, ix.sweep))
 
             if ix.t < (T-1):
-                trace.normal(loc=trace._cond_trace['z_where_%d' % (ix.t, ix.sweep)].value,
+                trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (ix.t, ix.sweep)].value,
                              scale=self.prior_wheret_Sigma,
                              name='z_where_%d_%d' % (ix.t+1, ix.sweep-1))
 
-            z_where = trace._cond_trace['z_where_%d' % (ix.t, ix.sweep)].value
+            z_where_val = trace._cond_trace['z_where_%d_%d' % (ix.t, ix.sweep)].value
             # prior of z_what
             trace.normal(loc=self.prior_what_mu,
                          scale=self.prior_what_std,
                          name='z_what_%d'%(ix.sweep-1))
-            recon_frames = torch.clamp(self.AT.digit_to_frame(digit_mean, z_where.unsqueeze(2)).squeeze(2).sum(-3), min=0.0, max=1.0) # S * B * FP * FP
+            recon_frames = torch.clamp(self.AT.digit_to_frame(digit_mean, z_where_val.unsqueeze(2)).squeeze(2).sum(-3), min=0.0, max=1.0) # S * B * FP * FP
             _ = trace.variable(Bernoulli, probs=recon_frames, value=frames[:,:,ix.t,:,:], name='recon',
                                provenance=Provenance.OBSERVED)
-            return {"z_where_%d_%d"%(ix.t, ix.sweep): z_where, "frames": c["frames"]}
+            # We need z_what here as well because we need it to get the conv. kernel
+            return {**{"z_what_%d"%(ix.sweep-1): z_what.value, "frames": c["frames"]},
+                    **{"z_where_%d_%d"%(t, ix.sweep): trace._cond_trace['z_where_%d_%d' % (t, ix.sweep)].value for t in range(ix.t+1)}}
 
         # In p_\theta - z_what case
         # For z_what we need to reconstruct all frames
         else:
             z_what = trace._cond_trace["z_what_%d"%(ix.sweep)]
-            digit_mean = self.get_conv_kernel(z_what, detach=False)
+            digit_mean = self.get_conv_kernel(z_what.value, detach=False)
             # prior of z_where
             z_wheres = []
             for t in range(T):
@@ -229,7 +237,7 @@ class Decoder(Program):
                                  scale=self.prior_where0_Sigma,
                                  name='z_where_%d_%d' % (t, ix.sweep))
                 else:
-                    trace.normal(loc=q['z_where_%d_%d' % (t-1, ix.sweep)].value,
+                    trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (t-1, ix.sweep)].value,
                                  scale=self.prior_wheret_Sigma,
                                  name='z_where_%d_%d' % (t, ix.sweep))
                 z_wheres.append(trace['z_where_%d_%d' % (t, ix.sweep)].value.unsqueeze(2))
@@ -240,4 +248,4 @@ class Decoder(Program):
             z_wheres = torch.cat(z_wheres, 2)
             recon_frames = torch.clamp(self.AT.digit_to_frame(digit_mean, z_wheres).sum(-3), min=0.0, max=1.0) # S * B * T * FP * FP
             _= trace.variable(Bernoulli, probs=recon_frames, value=frames, name='recon', provenance=Provenance.OBSERVED)
-            return {"z_what_%d"%(ix.sweep): z_what, "frames": c["frames"]}
+            return {"z_what_%d"%(ix.sweep): z_what.value, "frames": c["frames"]}

@@ -157,9 +157,9 @@ def test_gibbs_sweep(sweeps, T):
     frames = frames.repeat(args.num_samples, 1, 1, 1, 1)
 
     apg = gibbs_sweeps(models, sweeps, T)
-    c = {"frames": frames}
+    c = {"frames": frames[:,:,:T]}
     apg(c, sample_dims=0, batch_dim=1, reparameterized=False)
 
 if __name__ == '__main__':
-    test_gibbs_sweep(sweeps=0, T=10)
+    test_gibbs_sweep(sweeps=1, T=2)
 
