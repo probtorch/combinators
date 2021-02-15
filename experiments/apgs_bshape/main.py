@@ -77,8 +77,7 @@ def train(optimizer, models, AT, resampler, num_sweeps, data_paths, shape_mean, 
             log_file.close()
     return models
 
-
-if __name__ == '__main__':
+def run_apg():
     parser = argparse.ArgumentParser('Bouncing Shapes')
     parser.add_argument('--data_dir', default='./dataset/video/')
     parser.add_argument('--device', default=1, type=int)
@@ -131,3 +130,30 @@ if __name__ == '__main__':
         model_version=model_version,
         checkpoint=False,
         checkpoint_filename=model_version)
+
+def test_gibbs_sweep(sweeps, T):
+    parser = argparse.ArgumentParser('Bouncing Shapes')
+    parser.add_argument('--data_dir', default='./dataset/video/')
+    parser.add_argument('--frame_pixels', default=96, type=int)
+    parser.add_argument('--shape_pixels', default=28, type=int)
+    parser.add_argument('--num_hidden_digit', default=400, type=int)
+    parser.add_argument('--num_hidden_coor', default=400, type=int)
+    parser.add_argument('--z_where_dim', default=2, type=int)
+    parser.add_argument('--z_what_dim', default=10, type=int)
+    parser.add_argument('--K', default=3, type=int)
+    args = parser.parse_args()
+
+    device = torch.device('cuda:%d' % args.device)
+
+    mean_shape = torch.load('./dataset/mean_shape.pt').cuda().to(device)
+    models = init_models(args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, args.K, device)
+
+    data_paths = []
+    for file in os.listdir(args.data_dir + '%dobjects/' % args.num_objects):
+        data_paths.append(os.path.join(args.data_dir, '%dobjects' % args.num_objects, file))
+    frames = data_paths[0]
+    out = gibbs_sweeps(models, sweeps, T)(frames)
+
+if __name__ == '__main__':
+    test_gibbs_sweep(3, 5)
+
