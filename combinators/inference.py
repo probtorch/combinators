@@ -325,12 +325,15 @@ class Propose(Inf):
                 nodes=nodes,
                 ## stats ##
                 ess = effective_sample_size(lw_out, sample_dims=sample_dims),
+                ## annealing objectives ##
+                lv=lv,
+                proposal_trace=q_out.trace,
+                target_trace=copytraces(p_out.trace, p_out.trace_star),
                 ## apg ##
                 p_num=p_out.p_out.log_weight if (p_out.type == "Extend") else p_out.log_weight,
                 q_den=lu_star,
                 #########
                 trace_original=p_out.trace,
-                lv=lv,
                 q_out=q_out,
                 p_out=p_out,
                 type=type(self).__name__,

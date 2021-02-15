@@ -55,4 +55,3 @@ def gibbs_sweeps(models, K, T):
                       proposal=Compose(q_t, q_enc_digit, kernel_dir="forward"),
                       loss_fn=loss_fn)
         q_t = Resample(q_t)
-

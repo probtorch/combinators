@@ -82,6 +82,7 @@ class Density(Program):
     def model(self, trace, c):
         assert trace._cond_trace is not None and self.name in trace._cond_trace, "an improper RV can only condition on values in an existing trace"
         rv = ImproperRandomVariable(log_density_fn=self.log_density_fn, value=trace._cond_trace[self.name].value, provenance=Provenance.REUSED)
+        # assert rv.log_prob.grad_fn is not None
         trace.append(rv, name=self.name)
         return {self.name: rv.value}
 

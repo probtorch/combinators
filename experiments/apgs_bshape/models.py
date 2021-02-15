@@ -26,7 +26,6 @@ def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z
                                   z_where_dim=z_where_dim,
                                   AT=AT,
                                   dec=models["dec"]).cuda().to(device)
-
     models['enc-digit'] = Enc_digit(num_pixels=shape_pixels**2,
                                     num_hidden=num_hidden_digit,
                                     z_what_dim=z_what_dim,

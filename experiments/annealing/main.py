@@ -7,13 +7,13 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import trange
 from typing import Tuple
 from matplotlib import pyplot as plt
+from functools import partial
 
 import combinators.trace.utils as trace_utils
 from combinators.utils import adam, ppr
 from combinators.trace.utils import RequiresGrad
 from combinators.tensor.utils import autodevice, kw_autodevice, copy, show
-from combinators.densities import MultivariateNormal, Tempered, RingGMM, Normal, Density
-from combinators.objectives import nvo_rkl, nvo_avo, mb0, mb1, _estimate_mc, eval_nrep
+from combinators.objectives import nvo_rkl, nvo_avo
 from combinators.inference import *
 from combinators.stochastic import RandomVariable, ImproperRandomVariable
 from combinators.metrics import effective_sample_size, log_Z_hat
@@ -40,38 +40,19 @@ def _get_stats(out, lw=[], loss=[], resample=False)->[Tensor]:
         return (_lw, _loss)
     #FIXME: It is this gd fn
 
-def report(writer, ess, lzh, loss_scalar, i, eval_break, targets, forwards):
-    with torch.no_grad():
-        # loss
-        writer.add_scalar('loss', loss_scalar, i)
-
-        # ESS
-        for step, x in zip(range(1,len(ess)+1), ess):
-            writer.add_scalar(f'ess/step-{step}', x, i)
-
-        # logZhat
-        for step, x in zip(range(1,len(lzh)+1), lzh):
-            writer.add_scalar(f'log_Z_hat/step-{step}', x, i)
-
-        # show samples
-        if i % eval_break == 0:
-            samples = sample_along(targets[0], forwards)
-            fig = V.scatter_along(samples)
-            writer.add_figure('overview', fig, global_step=i, close=True)
-
-def print_and_sum_loss(out, loss):
-    step_loss = nvo_avo(out.lv)
+def print_and_sum_loss(loss_fn, out, loss):
+    step_loss = loss_fn(out)
     # step_loss = step_loss if not loss == 0. else step_loss.detach()
     loss = loss + step_loss
     # print(loss)
     return loss
 
-def nvi_declarative(targets, forwards, reverses, sample_shape, batch_dim, sample_dims, resample=False):
+def nvi_declarative(targets, forwards, reverses, loss_fn, sample_shape, batch_dim, sample_dims, resample=False):
     q = targets[0]
     for k, (fwd, rev, p) in enumerate(zip(forwards, reverses, targets[1:])):
         q = Propose(p=Extend(p, rev),
                     q=Compose(fwd, q),
-                    loss_fn=print_and_sum_loss, _debug=True, ix=k, loss0=torch.zeros(1, **kw_autodevice()))
+                    loss_fn=partial(print_and_sum_loss, loss_fn), _debug=True, ix=k, loss0=torch.zeros(1, **kw_autodevice()))
         if resample:
             q = Resample(q)
     out = q(None, sample_shape=sample_shape, sample_dims=sample_dims, batch_dim=batch_dim)
@@ -145,7 +126,8 @@ def test_1_step_nvi(sample_shape=(10, 5), batch_dim=0, sample_dims=1):
     seeds = torch.arange(100)
     for seed in seeds:
         debug.seed(seed)
-        out = nvi_declarative(targets, forwards, reverses, sample_shape, batch_dim=batch_dim, sample_dims=sample_dims)
+        out = nvi_declarative(targets, forwards, reverses, nvo_avo,
+                              sample_shape, batch_dim=batch_dim, sample_dims=sample_dims)
 
         debug.seed(seed)
         lw, _ = compute_nvi_weight(targets[0], targets[1], forwards[0], reverses[0], lw_in=0.,
@@ -161,7 +143,7 @@ def test_K_step_nvi(K, sample_shape=(10, 5), batch_dim=0, sample_dims=1, resampl
     seeds = torch.arange(num_seeds)
     for seed in seeds:
         debug.seed(seed)
-        out = nvi_declarative(targets, forwards, reverses,
+        out = nvi_declarative(targets, forwards, reverses, avo_nvo,
                               sample_shape, batch_dim=batch_dim, sample_dims=sample_dims,
                               resample=resample)
 
@@ -210,7 +192,7 @@ def test_nvi_grads(K, sample_shape=(11,), batch_dim=1, sample_dims=0, resample=F
     losses= []
     lws = []
     for i in range(interations):
-        out = nvi_declarative(targets, forwards, reverses,
+        out = nvi_declarative(targets, forwards, reverses, nvo_rkl,
                               sample_shape, batch_dim=batch_dim, sample_dims=sample_dims,
                               resample=resample)
         loss = out.loss.mean()
@@ -241,12 +223,8 @@ def test_nvi_grads(K, sample_shape=(11,), batch_dim=1, sample_dims=0, resample=F
     plt.show()
     print()
 
-    # AVO seems to do the right thing without resampling.
-    # But with resampling the ess is always at max, hence our hypotheses is that we degenerate to 1 sample. why?
-    # -> we compute ess on final log_weight before resampling -> so it should not be one and the same for all samples -> weight variacne > 0 ->ess < 96
-
 if __name__ == '__main__':
     S = 288
     K = 3
-    # test_nvi_grads(K, sample_shape=(S//K,1), interations=10, batch_dim=1, sample_dims=0, resample=False)
-    test_nvi_grads(K, sample_shape=(S//K,1), interations=1000, batch_dim=1, sample_dims=0, resample=True)
+    test_nvi_grads(K, sample_shape=(S//K,1), interations=1000, batch_dim=1, sample_dims=0, resample=False)
+    # test_nvi_grads(K, sample_shape=(S//K,1), interations=1000, batch_dim=1, sample_dims=0, resample=True)

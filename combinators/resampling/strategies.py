@@ -64,8 +64,8 @@ class Systematic(Strategy):
                 print("OBSERVED RVs have not been resampled!")
                 break
             # FIXME: Do not detach all
-            value = pick(rv.value, aidx, sample_dims=sample_dims).detach()
-            log_prob = pick(rv.log_prob, aidx, sample_dims=sample_dims).detach()
+            value = pick(rv.value, aidx, sample_dims=sample_dims)
+            log_prob = pick(rv.log_prob, aidx, sample_dims=sample_dims)
 
             if isinstance(rv, RandomVariable):
                 var = RandomVariable(dist=rv._dist, value=value, log_prob=log_prob,

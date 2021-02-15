@@ -7,6 +7,7 @@ from torch import Tensor
 from typing import Tuple
 from combinators.trace import utils as trace_utils
 import combinators.stochastic as probtorch
+from combinators.stochastic import RandomVariable, ImproperRandomVariable
 
 def _estimate_mc(values: Tensor, log_weights: Tensor, sample_dims: Tuple[int], reducedims: Tuple[int], keepdims: bool) -> Tensor:
     if len(log_weights.shape) == 1:
@@ -15,65 +16,31 @@ def _estimate_mc(values: Tensor, log_weights: Tensor, sample_dims: Tuple[int], r
         nw = F.softmax(log_weights, dim=sample_dims)
         return (nw * values).sum(dim=reducedims, keepdim=keepdims)
 
-def nvo_avo(lv: Tensor, sample_dims=0) -> Tensor:
-    values = -lv
+def nvo_avo(out, sample_dims=0) -> Tensor:
+    f = -out.lv
     log_weights = torch.zeros_like(lv)
 
     nw = torch.nn.functional.softmax(log_weights, dim=sample_dims)
-    loss = (nw * values).sum(dim=(sample_dims,), keepdim=False)
-    # loss = (-lv).sum(dim=(sample_dims,), keepdim=False)
+    loss = (nw * f).sum(dim=(sample_dims,), keepdim=False)
     return loss
 
-def mb0(e):
-    return e - e.detach()
-
-def mb1(e):
-    return torch.exp(mb0(e))
-_eval0 = mb0 # magicbox 0
-_eval1 = mb1 # magicbox 1
-def eval_nrep(rv):
-    return trace_utils.copyrv(rv, requires_grad=False)
-
-def nvo_rkl(lw: Tensor, lv: Tensor, rv_proposal, rv_target, batch_dim=None, sample_dims=0) -> Tensor:
-    # TODO: move back from the proposal and target RVs to joint logprobs?
-    reducedims = (sample_dims,)
-
-    lw = lw.detach()
-    ldZ = lv.detach().logsumexp(dim=sample_dims) - math.log(lv.shape[sample_dims])
-    f = -lv
-
-    # rv_proposal = next(iter(proposal_trace.values())) # tr[\gamma_{k-1}]
-    # rv_target = next(iter(target_trace.values()))     # tr[\gamma_{k}]
-
-    kwargs = dict(
-        sample_dims=sample_dims,
-        reducedims=reducedims,
-        keepdims=False
-    )
-
-    baseline = _estimate_mc(f.detach(), lw, **kwargs).detach()
-
-    kl_term = _estimate_mc(mb1(rv_proposal._log_prob) * (f - baseline), lw, **kwargs)
-
-    grad_log_Z1 = _estimate_mc(rv_proposal._log_prob, lw, **kwargs)
-    grad_log_Z2 = _estimate_mc(eval_nrep(rv_target)._log_prob, lw+lv.detach(), **kwargs)
-
-    loss = kl_term + mb0(baseline * grad_log_Z1 - grad_log_Z2) + baseline + ldZ
-    return loss
-
-def _nvo_rkl(
-    lw: Tensor,  # Log cumulative weight, this is not detached yet - see if it bites Babak and Hao
-    lv: Tensor,
-    rv_proposal, rv_target,
-
-    batch_dim=None,
+def nvo_rkl(
+    out,
     sample_dims=0,
     reducedims=None,
+    **kwargs,
 ) -> Tensor:
+
+    lw = out.log_weight.detach()
+    lv = out.lv
+    proposal_trace = out.proposal_trace
+    target_trace = out.target_trace
+
     if reducedims is None:
         reducedims = (sample_dims,)
-    # rv_proposal = _unpack(proposal_trace, 0)
-    # rv_target = _unpack(target_trace, 0)
+    rv_proposal = list(proposal_trace.values())[1]
+    rv_target = list(target_trace.values())[0]
+
     lw = lw.detach()
     ldZ = lv.detach().logsumexp(dim=sample_dims) - math.log(lv.shape[sample_dims])
     f = -(lv - ldZ)
@@ -83,21 +50,25 @@ def _nvo_rkl(
                                     reducedims=reducedims,
                                     keepdims=False,
                                     ) if not isinstance(rv_proposal, probtorch.RandomVariable) else torch.tensor(0.)
-    grad_log_Z2_term = _estimate_mc(eval_nrep(rv_target)._log_prob,
+    grad_log_Z2_term = _estimate_mc(_eval_nrep(rv_target)._log_prob,
                                     lw+lv.detach(),
                                     sample_dims=sample_dims,
                                     reducedims=reducedims,
                                     keepdims=False,
                                     ) if not isinstance(rv_target, probtorch.RandomVariable) else torch.tensor(0.)
-    # if rv_proposal.generator.reparameterized:
-    #     # Compute reparameterized gradient
-    #     kl_term = _estimate_mc(f,
-    #                            lw,
-    #                            sample_dims=sample_dims,
-    #                            reducedims=reducedims,
-    #                            keepdims=False,
-    #                            )
-    #     return kl_term - _eval0(grad_log_Z1_term) + _eval0(grad_log_Z2_term)
+
+    ## Fully reparameterized gradient estimator
+    if isinstance(rv_proposal, RandomVariable) and rv_proposal.reparameterized:
+        # Compute reparameterized gradient
+        kl_term = _estimate_mc(f,
+                               lw,
+                               sample_dims=sample_dims,
+                               reducedims=reducedims,
+                               keepdims=False,
+                               )
+        return kl_term - _eval0(grad_log_Z1_term) + _eval0(grad_log_Z2_term)
+
+    ## Score function gradient gradient estimator
     baseline = _estimate_mc(f.detach(),
                             lw,
                             sample_dims=sample_dims,
@@ -113,29 +84,18 @@ def _nvo_rkl(
     loss = kl_term + _eval0(grad_log_Z2_term) + baseline
     return loss
 
-def nvo_rkl_1d(lw: Tensor, lv: Tensor, rv_proposal, rv_target, batch_dim=None, sample_dims=0) -> Tensor:
-    # TODO: move back from the proposal and target RVs to joint logprobs?
-    reducedims = (sample_dims,)
+def _eval0(e):
+    return e - e.detach()
 
-    lw = lw.detach()
-    ldZ = lv.detach().logsumexp(dim=sample_dims) - math.log(lv.shape[sample_dims])
-    f = -lv
+def _eval1(e):
+    return torch.exp(_eval0(e))
 
-    # rv_proposal = next(iter(proposal_trace.values())) # tr[\gamma_{k-1}]
-    # rv_target = next(iter(target_trace.values()))     # tr[\gamma_{k}]
+def _eval_nrep(rv):
+    value = rv.value.detach()
+    if isinstance(rv, RandomVariable):
+        return RandomVariable(value=value, dist=rv.dist, provenance=rv.provenance, reparameterized=rv.reparameterized)
+    elif isinstance(rv, ImproperRandomVariable):
+        return ImproperRandomVariable(value=value, log_density_fn=rv.log_density_fn, provenance=rv.provenance)
+    else:
+        raise NotImplementedError("Only supports RandomVariable and ImproperRandomVariable")
 
-    kwargs = dict(
-        sample_dims=sample_dims,
-        reducedims=reducedims,
-        keepdims=False
-    )
-
-    baseline = _estimate_mc(f.detach(), lw, **kwargs).detach()
-
-    kl_term = _estimate_mc(mb1(rv_proposal.log_prob.squeeze()) * (f - baseline), lw, **kwargs)
-
-    grad_log_Z1 = _estimate_mc(rv_proposal.log_prob.squeeze(), lw, **kwargs)
-    grad_log_Z2 = _estimate_mc(eval_nrep(rv_target).log_prob.squeeze(), lw+lv.detach(), **kwargs)
-
-    loss = kl_term + mb0(baseline * grad_log_Z1 - grad_log_Z2) + baseline + ldZ
-    return loss
