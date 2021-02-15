@@ -22,6 +22,7 @@ from combinators.resampling.strategies import Systematic
 import experiments.visualize as V
 from experiments.annealing.models import mk_model, sample_along, paper_model
 
+# TODO: delete and replace with traverse_proposals, below
 def _get_stats(out, lw=[], loss=[], resample=False)->[Tensor]:
     if resample:
         out=out.q_out
@@ -39,6 +40,31 @@ def _get_stats(out, lw=[], loss=[], resample=False)->[Tensor]:
     else:
         return (_lw, _loss)
     #FIXME: It is this gd fn
+
+def traverse_proposals(fn, out, memo=[])->[Tensor]:
+    if out.pytype == Propose:
+        return traverse_proposals(fn, out.q_out, memo + [fn(out)])
+    elif out.pytype == Extend:
+        raise ValueError("impossible! traverse proposal will never arrive here")
+    elif out.pytype == Compose:
+        valid_infs = [Compose, Propose, Resample]
+        q1_is_inf = out.q1_out.pytype in valid_infs
+        q2_is_inf = out.q2_out.pytype in valid_infs
+        if not (q1_is_inf ^ q2_is_inf):
+            return memo
+        else:
+            return traverse_proposals(fn, out.q1_out if q1_is_inf else out.q2_out, memo)
+    elif out.pytype == Resample:
+        return traverse_proposals(fn, out.q_out, memo)
+    elif out.pytype == Condition:
+        raise ValueError("impossible! traverse proposal will never arrive here")
+    else:
+        return memo
+
+def get_stats(out):
+    ret = traverse_proposals(lambda out: (out.log_weight, out.loss, out), out)
+    lws, losses, outs = zip(*ret)
+    return dict(lw=lws, loss=losses, out=outs)
 
 def print_and_sum_loss(loss_fn, out, loss):
     step_loss = loss_fn(out)

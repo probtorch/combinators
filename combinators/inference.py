@@ -109,6 +109,7 @@ class Condition(Inf):
         out = dispatch(self.program)(c, **kwargs)
 
         out['type']=type(self).__name__ + "(" + type(self.program).__name__ + ")"
+        out['pytype']=type(self)
         # out['cond_trace']=self.program._cond_trace
 
         self.program._cond_trace = None
@@ -159,6 +160,7 @@ class Resample(Inf):
             extras=dict(
                 q_out=q_out,
                 type=type(self).__name__,
+                pytype=type(self),
                 ix=ix,
                 ),
             trace=tr_2,
@@ -219,6 +221,7 @@ class Extend(Inf, Conditionable):
                 f_out=f_out,
                 trace_star = f_out.trace,
                 type=type(self).__name__,
+                pytype=type(self),
                 ix=ix,
                 ))
 
@@ -262,6 +265,7 @@ class Compose(Inf):
                 q1_out=q1_out,
                 q2_out=q2_out,
                 type=type(self).__name__,
+                pytype=type(self),
                 ix=ix,
                 ))
 
@@ -337,6 +341,7 @@ class Propose(Inf):
                 q_out=q_out,
                 p_out=p_out,
                 type=type(self).__name__,
+                pytype=type(self),
                 # FIXME: can we ditch this? how important is this for objectives
                 trace_star=p_out.trace_star if 'trace_star' in p_out else None,
                 ix=ix,

@@ -43,7 +43,7 @@ class Program(nn.Module, Conditionable):
             if not isinstance(log_weight, Tensor):
                 log_weight = torch.tensor(log_weight)
 
-        return Out(trace=trace, log_weight=log_weight, output=out, extras=dict(type=type(self).__name__))
+        return Out(trace=trace, log_weight=log_weight, output=out, extras=dict(type=type(self).__name__, pytype=type(self)))
 
 
 def dispatch(fn):
