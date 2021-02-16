@@ -9,7 +9,6 @@ from experiments.apgs_bshape.models import Enc_coor, Enc_digit, Decoder, apg_ix
 loss_tuple = namedtuple('loss_tuple', ['phi', 'theta'])
 
 def loss_fn(out, total_loss):
-    return 0.
     ix = out.p_out.ix
     jkwargs = dict(sample_dims=0, batch_dim=1, reparameterized=False)
 
@@ -38,7 +37,7 @@ class Noop(Program):
 
 
 # Implement in a way that it extracts cov_kernel when t=0, and extracts z_where_{t-1} from c
-def gibbs_sweeps(models, sweeps, T):
+def gibbs_sweeps(models, num_sweeps, T):
     q_enc_coor = models['enc_coor']
     q_enc_digit = models['enc_digit']
     p_dec_os = models['dec']
@@ -54,7 +53,7 @@ def gibbs_sweeps(models, sweeps, T):
     q_is = Resample(q_is)
 
     q_t = q_is
-    for sweep in range(1, sweeps+1): # Sweeps
+    for sweep in range(1, num_sweeps+1): # Sweeps
         for t in range(T): # Time step
             q_t = Propose(p=Extend(p_dec_os, q_enc_coor, ix=apg_ix(t, sweep, "reverse")),
                           q=Compose(q_t, q_enc_coor, ix=apg_ix(t, sweep, "forward")),

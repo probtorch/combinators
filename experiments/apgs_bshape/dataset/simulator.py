@@ -150,7 +150,7 @@ class Sim_BShape():
             seqs = torch.cat(seqs, 0)
             assert seqs.shape == (num_this_round, self.timesteps, self.frame_size, self.frame_size), "ERROR! unexpected chunk shape."
             incremental_PATH = PATH + 'seq-%dtimesteps-%dobjects-p%d' % (self.timesteps, self.num_objects, counter)
-            np.save(incremental_PATH, seqs)
+            torch.save(seqs, incremental_PATH + '.pt')
             counter += 1
             num_seqs_left = max(num_seqs_left - num_this_round, 0)
             time_end = time.time()

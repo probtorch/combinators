@@ -21,32 +21,28 @@ from experiments.apgs_bshape.models import init_models
 #     from tqdm import trange, tqdm
 # from tqdm.contrib import tenumerate
 
-def train(optimizer, models, AT, resampler, num_sweeps, data_paths, shape_mean, K, num_epochs, sample_size, batch_size, CUDA, device, model_version):
+def train(optimizer, models, num_sweeps, data_paths, num_objects, num_epochs, sample_size, batch_size, device, model_version):
     """
     training function of apg samplers
     """
-    result_flags = {'loss_required' : True, 'ess_required' : True, 'mode_required' : False, 'density_required': True}
-    shape_mean = shape_mean.repeat(sample_size, batch_size, K, 1, 1)
+#     result_flags = {'loss_required' : True, 'ess_required' : True, 'mode_required' : False, 'density_required': True}
+#     shape_mean = shape_mean.repeat(sample_size, batch_size, K, 1, 1)
     for epoch in range(num_epochs):
         shuffle(data_paths)
         for group, data_path in enumerate(data_paths):
             time_start = time.time()
             metrics = dict()
-            data = torch.from_numpy(np.load(data_path)).float()
+            data = torch.load(data_path)
             num_batches = int(data.shape[0] / batch_size)
             seq_indices = torch.randperm(data.shape[0])
             for b in range(num_batches):
                 optimizer.zero_grad()
-                frames = data[seq_indices[b*batch_size : (b+1)*batch_size]].repeat(sample_size, 1, 1, 1, 1)
-                if CUDA:
-                    with torch.cuda.device(device):
-                        frames = frames.cuda()
-                        shape_mean = shape_mean.cuda()
-                trace = gibbs_sweeps(models, K, T)
-                loss_phi = trace['loss_phi'].sum()
-                loss_theta = trace['loss_theta'].sum()
-                loss_phi.backward(retain_graph=True)
-                loss_theta.backward()
+                frames = data[seq_indices[b*batch_size : (b+1)*batch_size]].repeat(sample_size, 1, 1, 1, 1).to(device)                
+                apg = gibbs_sweeps(models, num_sweeps, T)
+                apg(c={"frames": frames}, sample_dims=0, batch_dim=1, reparameterized=False)
+    
+
+                loss.backward()
                 optimizer.step()
                 if 'loss_phi' in metrics:
                     metrics['loss_phi'] += trace['loss_phi'][-1].item()
@@ -105,13 +101,18 @@ def run_apg():
         model_version = 'apg-bshape-num_objects=%s-num_sweeps=%s-num_samples=%s' % (args.num_objects, args.num_sweeps, sample_size)
     else:
         raise ValueError
-    mean_shape = torch.load('./dataset/mean_shape.pt').cuda().to(device)
-    models = init_models(args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, device)
-
+    mean_shape = torch.load('./dataset/mean_shape.pt').to(device)
+    models = init_models(args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, args.num_objects, mean_shape, device)
     optimizer = optim.Adam([v.parameters() for k,v in models.items()],lr=args.lr,betas=(0.9, 0.99))
-
+    data_paths = []
+    for file in os.listdir(args.data_dir):
+        if file.endswith('.pt')
+            data_paths.append(os.path.join(args.data_dir, file))
     print('Start training for bshape tracking task..')
     print('version=' + model_version)
+    
+    
+    
     train(
         objective=gibbs_sweeps,
         optimizer=optimizer,
@@ -140,20 +141,20 @@ def test_gibbs_sweep(sweeps, T):
     parser.add_argument('--num_hidden_coor', default=400, type=int)
     parser.add_argument('--z_where_dim', default=2, type=int)
     parser.add_argument('--z_what_dim', default=10, type=int)
-    parser.add_argument('--K', default=3, type=int)
+    parser.add_argument('--num_objects', default=3, type=int)
     parser.add_argument('--num_samples', default=10, type=int)
     # parser.add_argument('--device', default=autodevice(), type=int)
     args = parser.parse_args()
 
     device = torch.device('cpu')
     mean_shape = torch.load('./dataset/mean_shape.pt').to(device)
-    models = init_models(args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, args.K, mean_shape, device)
+    models = init_models(args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, args.num_objects, mean_shape, device)
 
     data_paths = []
     for file in os.listdir(args.data_dir):
         data_paths.append(os.path.join(args.data_dir, file))
     frames_path = data_paths[0]
-    frames = torch.from_numpy(np.load(frames_path)).float()
+    frames = torch.load(frames_path).to(device)
     frames = frames.repeat(args.num_samples, 1, 1, 1, 1)
 
     apg = gibbs_sweeps(models, sweeps, T)
