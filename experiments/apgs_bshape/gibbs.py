@@ -25,14 +25,19 @@ def loss_apg(out, total_loss):
     log_w = out.log_weight.detach()
     w = F.softmax(log_w, 0)
     # This is a hack to find the marginal of the forward kernel.
-    assert out.q1_trace is not None
-    if out.q_out.q1_out.type == 'Resample':
-        forward_trace = out.q2_trace
+    assert out.forward_trace is not None
+    forward_trace = out.forward_trace
+    
+    recon_log_prob = out.target_trace['recon'].log_prob
+    T = recon_log_prob.shape[2]
+    if out.ix.t < T and out.ix.sweep > 0:
+        log_p = recon_log_prob[:,:,out.ix.t].sum(-1).sum(-1)
+    elif out.ix.t == T:
+        log_p = recon_log_prob.sum(-1).sum(-1).sum(-1)
     else:
-        forward_trace = out.q1_trace
+        raise ValueError
 #     from IPython.core.debugger import Tracer; Tracer()()
     log_q = forward_trace.log_joint(**jkwargs)
-    log_p = out.target_trace.log_joint(nodes={'recon'}, **jkwargs)
     # !!! need this metric as <density>
     loss_phi = (w * (- log_q)).sum(0).mean()
     loss_theta = (w * (-log_p)).sum(0).mean()

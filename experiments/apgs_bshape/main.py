@@ -107,7 +107,7 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
     if not os.path.exists('./results/'):
         os.makedirs('./results/')
     log_file = open('./results/log-' + model_version + '.txt', 'a+')
-    for epoch in trange(num_epochs):
+    for epoch in range(num_epochs):
         shuffle(data_paths)
         for group, data_path in enumerate(data_paths):
             metrics = {'ess' : 0.0, 'log_p' : 0.0, 'loss' : 0.0}
@@ -122,7 +122,9 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
                 out.loss.backward()
                 optimizer.step()
                 metrics['ess'] += out.ess.mean().detach().cpu().item()
-                metrics['log_p'] += out.trace._log_joint(reparameterized=False).detach().cpu().item()
+                metrics['log_p'] += out.trace.log_joint(sample_dims=0, 
+                                                        batch_dim=1, 
+                                                        reparameterized=False).detach().cpu().mean().item()
                 metrics['loss'] += out.loss.detach().cpu().item()   
             metrics_print = ",  ".join(['%s: %.4f' % (k, v/num_batches) for k, v in metrics.items()])                
             print("Epoch=%d, Group=%d, " % (epoch+1, group+1) + metrics_print, file=log_file, flush=True)
@@ -132,7 +134,7 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
 
 def test_gibbs_sweep(budget, num_sweeps, timesteps, data_dir, **kwargs):
     device = torch.device(kwargs['device'])
-    sample_size = budget // num_sweeps
+    sample_size = budget // (num_sweeps+1)
     mean_shape = torch.load(data_dir + 'mean_shape.pt').to(device)    
     data_paths = []
     for file in os.listdir(data_dir+'/video/'):

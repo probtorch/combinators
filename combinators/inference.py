@@ -303,7 +303,15 @@ class Propose(Inf):
         # In the semantics this corresponds to lw_2 - (lu + [lu_star])
         lv = p_out.log_weight - (lu_1 + lu_star)
         lw_out = lw_1 + lv
-
+       
+        # FIXME: dirty optimization hack
+        forward_trace = None 
+        if q_out.type == "Compose":
+            if q_out.q1_out.type in ['Resample', "Propose"]:
+                forward_trace = q_out.q2_out.trace
+            else:
+                forward_trace = q_out.q2_out.trace
+                
         self._out = Out(
             trace=rerun_with_detached_values(p_out.trace),
             log_weight=lw_out.detach(),
@@ -323,15 +331,15 @@ class Propose(Inf):
                 lv=lv,
                 proposal_trace=q_out.trace,
                 target_trace=copytraces(p_out.trace, p_out.trace_star) if "trace_star" in p_out else p_out.trace,
-                q1_trace=None if q_out.type != 'Compose' else q_out.q1_out.trace,
-                q2_trace=None if q_out.type != 'Compose' else q_out.q2_out.trace,
+                forward_trace=forward_trace,
                 # ## apg ##
                 # p_num=p_out.p_out.log_weight if (p_out.type == "Extend") else p_out.log_weight,
                 # q_den=lu_star,
                 #########
-                trace_original=p_out.trace,
-                q_out=q_out,
-                p_out=p_out,
+#                 trace_original=p_out.trace,
+                # FIXME: if we hold on to these references then we might introduce a space leak
+                # q_out=q_out,
+                # p_out=p_out,
                 type=type(self).__name__,
                 pytype=type(self),
                 # FIXME: can we ditch this? how important is this for objectives
