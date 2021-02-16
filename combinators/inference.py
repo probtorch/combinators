@@ -55,7 +55,8 @@ class Inf(ABC):
             _debug=False,
             sample_dims=None,
             batch_dim=None):
-        self.loss0 = torch.zeros(1, device=autodevice(device)) if loss0 is None else loss0
+#         self.loss0 = torch.zeros(1, device=autodevice(device)) if loss0 is None else loss0
+        self.loss0 = 0.0 if loss0 is None else loss0
         self.foldr_loss = loss_fn
         self.ix = ix
         self._debug = _debug
@@ -126,8 +127,8 @@ class Resample(Inf):
     def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Resample """
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
-
-        inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
+        ix = self.ix if self.ix is not None else ix
+        inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
         q_out = self.q(c, **inf_kwargs, **shared_kwargs)
 
@@ -177,8 +178,8 @@ class Extend(Inf, Conditionable):
     def __call__(self, c:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs:Any) -> Out:
         """ Extend """
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
-
-        inf_kwargs = dict(_debug=_debug, ix = self.ix if self.ix is not None else ix, **shape_kwargs)
+        ix = self.ix if self.ix is not None else ix
+        inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
         if self._cond_trace is None:
             p_out = dispatch(self.p)(c, **inf_kwargs, **shared_kwargs)
@@ -235,8 +236,8 @@ class Compose(Inf):
     def __call__(self, c:Any, sample_dims=None, batch_dim=None, _debug=False, _debug_extras=None, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Compose """
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
-
-        inf_kwargs = dict(_debug=_debug, ix=self.ix if self.ix is not None else ix, **shape_kwargs)
+        ix = self.ix if self.ix is not None else ix
+        inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
         q1_out = dispatch(self.q1)(c, **inf_kwargs, **shared_kwargs)
 
@@ -278,7 +279,8 @@ class Propose(Inf):
     def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Propose """
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
-        inf_kwargs = dict(_debug=_debug, ix = self.ix if self.ix is not None else ix, **shape_kwargs)
+        ix = self.ix if self.ix is not None else ix
+        inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
         q_out = dispatch(self.q)(c, **inf_kwargs, **shared_kwargs)
 
@@ -291,9 +293,10 @@ class Propose(Inf):
         tau_2 = set({k for k, v in p_out.trace.items() if v.provenance != Provenance.OBSERVED})
         nodes = rho_1 - (tau_1 - tau_2)
         lu_1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
-
+        
         # τ*, by definition, can't have OBSERVE or REUSED random variables
-        lu_star = torch.zeros(1) if 'trace_star' not in p_out else q_out.trace.log_joint(nodes=set(p_out.trace_star.keys()), **shape_kwargs)
+        # FIXME: precision errors when converting python into pytorch, see tests.
+        lu_star = 0.0 if 'trace_star' not in p_out else q_out.trace.log_joint(nodes=set(p_out.trace_star.keys()), **shape_kwargs)
 
         lw_1 = q_out.log_weight
         # We call that lv because its the incremental weight in the IS sense
@@ -320,6 +323,8 @@ class Propose(Inf):
                 lv=lv,
                 proposal_trace=q_out.trace,
                 target_trace=copytraces(p_out.trace, p_out.trace_star) if "trace_star" in p_out else p_out.trace,
+                q1_trace=None if q_out.type != 'Compose' else q_out.q1_out.trace,
+                q2_trace=None if q_out.type != 'Compose' else q_out.q2_out.trace,
                 # ## apg ##
                 # p_num=p_out.p_out.log_weight if (p_out.type == "Extend") else p_out.log_weight,
                 # q_den=lu_star,

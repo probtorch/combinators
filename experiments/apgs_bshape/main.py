@@ -106,7 +106,7 @@ def run_apg():
     optimizer = optim.Adam([v.parameters() for k,v in models.items()],lr=args.lr,betas=(0.9, 0.99))
     data_paths = []
     for file in os.listdir(args.data_dir):
-        if file.endswith('.pt')
+        if file.endswith('.pt'):
             data_paths.append(os.path.join(args.data_dir, file))
     print('Start training for bshape tracking task..')
     print('version=' + model_version)
@@ -132,7 +132,24 @@ def run_apg():
         checkpoint=False,
         checkpoint_filename=model_version)
 
-def test_gibbs_sweep(sweeps, T):
+def test_gibbs_sweep(sweeps, T, sample_size, data_dir='./dataset/video/', mean_shape_path='./dataset/mean_shape.pt', **kwargs):
+    device = torch.device(kwargs['device'])
+    mean_shape = torch.load(mean_shape_path).to(device)
+    models = init_models(mean_shape=mean_shape, **kwargs)
+
+    data_paths = []
+    for file in os.listdir(data_dir):
+        if file.endswith('.pt'):
+            data_paths.append(os.path.join(data_dir, file))
+    frames_path = data_paths[0]
+    frames = torch.load(frames_path)[:,:T]
+    frames_expand = frames.to(device).repeat(sample_size, 1, 1, 1, 1)
+
+    apg = gibbs_sweeps(models, sweeps, T)
+    c = {"frames": frames_expand}
+    return apg(c, sample_dims=0, batch_dim=1, reparameterized=False), frames
+
+if __name__ == '__main__':
     parser = argparse.ArgumentParser('Bouncing Shapes')
     parser.add_argument('--data_dir', default='./dataset/video/')
     parser.add_argument('--frame_pixels', default=96, type=int)
@@ -142,25 +159,22 @@ def test_gibbs_sweep(sweeps, T):
     parser.add_argument('--z_where_dim', default=2, type=int)
     parser.add_argument('--z_what_dim', default=10, type=int)
     parser.add_argument('--num_objects', default=3, type=int)
-    parser.add_argument('--num_samples', default=10, type=int)
-    # parser.add_argument('--device', default=autodevice(), type=int)
+    parser.add_argument('--sample_size', default=10, type=int)
+    parser.add_argument('--device', default='cuda:1', type=str)
+    parser.add_argument('--mean_shape_path', default='./dataset/mean_shape.pt', type=str)
+    
     args = parser.parse_args()
-
-    device = torch.device('cpu')
-    mean_shape = torch.load('./dataset/mean_shape.pt').to(device)
-    models = init_models(args.frame_pixels, args.shape_pixels, args.num_hidden_digit, args.num_hidden_coor, args.z_where_dim, args.z_what_dim, args.num_objects, mean_shape, device)
-
-    data_paths = []
-    for file in os.listdir(args.data_dir):
-        data_paths.append(os.path.join(args.data_dir, file))
-    frames_path = data_paths[0]
-    frames = torch.load(frames_path).to(device)
-    frames = frames.repeat(args.num_samples, 1, 1, 1, 1)
-
-    apg = gibbs_sweeps(models, sweeps, T)
-    c = {"frames": frames[:,:,:T]}
-    apg(c, sample_dims=0, batch_dim=1, reparameterized=False)
-
-if __name__ == '__main__':
-    test_gibbs_sweep(sweeps=5, T=10)
+    test_gibbs_sweep(sweeps=5, 
+                     T=10, 
+                     data_dir=args.data_dir,
+                     frame_pixels=args.frame_pixels, 
+                     shape_pixels=args.shape_pixels, 
+                     num_hidden_digit=args.num_hidden_digit, 
+                     num_hidden_coor=args.num_hidden_coor, 
+                     z_where_dim=args.z_where_dim, 
+                     z_what_dim=args.z_what_dim, 
+                     num_objects=args.num_objects, 
+                     sample_size=args.sample_size,
+                     mean_shape_path=args.mean_shape_path,
+                     device=args.device)
 

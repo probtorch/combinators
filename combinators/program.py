@@ -41,8 +41,8 @@ class Program(nn.Module, Conditionable):
             self.clear_cond_trace()   # closing bracket for a run, required if a user does not use the Condition combinator
         else:
             log_weight = trace.log_joint(nodes={k for k, rv in trace.items() if rv.provenance == Provenance.OBSERVED}, **shape_kwargs)
-            if not isinstance(log_weight, Tensor):
-                log_weight = torch.tensor(log_weight)
+#             if not isinstance(log_weight, Tensor):
+#                 log_weight = torch.tensor(log_weight)
 
         return Out(trace=trace, log_weight=log_weight, output=out, extras=dict(type=type(self).__name__, pytype=type(self)))
 

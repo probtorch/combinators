@@ -407,7 +407,7 @@ class Trace(MutableMapping):
 
 
     def _log_joint(self, sample_dims=None, batch_dim=None, nodes=None,
-                  reparameterized=True):
+                  reparameterized=True, device=None):
         """Returns the log joint probability, optionally for a subset of nodes.
 
         Arguments:
@@ -420,7 +420,13 @@ class Trace(MutableMapping):
             nodes = self._nodes
         # FIXME: Discuss this fix with JW
         nodes = set(nodes)
-        log_prob = torch.zeros(1)
+        log_prob = 0.0
+        # This should be a torch tensor, but we need to select the device
+#         if device is None and len(nodes) == 0:
+#             device = torch.device('cpu')
+#         elif device is None:
+#             device = self._nodes[list(nodes)[0]].log_prob.device
+#         log_prob = torch.zeros(1, device=device)
         for n in nodes:
             if n in self._nodes:
                 node = self._nodes[n]

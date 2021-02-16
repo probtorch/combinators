@@ -8,26 +8,37 @@ from experiments.apgs_bshape.models import Enc_coor, Enc_digit, Decoder, apg_ix
 
 loss_tuple = namedtuple('loss_tuple', ['phi', 'theta'])
 
-def loss_fn(out, total_loss):
-    ix = out.p_out.ix
+def loss_is(out, total_loss):
     jkwargs = dict(sample_dims=0, batch_dim=1, reparameterized=False)
-
     log_w = out.log_weight.detach()
     w = F.softmax(log_w, 0)
-
-    # out <- (output, trace, lw, extra_stuff)
-    # out.q_out
-    # We provide: out.p_num, out.q_den
-
-    log_q = out.q_log_prob if ix.block == "is" else \
-        out.q_log_prob - out.q_out.program.trace.log_joint(**jkwargs)
-    log_p = out.p_log_prob
+    log_q = out.proposal_trace.log_joint(**jkwargs)
+    log_p = out.target_trace.log_joint(**jkwargs)
     # !!! need this metric as <density>
-
     loss_phi = (w * (- log_q)).sum(0).mean()
     loss_theta = (w * (-log_p)).sum(0).mean()
+    return loss_phi + loss_theta + total_loss
 
-    return loss_tuple(phi=total_loss.phi + loss_phi, theta=total_loss.theta + loss_theta)
+def loss_apg(out, total_loss):    
+    foo = [(k,v.provenance) for k,v in out.proposal_trace.items()]
+    jkwargs = dict(sample_dims=0, batch_dim=1, reparameterized=False)
+    log_w = out.log_weight.detach()
+    w = F.softmax(log_w, 0)
+    # This is a hack to find the marginal of the forward kernel.
+    assert out.q1_trace is not None
+    if out.q_out.q1_out.type == 'Resample':
+        forward_trace = out.q2_trace
+    else:
+        forward_trace = out.q1_trace
+#     from IPython.core.debugger import Tracer; Tracer()()
+    log_q = forward_trace.log_joint(**jkwargs)
+    log_p = out.target_trace.log_joint(nodes={'recon'}, **jkwargs)
+    # !!! need this metric as <density>
+    loss_phi = (w * (- log_q)).sum(0).mean()
+    loss_theta = (w * (-log_p)).sum(0).mean()
+    
+    return loss_phi + loss_theta + total_loss
+#     return loss_tuple(phi=total_loss.phi + loss_phi, theta=total_loss.theta + loss_theta)
 
 class Noop(Program):
     def __init__(self):
@@ -49,7 +60,7 @@ def gibbs_sweeps(models, num_sweeps, T):
     q_os = Compose(q_os, q_enc_digit, ix=apg_ix(T, 0, "forward"))
 
     q_is = Propose(p=p_dec_os, q=q_os, ix=apg_ix(T, 0, "forward"),
-                   loss_fn=loss_fn)
+                   loss_fn=loss_is)
     q_is = Resample(q_is)
 
     q_t = q_is
@@ -57,11 +68,11 @@ def gibbs_sweeps(models, num_sweeps, T):
         for t in range(T): # Time step
             q_t = Propose(p=Extend(p_dec_os, q_enc_coor, ix=apg_ix(t, sweep, "reverse")),
                           q=Compose(q_t, q_enc_coor, ix=apg_ix(t, sweep, "forward")),
-                          loss_fn=loss_fn)
+                          loss_fn=loss_apg, ix=apg_ix(t, sweep, "propose"))
             q_t = Resample(q_t)
         q_t = Propose(p=Extend(p_dec_os, q_enc_digit, ix=apg_ix(T, sweep, "reverse")),
                       q=Compose(q_t, q_enc_digit, ix=apg_ix(T, sweep, "forward")),
-                      loss_fn=loss_fn)
+                      loss_fn=loss_apg, ix=apg_ix(T, sweep, "propose"))
         q_t = Resample(q_t)
     return q_t
 

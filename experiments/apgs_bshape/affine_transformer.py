@@ -32,10 +32,10 @@ class Affine_Transformer():
         self.frame_pixels = frame_pixels
         self.translation_dtof = (self.frame_pixels - self.digit_pixels) / self.digit_pixels
         self.translation_ftod = (self.frame_pixels - self.digit_pixels) / self.frame_pixels
-        self.scale_dtof = torch.FloatTensor([[self.frame_pixels / self.digit_pixels, 0], [0, self.frame_pixels / self.digit_pixels]],
-                                            device=device)
-        self.scale_ftod = torch.FloatTensor([[self.digit_pixels / self.frame_pixels, 0], [0, self.digit_pixels / self.frame_pixels]],
-                                            device=device)
+        self.scale_dtof = torch.tensor([[self.frame_pixels / self.digit_pixels, 0], [0, self.frame_pixels / self.digit_pixels]],
+                                            device=device, dtype=torch.float)
+        self.scale_ftod = torch.tensor([[self.digit_pixels / self.frame_pixels, 0], [0, self.digit_pixels / self.frame_pixels]],
+                                            device=device, dtype=torch.float)
 
     def digit_to_frame(self, digit, z_where):
         """

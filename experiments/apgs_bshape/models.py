@@ -14,7 +14,7 @@ apg_ix = namedtuple("apg_ix", ["t", "sweep", "dir"])
 # from combinators.inference import Program, Compose, Extend, Propose, Resample, Condition
 # Path to example programs: 
 
-def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, K, mean_shape, device):
+def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, num_objects, mean_shape, device):
     models = dict()
     AT = Affine_Transformer(frame_pixels, shape_pixels, device)
 
@@ -30,7 +30,7 @@ def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z
                                   z_where_dim=z_where_dim,
                                   AT=AT,
                                   dec=models["dec"],
-                                  K=K).to(device)
+                                  num_objects=num_objects).to(device)
     models['enc_digit'] = Enc_digit(num_pixels=shape_pixels**2,
                                     num_hidden=num_hidden_digit,
                                     z_what_dim=z_what_dim,
@@ -41,7 +41,7 @@ class Enc_coor(Program):
     """
     encoder of the digit positions
     """
-    def __init__(self, num_pixels, num_hidden, z_where_dim, AT, dec, mean_shape, K):
+    def __init__(self, num_pixels, num_hidden, z_where_dim, AT, dec, mean_shape, num_objects):
         super(self.__class__, self).__init__()
         self.enc_coor_hidden = nn.Sequential(
                             nn.Linear(num_pixels, num_hidden),
@@ -59,7 +59,7 @@ class Enc_coor(Program):
         self.AT = AT
         self.dec = dec
         self.mean_shape = mean_shape
-        self.K = K
+        self.K = num_objects
 
     def model(self, trace, c, ix):
         frames = c["frames"]
