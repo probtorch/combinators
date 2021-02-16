@@ -57,7 +57,7 @@ class Enc_coor(Program):
                             nn.ReLU(),
                             nn.Linear(int(0.5*num_hidden), z_where_dim))
         self.AT = AT
-        self.dec = dec
+        self.get_dec = lambda : dec
         self.mean_shape = mean_shape
         self.K = num_objects
 
@@ -74,7 +74,7 @@ class Enc_coor(Program):
                 z_what_val = trace._cond_trace['z_what_%d' % (ix.sweep-1)].value
             else:
                 raise ValueError("Kernel can only be run forward or in reverse")
-            conv_kernel = self.dec.get_conv_kernel(z_what_val)
+            conv_kernel = self.get_dec().get_conv_kernel(z_what_val)
 
         _, _, K, DP, _ = conv_kernel.shape
         frame_left = frames[:,:,ix.t,:,:]
@@ -192,63 +192,58 @@ class Decoder(Program):
 
     def model(self, trace, c, ix):
         frames = c["frames"]
-        _, _, T, FP, _ = frames.shape
-
-        # Condition on past z_wheres 
+        _, _, T, FP, _ = frames.shape 
+        ##################################################################
+        # Remove the optimization by always computing the log joint.
+        # Compute the log prior of z_where_{1:T} and construct a sample 
+        # trajectory using sample values
+        # 1. from sweep for preceding and current timesteps i.e. t <= ix.t
+        # 2. from sweep-1 for future timesteps, i.e. t > ix.t
+        ##################################################################
         z_where_vals = []
-        # prior over first z_where
-        trace.normal(loc=self.prior_where0_mu,
-                     scale=self.prior_where0_Sigma,
-                     name='z_where_%d_%d' % (0, ix.sweep))
-        z_where_vals.append(trace['z_where_%d_%d' % (0, ix.sweep)].value.unsqueeze(2))
-        # prior over z_where
-        for t in range(min(ix.t, T-1)):
-            trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (t, ix.sweep)].value,
-                         scale=self.prior_wheret_Sigma,
-                         name='z_where_%d_%d' % (t+1, ix.sweep))
-            z_where_vals.append(trace['z_where_%d_%d' % (t+1, ix.sweep)].value.unsqueeze(2))
-        # Condition on current z_where. This will conditoin will always be false for the IS-step as T>T-1, 
-        # hence this node will never be added there
-        if ix.t < (T-1):
-            trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (ix.t, ix.sweep)].value,
-                        scale=self.prior_wheret_Sigma,
-                        name='z_where_%d_%d' % (ix.t+1, ix.sweep-1))
-        # Condition on z_what - IS step will always enter here
+        for t in range(T):
+            if t <= ix.t:
+                if t == 0:
+                    trace.normal(loc=self.prior_where0_mu,
+                                 scale=self.prior_where0_Sigma,
+                                 name='z_where_%d_%d' % (0, ix.sweep))
+                else:
+                    trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (t-1, ix.sweep)].value,
+                                 scale=self.prior_wheret_Sigma,
+                                 name='z_where_%d_%d' % (t, ix.sweep))
+                z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep)].value.unsqueeze(2))
+
+            elif t == (ix.t+1):
+                trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (ix.t, ix.sweep)].value,
+                             scale=self.prior_wheret_Sigma,
+                             name='z_where_%d_%d' % (t, ix.sweep-1))
+                z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep-1)].value.unsqueeze(2))
+            else:
+                trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (t-1, ix.sweep-1)].value,
+                             scale=self.prior_wheret_Sigma,
+                             name='z_where_%d_%d' % (t, ix.sweep-1)) 
+                z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep-1)].value.unsqueeze(2))
+        z_where_vals = torch.cat(z_where_vals, 2)
+            
+        # index for z_what given ix
         if ix.t == T:
-            trace.normal(loc=self.prior_what_mu,
-                         scale=self.prior_what_std,
-                         name='z_what_%d'%(ix.sweep))
-        # Condition on z_where - to pip through - if we don't reuse it we loose it
+            z_what_index = ix.sweep 
+        elif ix.t < T and ix.sweep > 0:
+            z_what_index = ix.sweep - 1
         else:
-            trace.normal(loc=self.prior_what_mu,
+            raise ValueError('You should not call the decoder when t=%d and sweep=%d' % (ix.t, ix.sweep))
+        trace.normal(loc=self.prior_what_mu,
                          scale=self.prior_what_std,
-                         name='z_what_%d'%(ix.sweep-1))
-
-
-        # In p_\theta - z_where case - likelihood computation
-        if ix.sweep > 0 and ix.t != T:
-            z_what = trace._cond_trace["z_what_%d"%(ix.sweep-1)]
-            digit_mean = self.get_conv_kernel(z_what.value, detach=False)
-            z_where_val = trace._cond_trace['z_where_%d_%d' % (ix.t, ix.sweep)].value
-            # prior of z_what
-            recon_frames = torch.clamp(self.AT.digit_to_frame(digit_mean, z_where_val.unsqueeze(2)).squeeze(2).sum(-3), min=0.0, max=1.0) # S * B * FP * FP
-            _ = trace.variable(Bernoulli, probs=recon_frames, value=frames[:,:,ix.t,:,:], name='recon',
-                               provenance=Provenance.OBSERVED)
-            # We need z_what here as well because we need it to get the conv. kernel
-            # if ix.sweep == 1 and ix.t == 1:
-            #     breakpoint()
-            return {**{"z_what_%d"%(ix.sweep-1): z_what.value, "frames": c["frames"]},
-                    **{"z_where_%d_%d"%(t, ix.sweep): trace._cond_trace['z_where_%d_%d' % (t, ix.sweep)].value for t in range(ix.t+1)}}
-
-        # In p_\theta - z_what case - likelihood computation
-        # For z_what we need to reconstruct all frames
-        else:
-            z_what = trace._cond_trace["z_what_%d"%(ix.sweep)]
-            digit_mean = self.get_conv_kernel(z_what.value, detach=False)
-            # prior of z_where
-            z_where_vals = torch.cat(z_where_vals, 2)
-            # S * B * T * FP * FP
-            recon_frames = torch.clamp(self.AT.digit_to_frame(digit_mean, z_where_vals).sum(-3), min=0.0, max=1.0)
-            _ = trace.variable(Bernoulli, probs=recon_frames, value=frames, name='recon', provenance=Provenance.OBSERVED)
-            return {**{"z_what_%d"%(ix.sweep): z_what.value, "frames": c["frames"]},
-                    **{"z_where_%d_%d"%(t, ix.sweep): trace._cond_trace['z_where_%d_%d' % (t, ix.sweep)].value for t in range(ix.t)}}
+                         name='z_what_%d'%(z_what_index))
+        z_what_val = trace._cond_trace["z_what_%d"%(z_what_index)].value
+        
+        digit_mean = self.get_conv_kernel(z_what_val, detach=False)
+        recon_frames = torch.clamp(self.AT.digit_to_frame(digit_mean, z_where_vals).sum(-3), min=0.0, max=1.0)
+        _ = trace.variable(Bernoulli, 
+                           probs=recon_frames, 
+                           value=frames, 
+                           name='recon', 
+                           provenance=Provenance.OBSERVED)
+        
+        return {**{"z_what_%d"%(z_what_index): z_what_val, "frames": c["frames"]},
+                **{"z_where_%d_%d"%(t, ix.sweep): trace._cond_trace['z_where_%d_%d' % (t, ix.sweep)].value for t in range(min(ix.t+1, T))}}
