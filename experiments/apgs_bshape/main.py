@@ -161,5 +161,5 @@ def test_gibbs_sweep(sweeps, T):
     apg(c, sample_dims=0, batch_dim=1, reparameterized=False)
 
 if __name__ == '__main__':
-    test_gibbs_sweep(sweeps=1, T=2)
+    test_gibbs_sweep(sweeps=5, T=10)
 

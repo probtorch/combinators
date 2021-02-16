@@ -96,7 +96,8 @@ class Condition(Inf):
 
         out['type']=type(self).__name__ + "(" + type(self.program).__name__ + ")"
         out['pytype']=type(self)
-        # out['cond_trace']=self.program._cond_trace
+        # FIXME: Space leak
+        out['cond_trace']=self.conditioning_trace
 
         self.program._cond_trace = None
         # Also clear cond_trace reference in trace to not introduce a space leak
