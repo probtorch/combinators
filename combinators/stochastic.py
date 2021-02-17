@@ -96,6 +96,7 @@ class ImproperRandomVariable(GenericRandomVariable):
         return f"ImproperRandomVariable containing: {repr(self._value)}"
 
         self._log_density_fn = log_density_fn
+
 class RandomVariable(GenericRandomVariable):
     """Random variables wrap a PyTorch Variable to associate a distribution
     and a log probability density or mass.

@@ -141,4 +141,3 @@ def stubtest_resample_without_batch():
                 memo[s] += (rv.value == (s+1)).sum() / (S*N*2)
 
     print(memo / B)
-

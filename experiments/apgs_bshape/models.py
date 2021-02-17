@@ -14,7 +14,7 @@ apg_ix = namedtuple("apg_ix", ["t", "sweep", "dir"])
 # from combinators.inference import Program, Compose, Extend, Propose, Resample, Condition
 # Path to example programs:
 
-def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, num_objects, mean_shape, device):
+def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, num_objects, mean_shape, device, reparameterized=self.reparameterized):
     models = dict()
     AT = Affine_Transformer(frame_pixels, shape_pixels, device)
 
@@ -23,25 +23,28 @@ def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z
                             z_where_dim=z_where_dim,
                             z_what_dim=z_what_dim,
                             AT=AT,
-                            device=device).to(device)
+                            device=device,
+                            reparameterized=reparameterized).to(device)
     models['enc_coor'] = Enc_coor(num_pixels=(frame_pixels-shape_pixels+1)**2,
                                   mean_shape=mean_shape,
                                   num_hidden=num_hidden_coor,
                                   z_where_dim=z_where_dim,
                                   AT=AT,
                                   dec=models["dec"],
-                                  num_objects=num_objects).to(device)
+                                  num_objects=num_objects,
+                                  reparameterized=reparameterized).to(device)
     models['enc_digit'] = Enc_digit(num_pixels=shape_pixels**2,
                                     num_hidden=num_hidden_digit,
                                     z_what_dim=z_what_dim,
-                                    AT=AT).to(device)
+                                    AT=AT,
+                                    reparameterized=reparameterized).to(device)
     return models
 
 class Enc_coor(Program):
     """
     encoder of the digit positions
     """
-    def __init__(self, num_pixels, num_hidden, z_where_dim, AT, dec, mean_shape, num_objects):
+    def __init__(self, num_pixels, num_hidden, z_where_dim, AT, dec, mean_shape, num_objects, reparameterized=self.reparameterized):
         super(self.__class__, self).__init__()
         self.enc_coor_hidden = nn.Sequential(
                             nn.Linear(num_pixels, num_hidden),
@@ -60,6 +63,7 @@ class Enc_coor(Program):
         self.get_dec = lambda : dec
         self.mean_shape = mean_shape
         self.K = num_objects
+        self.reparameterized = reparameterized
 
     def model(self, trace, c, ix):
         frames = c["frames"]
@@ -112,14 +116,17 @@ class Enc_coor(Program):
             trace.append(RandomVariable(Normal(loc=q_mean, scale=q_std),
                                         value=z_where_t,
                                         provenance=Provenance.SAMPLED,
-                                        reparameterized=False),
+                                        reparameterized=self.reparameterized),
                          name='z_where_%d_%d'%(ix.t, ix.sweep))
             # We need this because in initial IS step this is not run as a "kernel"
             if ix.sweep == 0:
                 return {**c, 'z_where_%d_%d'%(ix.t, ix.sweep): z_where_t}
             return c
         elif ix.dir == 'reverse':
-            trace.normal(loc=q_mean, scale=q_std, reparameterized=False, name='z_where_%d_%d'%(ix.t, ix.sweep-1))
+            trace.normal(loc=q_mean,
+                         scale=q_std,  
+                         name='z_where_%d_%d'%(ix.t, ix.sweep-1),
+                         reparameterized=self.reparameterized)
         else:
             raise ValueError("Kernel must be run either forward or reverse")
 
@@ -127,7 +134,7 @@ class Enc_digit(Program):
     """
     encoder of digit features
     """
-    def __init__(self, num_pixels, num_hidden, z_what_dim, AT):
+    def __init__(self, num_pixels, num_hidden, z_what_dim, AT, reparameterized=self.reparameterized):
         super(self.__class__, self).__init__()
         self.enc_digit_hidden = nn.Sequential(
                         nn.Linear(num_pixels, num_hidden),
@@ -139,7 +146,7 @@ class Enc_digit(Program):
         self.enc_digit_log_std = nn.Sequential(
                         nn.Linear(int(0.5*num_hidden), z_what_dim))
         self.AT = AT
-
+        self.reparameterized = reparameterized
     def model(self, trace, c, ix):
         frames = c["frames"]
         # z_where are fetched from the input in the for loop below
@@ -155,9 +162,9 @@ class Enc_digit(Program):
         q_mu = self.enc_digit_mean(hidden)
         q_std = self.enc_digit_log_std(hidden).exp()
         if ix.dir == 'forward':
-            trace.normal(loc=q_mu, scale=q_std, reparameterized=False, name='z_what_%d'%(ix.sweep))
+            trace.normal(loc=q_mu, scale=q_std, name='z_what_%d'%(ix.sweep), reparameterized=self.reparameterized)
         elif ix.dir == 'reverse':
-            trace.normal(loc=q_mu, scale=q_std, reparameterized=False, name='z_what_%d'%(ix.sweep-1))
+            trace.normal(loc=q_mu, scale=q_std, name='z_what_%d'%(ix.sweep-1), reparameterized=self.reparameterized)
         else:
             raise ValueError("Kernel must be run either forward or reverse")
 
@@ -165,7 +172,7 @@ class Decoder(Program):
     """
     decoder
     """
-    def __init__(self, num_pixels, num_hidden, z_where_dim, z_what_dim, AT, device):
+    def __init__(self, num_pixels, num_hidden, z_where_dim, z_what_dim, AT, device, reparameterized=self.reparameterized):
         super(self.__class__, self).__init__()
         self.dec_digit_mean = nn.Sequential(nn.Linear(z_what_dim, int(0.5*num_hidden)),
                                     nn.ReLU(),
@@ -180,7 +187,7 @@ class Decoder(Program):
         self.prior_what_mu = torch.zeros(z_what_dim, device=device)
         self.prior_what_std = torch.ones(z_what_dim, device=device)
         self.AT = AT
-
+        self.reparameterized = reparameterized
     # In q_\phi case
     def get_conv_kernel(self, z_what_value, detach=True):
         digit_mean = self.dec_digit_mean(z_what_value)  # S * B * K * (28*28)
@@ -190,7 +197,7 @@ class Decoder(Program):
         digit_mean = digit_mean.detach() if detach else digit_mean
         return digit_mean
 
-    def model(self, trace, c, ix):
+    def model(self, trace, c, ix, EPS=1e-9):
         frames = c["frames"]
         _, _, T, FP, _ = frames.shape
         ##################################################################
@@ -206,25 +213,25 @@ class Decoder(Program):
                 if t == 0:
                     trace.normal(loc=self.prior_where0_mu,
                                  scale=self.prior_where0_Sigma,
-                                 reparameterized=False,
+                                 reparameterized=self.reparameterized,
                                  name='z_where_%d_%d' % (0, ix.sweep))
                 else:
                     trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (t-1, ix.sweep)].value,
                                  scale=self.prior_wheret_Sigma,
-                                 reparameterized=False,
+                                 reparameterized=self.reparameterized,
                                  name='z_where_%d_%d' % (t, ix.sweep))
                 z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep)].value.unsqueeze(2))
 
             elif t == (ix.t+1):
                 trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (ix.t, ix.sweep)].value,
                              scale=self.prior_wheret_Sigma,
-                             reparameterized=False,
+                             reparameterized=self.reparameterized,
                              name='z_where_%d_%d' % (t, ix.sweep-1))
                 z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep-1)].value.unsqueeze(2))
             else:
                 trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (t-1, ix.sweep-1)].value,
                              scale=self.prior_wheret_Sigma,
-                             reparameterized=False,
+                             reparameterized=self.reparameterized,
                              name='z_where_%d_%d' % (t, ix.sweep-1))
                 z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep-1)].value.unsqueeze(2))
 
@@ -241,7 +248,7 @@ class Decoder(Program):
 
         trace.normal(loc=self.prior_what_mu,
                     scale=self.prior_what_std,
-                    reparameterized=False,
+                    reparameterized=self.reparameterized,
                     name='z_what_%d'%(z_what_index))
         z_what_val = trace._cond_trace["z_what_%d"%(z_what_index)].value
 
@@ -257,7 +264,7 @@ class Decoder(Program):
                     dist=Bernoulli(probs=dummy_zeros),
                     value=old_recon.value,
                     log_prob=dummy_zeros,
-                    reparameterized=False,
+                    reparameterized=self.reparameterized,
                     can_resample=False,
                     provenance=Provenance.REUSED), # Needs to be reused to be picked up into tau_2, i.e. the weight computation
                 name=old_recon_name)
@@ -273,7 +280,7 @@ class Decoder(Program):
                 probs=recon_frames,
                 value=frames[:,:,ix.t,:,:],
                 name='recon_%d_%d' % (0, ix.sweep),
-                reparameterized=False,
+                reparameterized=self.reparameterized,
                 provenance=Provenance.OBSERVED)
 
             recon_optimizing_denominator = trace._cond_trace['recon_%d_%d' % (T, ix.sweep-1)].log_prob[:,:,1:,:,:]
@@ -284,7 +291,7 @@ class Decoder(Program):
                     dist=Bernoulli(probs=recon_frames),
                     value=frames[:,:,ix.t,:,:],
                     log_prob=opt_fake_likelihood,
-                    reparameterized=False,
+                    reparameterized=self.reparameterized,
                     can_resample=False,
                     provenance=Provenance.REUSED),
                 name='recon_opt_%d_%d' % (ix.t, ix.sweep))
@@ -308,7 +315,7 @@ class Decoder(Program):
                 Bernoulli,
                 probs=recon_frames[:,:,0],
                 value=frames[:,:,ix.t,:,:],
-                reparameterized=False,
+                reparameterized=self.reparameterized,
                 name='recon_%d_%d' % (ix.t, ix.sweep),
                 provenance=Provenance.OBSERVED)
 
@@ -325,7 +332,7 @@ class Decoder(Program):
                     dist=Bernoulli(probs=recon_frames),
                     value=frames[:,:,ix.t,:,:],
                     log_prob=opt_fake_likelihood,
-                    reparameterized=False,
+                    reparameterized=self.reparameterized,
                     can_resample=False,
                     provenance=Provenance.REUSED),
                 name='recon_opt_%d_%d' % (ix.t, ix.sweep))
@@ -347,7 +354,7 @@ class Decoder(Program):
                         dist=Bernoulli(probs=recon_frames),
                         value=frames[:,:,:T-1,:,:],
                         log_prob=opt_fake_likelihood,
-                        reparameterized=False,
+                        reparameterized=self.reparameterized,
                         can_resample=False,
                         provenance=Provenance.REUSED),
                     name='recon_opt_%d_%d' % (ix.t, ix.sweep))
@@ -360,8 +367,9 @@ class Decoder(Program):
                                probs=recon_frames,
                                value=frames,
                                name='recon_%d_%d' % (T, ix.sweep),
-                               reparameterized=False,
+                               reparameterized=self.reparameterized,
                                provenance=Provenance.OBSERVED)
+
 
         return {**{"z_what_%d"%(z_what_index): z_what_val, "frames": c["frames"]},
                 **{"z_where_%d_%d"%(t, ix.sweep): trace._cond_trace['z_where_%d_%d' % (t, ix.sweep)].value for t in range(min(ix.t+1, T))}}
