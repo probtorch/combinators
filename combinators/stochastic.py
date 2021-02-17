@@ -329,20 +329,23 @@ class Trace(MutableMapping):
         name = kwargs.pop('name', None)
         value = kwargs.pop('value', None)
         provenance = kwargs.pop('provenance', None)
+        reparameterized = kwargs.pop('reparameterized', None)
         dist = Dist(*args, **kwargs)
+        if reparameterized is None:
+            reparameterized = dist.has_rsample
         if value is None:
             if self._cond_trace is not None and name in self._cond_trace:
                 value = self._cond_trace[name].value
                 provenance = Provenance.REUSED
             else:
-                value = dist.rsample() if dist.has_rsample else dist.sample()
+                value = dist.rsample() if reparameterized else dist.sample()
                 provenance = Provenance.SAMPLED
         else:
             if not provenance:
                 provenance = Provenance.OBSERVED
             if isinstance(value, RandomVariable):
                 value = value.value
-        node = RandomVariable(dist, value, provenance, mask=self._mask)
+        node = RandomVariable(dist, value, reparameterized, provenance, mask=self._mask)
         if name is None:
             self.append(node)
         else:
@@ -598,8 +601,8 @@ def _autogen_trace_methods():
                 args = args + ', ' + kwargs
 
             env = {'obj': obj, 'torch': _torch}
-            s = ("""def f({0}, name=None, value=None):
-                    return self.variable(obj, {1}, name=name, value=value)""")
+            s = ("""def f({0}, name=None, value=None, reparameterized=None):
+                    return self.variable(obj, {1}, name=name, value=value, reparameterized=reparameterized)""")
             input_args = ', '.join(asp.args[1:])
             exec(s.format(args, input_args), env)
             f = env['f']
