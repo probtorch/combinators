@@ -58,7 +58,8 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
                 out = apg(c={"frames": frames_expand}, sample_dims=0, batch_dim=1, reparameterized=False)
                 out.loss.backward()
                 optimizer.step()
-                metrics['ess'] += out.ess.mean().detach().cpu().item()
+
+                metrics['ess'] += out.ess.mean().detach().cpu().item() if num_sweeps > 0 else 0
                 metrics['log_p'] += out.trace.log_joint(sample_dims=0,
                                                         batch_dim=1,
                                                         reparameterized=False).detach().cpu().mean().item()
