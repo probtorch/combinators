@@ -14,7 +14,7 @@ apg_ix = namedtuple("apg_ix", ["t", "sweep", "dir"])
 # from combinators.inference import Program, Compose, Extend, Propose, Resample, Condition
 # Path to example programs:
 
-def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, num_objects, mean_shape, device, reparameterized=self.reparameterized):
+def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, num_objects, mean_shape, device, reparameterized=False):
     models = dict()
     AT = Affine_Transformer(frame_pixels, shape_pixels, device)
 
@@ -44,7 +44,7 @@ class Enc_coor(Program):
     """
     encoder of the digit positions
     """
-    def __init__(self, num_pixels, num_hidden, z_where_dim, AT, dec, mean_shape, num_objects, reparameterized=self.reparameterized):
+    def __init__(self, num_pixels, num_hidden, z_where_dim, AT, dec, mean_shape, num_objects, reparameterized=False):
         super(self.__class__, self).__init__()
         self.enc_coor_hidden = nn.Sequential(
                             nn.Linear(num_pixels, num_hidden),
@@ -134,7 +134,7 @@ class Enc_digit(Program):
     """
     encoder of digit features
     """
-    def __init__(self, num_pixels, num_hidden, z_what_dim, AT, reparameterized=self.reparameterized):
+    def __init__(self, num_pixels, num_hidden, z_what_dim, AT, reparameterized=False):
         super(self.__class__, self).__init__()
         self.enc_digit_hidden = nn.Sequential(
                         nn.Linear(num_pixels, num_hidden),
@@ -172,7 +172,7 @@ class Decoder(Program):
     """
     decoder
     """
-    def __init__(self, num_pixels, num_hidden, z_where_dim, z_what_dim, AT, device, reparameterized=self.reparameterized):
+    def __init__(self, num_pixels, num_hidden, z_where_dim, z_what_dim, AT, device, reparameterized=False):
         super(self.__class__, self).__init__()
         self.dec_digit_mean = nn.Sequential(nn.Linear(z_what_dim, int(0.5*num_hidden)),
                                     nn.ReLU(),
