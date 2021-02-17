@@ -119,7 +119,7 @@ class Enc_coor(Program):
                 return {**c, 'z_where_%d_%d'%(ix.t, ix.sweep): z_where_t}
             return c
         elif ix.dir == 'reverse':
-            trace.normal(loc=q_mean, scale=q_std, name='z_where_%d_%d'%(ix.t, ix.sweep-1))
+            trace.normal(loc=q_mean, scale=q_std, reparameterized=False, name='z_where_%d_%d'%(ix.t, ix.sweep-1))
         else:
             raise ValueError("Kernel must be run either forward or reverse")
 
@@ -155,9 +155,9 @@ class Enc_digit(Program):
         q_mu = self.enc_digit_mean(hidden)
         q_std = self.enc_digit_log_std(hidden).exp()
         if ix.dir == 'forward':
-            trace.normal(loc=q_mu, scale=q_std, name='z_what_%d'%(ix.sweep))
+            trace.normal(loc=q_mu, scale=q_std, reparameterized=False, name='z_what_%d'%(ix.sweep))
         elif ix.dir == 'reverse':
-            trace.normal(loc=q_mu, scale=q_std, name='z_what_%d'%(ix.sweep-1))
+            trace.normal(loc=q_mu, scale=q_std, reparameterized=False, name='z_what_%d'%(ix.sweep-1))
         else:
             raise ValueError("Kernel must be run either forward or reverse")
 
@@ -206,21 +206,25 @@ class Decoder(Program):
                 if t == 0:
                     trace.normal(loc=self.prior_where0_mu,
                                  scale=self.prior_where0_Sigma,
+                                 reparameterized=False,
                                  name='z_where_%d_%d' % (0, ix.sweep))
                 else:
                     trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (t-1, ix.sweep)].value,
                                  scale=self.prior_wheret_Sigma,
+                                 reparameterized=False,
                                  name='z_where_%d_%d' % (t, ix.sweep))
                 z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep)].value.unsqueeze(2))
 
             elif t == (ix.t+1):
                 trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (ix.t, ix.sweep)].value,
                              scale=self.prior_wheret_Sigma,
+                             reparameterized=False,
                              name='z_where_%d_%d' % (t, ix.sweep-1))
                 z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep-1)].value.unsqueeze(2))
             else:
                 trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (t-1, ix.sweep-1)].value,
                              scale=self.prior_wheret_Sigma,
+                             reparameterized=False,
                              name='z_where_%d_%d' % (t, ix.sweep-1))
                 z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep-1)].value.unsqueeze(2))
 
@@ -236,8 +240,9 @@ class Decoder(Program):
             raise ValueError('You should not call the decoder when t=%d and sweep=%d' % (ix.t, ix.sweep))
 
         trace.normal(loc=self.prior_what_mu,
-                         scale=self.prior_what_std,
-                         name='z_what_%d'%(z_what_index))
+                    scale=self.prior_what_std,
+                    reparameterized=False,
+                    name='z_what_%d'%(z_what_index))
         z_what_val = trace._cond_trace["z_what_%d"%(z_what_index)].value
 
         if ix.sweep != 0:
@@ -253,6 +258,7 @@ class Decoder(Program):
                     value=old_recon.value,
                     log_prob=dummy_zeros,
                     reparameterized=False,
+                    can_resample=False,
                     provenance=Provenance.REUSED), # Needs to be reused to be picked up into tau_2, i.e. the weight computation
                 name=old_recon_name)
 
@@ -267,6 +273,7 @@ class Decoder(Program):
                 probs=recon_frames,
                 value=frames[:,:,ix.t,:,:],
                 name='recon_%d_%d' % (0, ix.sweep),
+                reparameterized=False,
                 provenance=Provenance.OBSERVED)
 
             recon_optimizing_denominator = trace._cond_trace['recon_%d_%d' % (T, ix.sweep-1)].log_prob[:,:,1:,:,:]
@@ -278,6 +285,7 @@ class Decoder(Program):
                     value=frames[:,:,ix.t,:,:],
                     log_prob=opt_fake_likelihood,
                     reparameterized=False,
+                    can_resample=False,
                     provenance=Provenance.REUSED),
                 name='recon_opt_%d_%d' % (ix.t, ix.sweep))
 
@@ -300,6 +308,7 @@ class Decoder(Program):
                 Bernoulli,
                 probs=recon_frames[:,:,0],
                 value=frames[:,:,ix.t,:,:],
+                reparameterized=False,
                 name='recon_%d_%d' % (ix.t, ix.sweep),
                 provenance=Provenance.OBSERVED)
 
@@ -317,6 +326,7 @@ class Decoder(Program):
                     value=frames[:,:,ix.t,:,:],
                     log_prob=opt_fake_likelihood,
                     reparameterized=False,
+                    can_resample=False,
                     provenance=Provenance.REUSED),
                 name='recon_opt_%d_%d' % (ix.t, ix.sweep))
 
@@ -338,6 +348,7 @@ class Decoder(Program):
                         value=frames[:,:,:T-1,:,:],
                         log_prob=opt_fake_likelihood,
                         reparameterized=False,
+                        can_resample=False,
                         provenance=Provenance.REUSED),
                     name='recon_opt_%d_%d' % (ix.t, ix.sweep))
 
@@ -349,6 +360,7 @@ class Decoder(Program):
                                probs=recon_frames,
                                value=frames,
                                name='recon_%d_%d' % (T, ix.sweep),
+                               reparameterized=False,
                                provenance=Provenance.OBSERVED)
 
         return {**{"z_what_%d"%(z_what_index): z_what_val, "frames": c["frames"]},

@@ -62,12 +62,11 @@ class Systematic(Strategy):
 
         new_trace = Trace()
         for key, rv in trace._nodes.items():
-            # Semantics only support resampling on traces (taus not rhos) which do not include OBSERVED RVs
-            if rv.provenance == Provenance.OBSERVED:
-                if not self.quiet:
-                    print("OBSERVED RVs have not been resampled!")
+            # WARNING: Semantics only support resampling on traces (taus not rhos) which do not include OBSERVED RVs
+            if not rv.can_resample or rv.provenance == Provenance.OBSERVED:
                 new_trace.append(rv, name=key)
                 continue
+
             # FIXME: Do not detach all
             value = pick(rv.value, aidx, sample_dims=sample_dims)
             log_prob = pick(rv.log_prob, aidx, sample_dims=sample_dims)
