@@ -130,7 +130,7 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
             print("Epoch=%d, Group=%d, " % (epoch+1, group+1) + metrics_print, file=log_file, flush=True)
             print("Epoch=%d, Group=%d, " % (epoch+1, group+1) + metrics_print)
     log_file.close()
-    return out, frames
+#     return out, frames
 
 def test_gibbs_sweep(budget, num_sweeps, timesteps, data_dir, **kwargs):
     device = torch.device(kwargs['device'])
@@ -169,16 +169,32 @@ if __name__ == '__main__':
     parser.add_argument('--z_what_dim', default=10, type=int)
         
     args = parser.parse_args()
-    test_gibbs_sweep(budget=args.budget, 
-                     num_sweeps=args.num_sweeps, 
-                     timesteps=args.timesteps,
-                     data_dir=args.data_dir,
-                     frame_pixels=args.frame_pixels, 
-                     shape_pixels=args.shape_pixels, 
-                     num_hidden_digit=args.num_hidden_digit, 
-                     num_hidden_coor=args.num_hidden_coor, 
-                     z_where_dim=args.z_where_dim, 
-                     z_what_dim=args.z_what_dim, 
-                     num_objects=args.num_objects, 
-                     device=args.device)
+    train_apg(num_epochs=args.num_epochs,
+                      lr=args.lr,
+                      batch_size=args.batch_size,
+                      budget=args.budget,
+                      num_sweeps=args.num_sweeps,
+                      timesteps=args.timesteps,
+                      data_dir=args.data_dir,
+                      frame_pixels=args.frame_pixels, 
+                      shape_pixels=args.shape_pixels, 
+                      num_hidden_digit=args.num_hidden_digit, 
+                      num_hidden_coor=args.num_hidden_coor, 
+                      z_where_dim=args.z_where_dim, 
+                      z_what_dim=args.z_what_dim, 
+                      num_objects=args.num_objects, 
+                      device=args.device)
+    
+#     test_gibbs_sweep(budget=args.budget, 
+#                      num_sweeps=args.num_sweeps, 
+#                      timesteps=args.timesteps,
+#                      data_dir=args.data_dir,
+#                      frame_pixels=args.frame_pixels, 
+#                      shape_pixels=args.shape_pixels, 
+#                      num_hidden_digit=args.num_hidden_digit, 
+#                      num_hidden_coor=args.num_hidden_coor, 
+#                      z_where_dim=args.z_where_dim, 
+#                      z_what_dim=args.z_what_dim, 
+#                      num_objects=args.num_objects, 
+#                      device=args.device)
 
