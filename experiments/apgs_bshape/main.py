@@ -24,7 +24,7 @@ else:
 from tqdm.contrib import tenumerate
     
 def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_dir, **kwargs):
-    torch.autograd.set_detect_anomaly(True)
+#     torch.autograd.set_detect_anomaly(True)
     device = torch.device(kwargs['device'])
     sample_size = budget // (num_sweeps + 1)
     mean_shape = torch.load(data_dir + 'mean_shape.pt').to(device)    
@@ -32,6 +32,8 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
     for file in os.listdir(data_dir+'/video/'):
         if file.endswith('.pt'):
             data_paths.append(os.path.join(data_dir+'/video/', file))
+    if len(data_paths) == 0:
+        raise ValueError('Empty data path list.')
     if num_sweeps == 1: ## rws method
         model_version = 'rws-bshape-num_objects=%s-num_samples=%s' % (kwargs['num_objects'], sample_size)
     elif num_sweeps > 1: ## apg sampler
