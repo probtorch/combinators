@@ -32,11 +32,11 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
     data_paths = []
     for file in os.listdir(data_dir+'/video/'):
         if file.endswith('.pt') and \
-        'timesteps=%d-%dobjects=%d' % (kwargs['timesteps'], kwargs['num_objects']) in file:
+        'timesteps=%d-objects=%d' % (timesteps, kwargs['num_objects']) in file:
             data_paths.append(os.path.join(data_dir+'/video/', file))
     if len(data_paths) == 0:
         raise ValueError('Empty data path list.')
-    model_version = 'apg-timesteps=%s-objects=%s-sweeps=%s-samples=%s' % (kwargs['timesteps'], kwargs['num_objects'], num_sweeps, sample_size)
+    model_version = 'apg-timesteps=%d-objects=%d-sweeps=%d-samples=%d' % (timesteps, kwargs['num_objects'], num_sweeps, sample_size)
     models = init_models(mean_shape=mean_shape, **kwargs)
     optimizer = adam(models.values(), lr=lr, betas=(0.9,0.99))
     apg = gibbs_sweeps(models, num_sweeps, timesteps)
@@ -50,7 +50,7 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
             metrics = {'ess' : 0.0, 'log_p' : 0.0, 'loss' : 0.0}
             data = torch.load(data_path)
             N, T, _, _ = data.shape
-            assert T == kwargs['timesteps'], 'Data contain %d timesteps while the corresponding arugment in APG is %d.' % (T, kwargs['timesteps'])
+            assert T == timesteps, 'Data contain %d timesteps while the corresponding arugment in APG is %d.' % (T, timesteps)
             num_batches = 1 if N <= batch_size else data.shape[0] // batch_size
             seq_indices = torch.randperm(N)
             for b in range(num_batches):
