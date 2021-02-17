@@ -43,6 +43,8 @@ def ancestor_indices_systematic(lw, sample_dims, batch_dim):
     return aidx
 
 class Systematic(Strategy):
+    def __init__(self, quiet=False):
+        self.quiet=quiet
 
     def __call__(self, trace:Trace, log_weight:Tensor, sample_dims:int, batch_dim:Optional[int])->Tuple[Trace, Tensor]:
         assert sample_dims == 0, "FIXME: take this assert out"
@@ -61,8 +63,10 @@ class Systematic(Strategy):
         for key, rv in trace._nodes.items():
             # Semantics only support resampling on traces (taus not rhos) which do not include OBSERVED RVs
             if rv.provenance == Provenance.OBSERVED:
-                print("OBSERVED RVs have not been resampled!")
-                break
+                if not self.quiet:
+                    print("OBSERVED RVs have not been resampled!")
+                new_trace.append(rv, name=key)
+                continue
             # FIXME: Do not detach all
             value = pick(rv.value, aidx, sample_dims=sample_dims)
             log_prob = pick(rv.log_prob, aidx, sample_dims=sample_dims)

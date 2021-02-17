@@ -118,11 +118,12 @@ class Resample(Inf):
             ix=None,
             _debug:bool=False,
             loss0=None,
-            strategy=None
+            strategy=None,
+            quiet=False
     ):
         Inf.__init__(self, ix=ix, _debug=_debug, loss0=loss0)
         self.q = q
-        self.strategy = rstrat.Systematic()
+        self.strategy = rstrat.Systematic(quiet=quiet)
 
     def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Resample """
@@ -270,11 +271,13 @@ class Propose(Inf):
             loss0=None,
             device=None,
             ix=None,
-            _debug:bool=False):
+            _debug:bool=False,
+            _no_reruns:bool=True):
         Inf.__init__(self, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
         assert not isinstance(p, Compose)
         self.p = p
         self.q = q
+        self._no_reruns = _no_reruns
 
     def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Propose """
@@ -285,15 +288,12 @@ class Propose(Inf):
         q_out = dispatch(self.q)(c, **inf_kwargs, **shared_kwargs)
 
         p_condition = Condition(self.p, q_out.trace)
-
         p_out = dispatch(p_condition)(c, **inf_kwargs,  **shared_kwargs)
-
         rho_1 = set(q_out.trace.keys())
         tau_1 = set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED})
         tau_2 = set({k for k, v in p_out.trace.items() if v.provenance != Provenance.OBSERVED})
         nodes = rho_1 - (tau_1 - tau_2)
         lu_1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
-        
         # τ*, by definition, can't have OBSERVE or REUSED random variables
         # FIXME: precision errors when converting python into pytorch, see tests.
         lu_star = 0.0 if 'trace_star' not in p_out else q_out.trace.log_joint(nodes=set(p_out.trace_star.keys()), **shape_kwargs)
@@ -303,17 +303,18 @@ class Propose(Inf):
         # In the semantics this corresponds to lw_2 - (lu + [lu_star])
         lv = p_out.log_weight - (lu_1 + lu_star)
         lw_out = lw_1 + lv
-       
+
         # FIXME: dirty optimization hack
-        forward_trace = None 
+        forward_trace = None
         if q_out.type == "Compose":
             if q_out.q1_out.type in ['Resample', "Propose"]:
                 forward_trace = q_out.q2_out.trace
             else:
                 forward_trace = q_out.q2_out.trace
-                
+
+
         self._out = Out(
-            trace=rerun_with_detached_values(p_out.trace),
+            trace=p_out.trace if self._no_reruns else rerun_with_detached_values(p_out.trace),
             log_weight=lw_out.detach(),
             output=p_out.output,
             extras=dict(
@@ -329,7 +330,7 @@ class Propose(Inf):
                 ess = effective_sample_size(lw_out, sample_dims=sample_dims),
                 ## objectives api ##
                 lv=lv,
-                proposal_trace=q_out.trace,
+                proposal_trace=copytraces(q_out.trace, exclude_node=set(q_out.trace.keys()) - nodes),
                 target_trace=copytraces(p_out.trace, p_out.trace_star) if "trace_star" in p_out else p_out.trace,
                 forward_trace=forward_trace,
                 # ## apg ##

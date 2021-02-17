@@ -86,8 +86,8 @@ from tqdm.contrib import tenumerate
 #     for file in os.listdir(args.data_dir):
 #         if file.endswith('.pt'):
 #             data_paths.append(os.path.join(args.data_dir, file))
-#     
-    
+#
+
 def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_dir, **kwargs):
     device = torch.device(kwargs['device'])
     sample_size = budget // num_sweeps
@@ -177,8 +177,8 @@ if __name__ == '__main__':
                       timesteps=args.timesteps,
                       data_dir=args.data_dir,
                       frame_pixels=args.frame_pixels, 
-                      shape_pixels=args.shape_pixels, 
-                      num_hidden_digit=args.num_hidden_digit, 
+                      shape_pixels=args.shape_pixels,
+                      num_hidden_digit=args.num_hidden_digit,
                       num_hidden_coor=args.num_hidden_coor, 
                       z_where_dim=args.z_where_dim, 
                       z_what_dim=args.z_what_dim, 
