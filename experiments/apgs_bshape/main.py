@@ -27,17 +27,16 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
 #     torch.autograd.set_detect_anomaly(True)
     device = torch.device(kwargs['device'])
     sample_size = budget // (num_sweeps + 1)
+    assert sample_size > 0, 'non-positive sample size =%d' % sample_size
     mean_shape = torch.load(data_dir + 'mean_shape.pt').to(device)    
     data_paths = []
     for file in os.listdir(data_dir+'/video/'):
-        if file.endswith('.pt'):
+        if file.endswith('.pt') and \
+        'timesteps=%d-%dobjects=%d' % (kwargs['timesteps'], kwargs['num_objects']) in file:
             data_paths.append(os.path.join(data_dir+'/video/', file))
     if len(data_paths) == 0:
         raise ValueError('Empty data path list.')
-    if num_sweeps == 1: ## rws method
-        model_version = 'rws-bshape-num_objects=%s-num_samples=%s' % (kwargs['num_objects'], sample_size)
-    elif num_sweeps > 1: ## apg sampler
-        model_version = 'apg-bshape-num_objects=%s-num_sweeps=%s-num_samples=%s' % (kwargs['num_objects'], num_sweeps, sample_size)
+    model_version = 'apg-timesteps=%s-objects=%s-sweeps=%s-samples=%s' % (kwargs['timesteps'], kwargs['num_objects'], num_sweeps, sample_size)
     models = init_models(mean_shape=mean_shape, **kwargs)
     optimizer = adam(models.values(), lr=lr, betas=(0.9,0.99))
     apg = gibbs_sweeps(models, num_sweeps, timesteps)
