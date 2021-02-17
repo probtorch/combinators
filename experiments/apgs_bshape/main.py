@@ -50,8 +50,10 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
         for group, data_path in enumerate(data_paths):
             metrics = {'ess' : 0.0, 'log_p' : 0.0, 'loss' : 0.0}
             data = torch.load(data_path)
-            num_batches = data.shape[0] // batch_size
-            seq_indices = torch.randperm(data.shape[0])
+            N, T, _, _ = data.shape
+            assert T == kwargs['timesteps'], 'Data contain %d timesteps while the corresponding arugment in APG is %d.' % (T, kwargs['timesteps'])
+            num_batches = 1 if N <= batch_size else data.shape[0] // batch_size
+            seq_indices = torch.randperm(N)
             for b in range(num_batches):
                 optimizer.zero_grad()
                 frames = data[seq_indices[b*batch_size : (b+1)*batch_size]]
