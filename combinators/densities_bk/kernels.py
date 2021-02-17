@@ -73,10 +73,7 @@ class ConditionalMultivariateNormal(Program):
             pass
 
     def model(self, trace, c, *shared):
-        try:
-            assert isinstance(c, dict) and self.ext_from in c
-        except:
-            breakpoint();
+        breakpoint();
 
         if self.learn_cov:
             mu, cov_emb = self.net(c[self.ext_from].detach())
