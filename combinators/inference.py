@@ -118,12 +118,14 @@ class Resample(Inf):
             ix=None,
             _debug:bool=False,
             loss0=None,
-            strategy=None
+            strategy=None,
+            quiet=False,
+            normalize_weights=False
     ):
         Inf.__init__(self, ix=ix, _debug=_debug, loss0=loss0)
         self.q = q
-        self.strategy = rstrat.Systematic()
-
+        self.strategy = rstrat.Systematic(quiet=quiet, normalize_weights=normalize_weights)
+        
     def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Resample """
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)

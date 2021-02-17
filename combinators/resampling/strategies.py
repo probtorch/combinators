@@ -43,6 +43,9 @@ def ancestor_indices_systematic(lw, sample_dims, batch_dim):
     return aidx
 
 class Systematic(Strategy):
+    def __init__(self, quiet=False, normalize_weights=False):
+        self.quiet=quiet
+        self.normalize_weights = normalize_weights
 
     def __call__(self, trace:Trace, log_weight:Tensor, sample_dims:int, batch_dim:Optional[int])->Tuple[Trace, Tensor]:
         assert sample_dims == 0, "FIXME: take this assert out"
@@ -61,8 +64,10 @@ class Systematic(Strategy):
         for key, rv in trace._nodes.items():
             # Semantics only support resampling on traces (taus not rhos) which do not include OBSERVED RVs
             if rv.provenance == Provenance.OBSERVED:
-                print("OBSERVED RVs have not been resampled!")
-                break
+                if not self.quiet:
+                    print("OBSERVED RVs have not been resampled!")
+                new_trace.append(rv, name=key)
+                continue
             # FIXME: Do not detach all
             value = pick(rv.value, aidx, sample_dims=sample_dims)
             log_prob = pick(rv.log_prob, aidx, sample_dims=sample_dims)
@@ -79,6 +84,8 @@ class Systematic(Strategy):
             new_trace.append(var, name=key)
 
         log_weight = torch.logsumexp(log_weight - math.log(log_weight.shape[sample_dims]), dim=sample_dims, keepdim=True).expand_as(log_weight)
+        if self.normalize_weights:
+            log_weight = torch.nn.functional.softmax(log_weight, dim=sample_dims).log()
         return new_trace, log_weight
 
 def stubtest_ancestor_indices_systematic():
@@ -135,4 +142,3 @@ def stubtest_resample_without_batch():
                 memo[s] += (rv.value == (s+1)).sum() / (S*N*2)
 
     print(memo / B)
-
