@@ -91,7 +91,7 @@ from tqdm.contrib import tenumerate
 def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_dir, **kwargs):
     device = torch.device(kwargs['device'])
     sample_size = budget // num_sweeps
-    mean_shape = torch.load(data_dir + 'mean_shape.pt').to(device)    
+    mean_shape = torch.load(data_dir + 'mean_shape.pt').to(device)
     data_paths = []
     for file in os.listdir(data_dir+'/video/'):
         if file.endswith('.pt'):
@@ -117,16 +117,16 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
             for b in range(num_batches):
                 optimizer.zero_grad()
                 frames = data[seq_indices[b*batch_size : (b+1)*batch_size]]
-                frames_expand = frames.to(device).repeat(sample_size, 1, 1, 1, 1)                
+                frames_expand = frames.to(device).repeat(sample_size, 1, 1, 1, 1)
                 out = apg(c={"frames": frames_expand}, sample_dims=0, batch_dim=1, reparameterized=False)
                 out.loss.backward()
                 optimizer.step()
                 metrics['ess'] += out.ess.mean().detach().cpu().item()
-                metrics['log_p'] += out.trace.log_joint(sample_dims=0, 
-                                                        batch_dim=1, 
+                metrics['log_p'] += out.trace.log_joint(sample_dims=0,
+                                                        batch_dim=1,
                                                         reparameterized=False).detach().cpu().mean().item()
-                metrics['loss'] += out.loss.detach().cpu().item()   
-            metrics_print = ",  ".join(['%s: %.4f' % (k, v/num_batches) for k, v in metrics.items()])                
+                metrics['loss'] += out.loss.detach().cpu().item()
+            metrics_print = ",  ".join(['%s: %.4f' % (k, v/num_batches) for k, v in metrics.items()])
             print("Epoch=%d, Group=%d, " % (epoch+1, group+1) + metrics_print, file=log_file, flush=True)
             print("Epoch=%d, Group=%d, " % (epoch+1, group+1) + metrics_print)
     log_file.close()
@@ -153,38 +153,38 @@ if __name__ == '__main__':
     parser.add_argument('--data_dir', default='./dataset/')
     parser.add_argument('--frame_pixels', default=96, type=int)
     parser.add_argument('--shape_pixels', default=28, type=int)
-    parser.add_argument('--timesteps', default=10, type=int)
+    parser.add_argument('--timesteps', default=3, type=int)
     parser.add_argument('--num_objects', default=3, type=int)
     # training config
-    parser.add_argument('--device', default='cuda:1', type=str)
+    parser.add_argument('--device', default='cpu', type=str)
     parser.add_argument('--num_epochs', default=200, type=int)
     parser.add_argument('--lr', default=2e-4, type=float)
-    parser.add_argument('--batch_size', default=5, type=int)
-    parser.add_argument('--budget', default=100, type=int)
-    parser.add_argument('--num_sweeps', default=5, type=int)
+    parser.add_argument('--batch_size', default=3, type=int)
+    parser.add_argument('--budget', default=50, type=int)
+    parser.add_argument('--num_sweeps', default=4, type=int)
     # network config
     parser.add_argument('--num_hidden_digit', default=400, type=int)
     parser.add_argument('--num_hidden_coor', default=400, type=int)
     parser.add_argument('--z_where_dim', default=2, type=int)
     parser.add_argument('--z_what_dim', default=10, type=int)
-        
+
     args = parser.parse_args()
     train_apg(num_epochs=args.num_epochs,
-                      lr=args.lr,
-                      batch_size=args.batch_size,
-                      budget=args.budget,
-                      num_sweeps=args.num_sweeps,
-                      timesteps=args.timesteps,
-                      data_dir=args.data_dir,
-                      frame_pixels=args.frame_pixels, 
-                      shape_pixels=args.shape_pixels,
-                      num_hidden_digit=args.num_hidden_digit,
-                      num_hidden_coor=args.num_hidden_coor, 
-                      z_where_dim=args.z_where_dim, 
-                      z_what_dim=args.z_what_dim, 
-                      num_objects=args.num_objects, 
-                      device=args.device)
-    
+              lr=args.lr,
+              batch_size=args.batch_size,
+              budget=args.budget,
+              num_sweeps=args.num_sweeps,
+              timesteps=args.timesteps,
+              data_dir=args.data_dir,
+              frame_pixels=args.frame_pixels,
+              shape_pixels=args.shape_pixels,
+              num_hidden_digit=args.num_hidden_digit,
+              num_hidden_coor=args.num_hidden_coor,
+              z_where_dim=args.z_where_dim,
+              z_what_dim=args.z_what_dim,
+              num_objects=args.num_objects,
+              device=args.device)
+
 #     test_gibbs_sweep(budget=args.budget, 
 #                      num_sweeps=args.num_sweeps, 
 #                      timesteps=args.timesteps,

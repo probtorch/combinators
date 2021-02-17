@@ -62,7 +62,7 @@ def gibbs_sweeps(models, num_sweeps, T):
     q_is = Propose(p=p_dec_os, q=q_os, ix=apg_ix(T, 0, "forward"),
                    _no_reruns=True,
                    loss_fn=loss_is)
-    q_is = Resample(q_is)
+    q_is = Resample(q_is, normalize_weights=True)
 
     q_t = q_is
     for sweep in range(1, num_sweeps+1): # Sweeps
@@ -71,13 +71,13 @@ def gibbs_sweeps(models, num_sweeps, T):
                           q=Compose(q_t, q_enc_coor, ix=apg_ix(t, sweep, "forward")),
                           _no_reruns=True,
                           loss_fn=loss_apg, ix=apg_ix(t, sweep, "propose"))
-            q_t = Resample(q_t, quiet=True)
+            q_t = Resample(q_t, quiet=True, normalize_weights=True)
         q_t = Propose(p=Extend(p_dec_os, q_enc_digit, ix=apg_ix(T, sweep, "reverse")),
                       q=Compose(q_t, q_enc_digit, ix=apg_ix(T, sweep, "forward")),
                       _no_reruns=True,
                       loss_fn=loss_apg, ix=apg_ix(T, sweep, "propose"))
         if sweep != num_sweeps:
-            q_t = Resample(q_t, quiet=True)
+            q_t = Resample(q_t, quiet=True, normalize_weights=True)
     return q_t
 
 

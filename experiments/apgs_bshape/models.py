@@ -240,6 +240,22 @@ class Decoder(Program):
                          name='z_what_%d'%(z_what_index))
         z_what_val = trace._cond_trace["z_what_%d"%(z_what_index)].value
 
+        if ix.sweep != 0:
+            if ix.t == 0:
+                old_recon_name = "recon_%d_%d"%(T, ix.sweep-1)
+            else:
+                old_recon_name = "recon_%d_%d"%(ix.t-1, ix.sweep)
+            old_recon = trace._cond_trace[old_recon_name]
+            dummy_zeros = torch.zeros_like(old_recon.log_prob)
+            trace.append(
+                RandomVariable(
+                    dist=Bernoulli(probs=dummy_zeros),
+                    value=old_recon.value,
+                    log_prob=dummy_zeros,
+                    reparameterized=False,
+                    provenance=Provenance.REUSED), # Needs to be reused to be picked up into tau_2, i.e. the weight computation
+                name=old_recon_name)
+
         # optimization for z_wheres
         if ix.t == 0:
             z_where_vals = trace._cond_trace["z_where_%d_%d" % (0, ix.sweep)].value.unsqueeze(2)
@@ -262,7 +278,7 @@ class Decoder(Program):
                     value=frames[:,:,ix.t,:,:],
                     log_prob=opt_fake_likelihood,
                     reparameterized=False,
-                    provenance=Provenance.OBSERVED),
+                    provenance=Provenance.REUSED),
                 name='recon_opt_%d_%d' % (ix.t, ix.sweep))
 
         elif ix.t > 0 and ix.t < T:
@@ -290,7 +306,7 @@ class Decoder(Program):
             # manual reconstruction ratio for z_where_t=ix.t_s=ix.sweep-1
             recon_optimizing_denominator = Bernoulli(probs=recon_frames[:,:,1]).log_prob(frames[:,:,1])
 
-            recon_numerator_key = 'recon_%d_%d' % (0, ix.sweep) if ix.t == 1 else 'recon_opt_%d_%d' % (ix.t-1, ix.sweep)
+            recon_numerator_key = 'recon_%d_%d' % (ix.t-1, ix.sweep)
             recon_optimizing_numerator = trace._cond_trace[recon_numerator_key].log_prob
 
             opt_fake_likelihood = recon_optimizing_numerator - recon_optimizing_denominator
@@ -301,7 +317,7 @@ class Decoder(Program):
                     value=frames[:,:,ix.t,:,:],
                     log_prob=opt_fake_likelihood,
                     reparameterized=False,
-                    provenance=Provenance.OBSERVED),
+                    provenance=Provenance.REUSED),
                 name='recon_opt_%d_%d' % (ix.t, ix.sweep))
 
         elif ix.t == T:
@@ -322,7 +338,7 @@ class Decoder(Program):
                         value=frames[:,:,:T-1,:,:],
                         log_prob=opt_fake_likelihood,
                         reparameterized=False,
-                        provenance=Provenance.OBSERVED),
+                        provenance=Provenance.REUSED),
                     name='recon_opt_%d_%d' % (ix.t, ix.sweep))
 
             # Numerator section

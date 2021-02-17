@@ -119,11 +119,13 @@ class Resample(Inf):
             _debug:bool=False,
             loss0=None,
             strategy=None,
-            quiet=False
+            quiet=False,
+            normalize_weights=False
     ):
         Inf.__init__(self, ix=ix, _debug=_debug, loss0=loss0)
         self.q = q
-        self.strategy = rstrat.Systematic(quiet=quiet)
+        self.strategy = rstrat.Systematic(quiet=quiet, normalize_weights=normalize_weights)
+        self.normalize_weights = normalize_weights
 
     def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Resample """
@@ -304,14 +306,18 @@ class Propose(Inf):
         lv = p_out.log_weight - (lu_1 + lu_star)
         lw_out = lw_1 + lv
 
+        # num = set(p_out.trace.keys())
+        # den = nodes
+        # if 'trace_star' in p_out:
+        #     den = den.union(set(p_out.trace_star.keys()))         
         # FIXME: dirty optimization hack
         forward_trace = None
         if q_out.type == "Compose":
-            if q_out.q1_out.type in ['Resample', "Propose"]:
-                forward_trace = q_out.q2_out.trace
-            else:
-                forward_trace = q_out.q2_out.trace
-
+            forward_trace = q_out.q2_out.trace
+            # if q_out.q1_out.type in ['Resample', "Propose"]:
+            #     forward_trace = q_out.q2_out.trace
+            # else:
+                # forward_trace = q_out.q2_out.trace
 
         self._out = Out(
             trace=p_out.trace if self._no_reruns else rerun_with_detached_values(p_out.trace),
