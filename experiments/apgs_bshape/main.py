@@ -43,6 +43,7 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
     log_file = open('./results/log-' + model_version + '.txt', 'a+')
     for epoch in range(num_epochs):
         shuffle(data_paths)
+        start = time.time()
         for group, data_path in enumerate(data_paths):
             metrics = {'ess' : 0.0, 'log_p' : 0.0, 'loss' : 0.0}
             data = torch.load(data_path)
@@ -64,8 +65,9 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
                 metrics['loss'] += out.loss.detach().cpu().item()
             save_models(models, 'cp-' + model_version)
             metrics_print = ",  ".join(['%s: %.4f' % (k, v/num_batches) for k, v in metrics.items()])
-            print("Epoch=%d, Group=%d, " % (epoch+1, group+1) + metrics_print, file=log_file, flush=True)
-            print("Epoch=%d, Group=%d, " % (epoch+1, group+1) + metrics_print)
+            end = time.time()
+            print("(%ds) Epoch=%d, Group=%d, " % (end - start, epoch+1, group+1) + metrics_print, file=log_file, flush=True)
+            print("(%ds) Epoch=%d, Group=%d, " % (end - start, epoch+1, group+1) + metrics_print)
     log_file.close()
 #     return out, frames
 
