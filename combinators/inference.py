@@ -265,6 +265,7 @@ class Compose(Inf):
         return self._out
 
 
+
 class Propose(Inf):
     def __init__(self,
             p: Union[Program, Extend],
@@ -345,8 +346,6 @@ class Propose(Inf):
                 #########
 #                 trace_original=p_out.trace,
                 # FIXME: if we hold on to these references then we might introduce a space leak
-                # q_out=q_out,
-                # p_out=p_out,
                 type=type(self).__name__,
                 pytype=type(self),
                 # FIXME: can we ditch this? how important is this for objectives
@@ -355,4 +354,9 @@ class Propose(Inf):
                 ),
         )
         self._out['loss'] = self.foldr_loss(self._out, maybe(q_out, 'loss', self.loss0))
+
+        if self._debug or _debug:
+            self._out['q_out'] = q_out
+            self._out['p_out'] = p_out
+
         return self._out
