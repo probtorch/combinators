@@ -1,29 +1,204 @@
 #!/usr/bin/env python3
-import torch
 import math
-from torch import nn, Tensor
+from typing import Callable, Dict, Optional, Tuple, Union
+
+import combinators.trace.utils as trace_utils
+import torch
+import torch.distributions as D
+from combinators import (ImproperRandomVariable, RandomVariable, autodevice,
+                         effective_sample_size, kw_autodevice, log_Z_hat,
+                         nvo_avo, nvo_rkl)
+from combinators.embeddings import CovarianceEmbedding
+from combinators.nnets import ResMLPJ
+from combinators.program import Program
+from combinators.stochastic import (ImproperRandomVariable, Provenance,
+                                    RandomVariable, Trace)
+from combinators.tensor.utils import autodevice, kw_autodevice
+from matplotlib import pyplot as plt
+from torch import Tensor, distributions, nn
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import trange
-from typing import Tuple
-from matplotlib import pyplot as plt
 
-from combinators import autodevice, kw_autodevice
-from combinators import nvo_rkl, nvo_avo
-from combinators import RandomVariable, ImproperRandomVariable
-from combinators import effective_sample_size, log_Z_hat
 
-from combinators.densities import MultivariateNormal, Tempered, RingGMM, Normal
-from combinators.densities.kernels import ConditionalMultivariateNormal, ConditionalMultivariateNormalLinear
-from combinators.nnets import ResMLPJ
+import math
+import torch
+from torch import Tensor, distributions, nn
+import torch.distributions as D
+from typing import Optional, Dict, Union, Callable
+from combinators.tensor.utils import kw_autodevice, autodevice
+import combinators.trace.utils as trace_utils
 
-def mk_kernel(from_:int, to_:int, std:float, num_hidden:int, learn_cov=True, activation=nn.ReLU):
+from combinators.program import Program
+from combinators.embeddings import CovarianceEmbedding
+from combinators.stochastic import Trace, ImproperRandomVariable, RandomVariable, Provenance
+
+class Density(Program):
+    """ A program that represents a single unnormalized distribution that you can query logprobs on. """
+
+    def __init__(self, name, log_density_fn:Callable[[Tensor], Tensor]):
+        super().__init__()
+        self.name = name
+        self.log_density_fn = log_density_fn
+
+    def model(self, trace, c):
+        assert trace._cond_trace is not None and self.name in trace._cond_trace, "an improper RV can only condition on values in an existing trace"
+        rv = ImproperRandomVariable(log_density_fn=self.log_density_fn, value=trace._cond_trace[self.name].value, provenance=Provenance.REUSED)
+        # assert rv.log_prob.grad_fn is not None
+        trace.append(rv, name=self.name)
+        return {self.name: rv.value.detach()}
+
+    def __repr__(self):
+        return f'[{self.name}]' + super().__repr__()
+
+class Distribution(Program):
+    """ Normalized version of Density but trying to limit overly-complex class heirarchies """
+
+    def __init__(self, name:str, dist:distributions.Distribution, reparameterized:bool):
+        super().__init__()
+        self.name = name
+        self.dist = dist
+        self.RandomVariable = RandomVariable
+        self.reparameterized = reparameterized
+
+    def model(self, trace, c, sample_shape=torch.Size([1,1])):
+        dist = self.dist
+
+        value, provenance, _ = trace_utils.maybe_sample(self._cond_trace, sample_shape, reparameterized=self.reparameterized)(dist, self.name)
+
+        rv = self.RandomVariable(dist=dist, value=value, provenance=provenance, reparameterized=self.reparameterized) # <<< rv.log_prob = dist.log_prob(value)
+        trace.append(rv, name=self.name)
+        return {self.name: rv.value}
+
+    def __repr__(self):
+        return f'Distribution[name={self.name}; dist={repr(self.dist)}]'
+
+class FixedMultivariateNormal(Distribution):
+    def __init__(self, loc, cov, name, device=None):
+        dist = distributions.MultivariateNormal(loc=loc, covariance_matrix=cov)
+        super().__init__(name, dist, reparameterized=False)
+        self.loc, self.cov = loc, cov
+        self.loc.requires_grad_(False)
+        self.cov.requires_grad_(False)
+
+class ConditionalMultivariateNormal(Program):
+    def __init__(
+            self,
+            ext_from:str,
+            ext_to:str,
+            loc:Tensor,
+            cov:Tensor,
+            net:nn.Module,
+            reparameterized,
+            embedding_dim:int=2,
+            cov_embedding:CovarianceEmbedding=CovarianceEmbedding.SoftPlusDiagonal,
+        ):
+        super().__init__()
+        self.ext_from = ext_from
+        self.ext_to = ext_to
+        self.dim_in = 2
+        self.cov_dim = cov.shape[0]
+        self.cov_embedding = cov_embedding
+        self.register_parameter(self.cov_embedding.embed_name, nn.Parameter(self.cov_embedding.embed(cov, embedding_dim)))
+        self.net = net
+        self.net.initialize_(torch.zeros_like(loc), self.cov_embedding.embed(cov, embedding_dim))
+        self.reparameterized = reparameterized
+
+    def model(self, trace, c, *shared):
+        mu, cov_emb = self.net(c[self.ext_from])
+        cov = self.cov_embedding.unembed(cov_emb, self.cov_dim)
+
+        value = trace.multivariate_normal(
+            loc=mu,
+            covariance_matrix=cov,
+            value=trace[self.ext_to].value if self.ext_to in trace else None,
+            name=self.ext_to,
+            reparameterized=self.reparameterized,
+        )
+        return {self.ext_to: value}
+
+class Tempered(Density):
+    def __init__(self, name, d1:Union[Distribution, Density], d2:Union[Distribution, Density], beta:Tensor, optimize=False):
+        assert torch.all(beta > 0.) and torch.all(beta < 1.), \
+            "tempered densities are β=(0, 1) for clarity. Use model directly for β=0 or β=1"
+        super().__init__(name, self.log_density_fn)
+        self.beta = beta
+        self.density1 = d1
+        self.density2 = d2
+
+        if optimize:
+            self.logit = nn.Parameter(torch.logit(beta))
+
+    def log_density_fn(self, value:Tensor) -> Tensor:
+
+        def log_prob(g, value):
+            # FIXME: technically if we also learn d1 or d2, we must detach parameters first
+            assert all([p.requires_grad == False for p in g.parameters()])
+
+            return g.log_density_fn(value) if isinstance(g, Density) else g.dist.log_prob(value)
+
+        t = self.beta
+        return log_prob(self.density1, value)*(1-t) + \
+               log_prob(self.density2, value)*t
+
+
+    def __repr__(self):
+        return "[β={:.4f}]".format(self.beta.item()) + super().__repr__()
+
+class GMM(Density):
+    def __init__(self, locs, covs, name="GMM"):
+        assert len(locs) == len(covs)
+        self.K = K = len(locs)
+        super().__init__(name, self.log_density_fn)
+        self.components = [distributions.MultivariateNormal(loc=locs[k], covariance_matrix=covs[k]) for k in range(K)]
+
+    def sample(self, sample_shape=torch.Size([1])):
+        """ only used to visualize samples """
+        # NOTE: no trace being used here
+        trace = Trace()
+        zs = distributions.Categorical(torch.ones(K, device="cpu")).sample(sample_shape=sample_shape)
+
+        # trace.update(a_trace)
+        cluster_shape = (1, *zs.shape[1:-1])
+        xs = []
+        values, indicies = torch.sort(zs)
+
+        for k in range(self.K):
+            n_k = (values == k).sum()
+            x_k = self.components[k].sample(sample_shape=(n_k, *zs.shape[1:-1]))
+            xs.append(x_k)
+
+        xs = torch.cat(xs)[indicies]
+
+        rv = ImproperRandomVariable(log_density_fn=self.log_density_fn, value=xs, provenance=Provenance.SAMPLED)
+        trace.append(rv, name=self.name)
+        return trace, xs
+
+    def log_density_fn(self, value): # , log_weights, cond_set, param_set):
+        lds = []
+        for i, comp in enumerate(self.components):
+            ld_i = comp.log_prob(value) # + log_weights[i]
+            lds.append(ld_i)
+        lds_ = torch.stack(lds, dim=0)
+        ld = torch.logsumexp(lds_, dim=0)
+        return ld
+
+class RingGMM(GMM):
+    def __init__(self, name="RingGMM", loc_scale=5, scale=1, count=8, device=None):
+        angles = list(range(0, 360, 360//count))[:count] # integer division may give +1
+        position = lambda radians: [math.cos(radians), math.sin(radians)]
+        locs = torch.tensor([position(a*math.pi/180) for a in angles], **kw_autodevice(device)) * loc_scale
+        covs = [torch.eye(2, **kw_autodevice(device)) * scale for _ in range(count)]
+        super().__init__(name=name, locs=locs, covs=covs)
+
+
+def mk_kernel(from_:int, to_:int, std:float, num_hidden:int, reparameterized:bool, activation=nn.ReLU):
     embedding_dim = 2
     return ConditionalMultivariateNormal(
         ext_from=f'g{from_}',
         ext_to=f'g{to_}',
         loc=torch.zeros(2, **kw_autodevice()),
         cov=torch.eye(2, **kw_autodevice())*std**2,
-        learn_cov=learn_cov,
+        reparameterized=reparameterized,
         net=ResMLPJ(
             dim_in=2,
             dim_hidden=num_hidden,
@@ -57,9 +232,9 @@ def anneal_between(left, right, total_num_targets):
     return path
 
 
-def anneal_between_mvns(left_loc, right_loc, total_num_targets):
-    g0 = mk_mvn(0, left_loc)
-    gK =  mk_mvn(total_num_targets-1, right_loc)
+def anneal_between_mvns(left_loc, right_loc, total_num_targets, reparameterized):
+    g0 = mk_mvn(0, left_loc, reparameterized)
+    gK =  mk_mvn(total_num_targets-1, right_loc, reparameterized)
 
     return anneal_between(g0, gK, total_num_targets)
 
@@ -69,23 +244,23 @@ def anneal_between_ns(left_loc, right_loc, total_num_targets):
 
     return anneal_between(g0, gK, total_num_targets)
 
-def mk_mvn(i, loc, std=1):
-    return MultivariateNormal(name=f'g{i}', loc=torch.ones(2, **kw_autodevice())*loc, cov=torch.eye(2, **kw_autodevice())*std**2)
+def mk_mvn(i, loc, std, reparameterized):
+    return FixedMultivariateNormal(name=f'g{i}', loc=torch.ones(2, **kw_autodevice())*loc, cov=torch.eye(2, **kw_autodevice())*std**2)
 
 def mk_n(i, loc):
     return Normal(name=f'g{i}', loc=torch.ones(1, **kw_autodevice())*loc, scale=torch.ones(1, **kw_autodevice())**2)
 
 def paper_model(num_targets=8):
-    g0 = mk_mvn(0, 0, std=5)
+    g0 = mk_mvn(0, loc=0, std=5, reparameterized=False)
     gK = RingGMM(loc_scale=10, scale=0.5, count=8, name=f"g{num_targets - 1}").to(autodevice())
 
-    def paper_kernel(from_:int, to_:int, std:float):
-        return mk_kernel(from_, to_, std, num_hidden=50, learn_cov=True, activation=nn.Sigmoid)
+    def paper_kernel(from_:int, to_:int, std:float, reparameterized:bool):
+        return mk_kernel(from_, to_, std, num_hidden=50, activation=nn.Sigmoid, reparameterized=reparameterized)
 
     return dict(
         targets=anneal_between(g0, gK, num_targets),
-        forwards=[paper_kernel(from_=i, to_=i+1, std=1.) for i in range(num_targets-1)],
-        reverses=[paper_kernel(from_=i+1, to_=i, std=1.) for i in range(num_targets-1)],
+        forwards=[paper_kernel(from_=i, to_=i+1, std=1., reparameterized=True) for i in range(num_targets-1)],
+        reverses=[paper_kernel(from_=i+1, to_=i, std=1., reparameterized=False) for i in range(num_targets-1)],
     )
 
 def mk_model(num_targets:int):
@@ -93,35 +268,7 @@ def mk_model(num_targets:int):
         targets=anneal_to_ring(num_targets),
         forwards=[mk_kernel(from_=i, to_=i+1, std=1., num_hidden=64) for i in range(num_targets-1)],
         reverses=[mk_kernel(from_=i+1, to_=i, std=1., num_hidden=64) for i in range(num_targets-1)],
-
-#         targets=anneal_between_mvns(0, num_targets*2, num_targets),
-#         forwards=[mk_kernel(from_=i, to_=i+1, std=1., num_hidden=64) for i in range(num_targets-1)],
-#         reverses=[mk_kernel(from_=i+1, to_=i, std=1., num_hidden=64) for i in range(num_targets-1)],
-
-#         targets=anneal_between_mvns(0, num_targets*2, num_targets),
-#         forwards=[mk_mnlinear_kernel(from_=i, to_=i+1, std=1., dim=2) for i in range(num_targets-1)],
-#         reverses=[mk_mnlinear_kernel(from_=i+1, to_=i, std=1., dim=2) for i in range(num_targets-1)],
-
-        # NOTES: Anneal between 2 1d guassians with a linear kernel: 2 steps
-        # annealing does not learn the forward kernel in the first step, but learns both in the second step.
-#         targets=anneal_between_ns(0, num_targets*2, num_targets),
-#         forwards=[mk_nlinear_kernel(from_=i, to_=i+1, std=1., dim=1) for i in range(num_targets-1)],
-#         reverses=[mk_nlinear_kernel(from_=i+1, to_=i, std=1., dim=1) for i in range(num_targets-1)],
-
-#         targets=[mk_mvn(i, i*2) for i in range(num_targets)],
-#         forwards=[mk_kernel(from_=i, to_=i+1, std=1., num_hidden=32) for i in range(num_targets-1)],
-#         reverses=[mk_kernel(from_=i+1, to_=i, std=1., num_hidden=32) for i in range(num_targets-1)],
-
-#         targets=[mk_mvn(i, i*2) for i in range(num_targets)],
-#         forwards=[mk_mnlinear_kernel(from_=i, to_=i+1, std=1., dim=2) for i in range(num_targets-1)],
-#         reverses=[mk_mnlinear_kernel(from_=i+1, to_=i, std=1., dim=2) for i in range(num_targets-1)],
-
-        # NOTES: With 1 intermediate density between 2 1d guassians with a linear kernel everything is fine
-#         targets=[mk_n(i, i*2) for i in range(num_targets)],
-#         forwards=[mk_nlinear_kernel(from_=i, to_=i+1, std=1., dim=1) for i in range(num_targets-1)],
-#         reverses=[mk_nlinear_kernel(from_=i+1, to_=i, std=1., dim=1) for i in range(num_targets-1)],
     )
-
 
 def sample_along(proposal, kernels, sample_shape=(2000,)):
     samples = []
@@ -132,3 +279,4 @@ def sample_along(proposal, kernels, sample_shape=(2000,)):
         tr, _, out = proposal(sample_shape=sample_shape)
         samples.append(out)
     return samples
+

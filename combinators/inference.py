@@ -292,6 +292,7 @@ class Propose(Inf):
 
         p_condition = Condition(self.p, q_out.trace)
         p_out = dispatch(p_condition)(c, **inf_kwargs,  **shared_kwargs)
+
         rho_1 = set(q_out.trace.keys())
         tau_1 = set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED})
         tau_2 = set({k for k, v in p_out.trace.items() if v.provenance != Provenance.OBSERVED})
@@ -307,23 +308,26 @@ class Propose(Inf):
         lv = p_out.log_weight - (lu_1 + lu_star)
         lw_out = lw_1 + lv
 
-        # num = set(p_out.trace.keys())
-        # den = nodes
-        # if 'trace_star' in p_out:
-        #     den = den.union(set(p_out.trace_star.keys()))         
-        # FIXME: dirty optimization hack
-        forward_trace = None
-        if q_out.type == "Compose":
-            forward_trace = q_out.q2_out.trace
-            # if q_out.q1_out.type in ['Resample', "Propose"]:
-            #     forward_trace = q_out.q2_out.trace
-            # else:
-                # forward_trace = q_out.q2_out.trace
+        # =============================================== #
+        # detach c                                        #
+        # =============================================== #
+        new_out = None
+        if isinstance(p_out.output, torch.Tensor):
+            new_out = p_out.output.detach()
+        elif isinstance(p_out.output, dict):
+            new_out = {}
+            for k, v in p_out.output.items():
+                if isinstance(v, torch.Tensor):
+                    new_out[k] = v.detach()
+                else:
+                    new_out[k] = v
+        else:
+            new_out = p_out.output
 
         self._out = Out(
             trace=p_out.trace if self._no_reruns else rerun_with_detached_values(p_out.trace),
             log_weight=lw_out.detach(),
-            output=p_out.output,
+            output=new_out,
             extras=dict(
                 # FIXME: Delete before publishing - this is for debugging only
                 lu=(lu_1 + lu_star),
@@ -339,8 +343,8 @@ class Propose(Inf):
                 lv=lv,
                 proposal_trace=copytraces(q_out.trace, exclude_node=set(q_out.trace.keys()) - nodes),
                 target_trace=copytraces(p_out.trace, p_out.trace_star) if "trace_star" in p_out else p_out.trace,
-                forward_trace=forward_trace,
-                # ## apg ##
+                ## apg ##
+                forward_trace = q_out.q2_out.trace if q_out.type == "Compose" else None,
                 # p_num=p_out.p_out.log_weight if (p_out.type == "Extend") else p_out.log_weight,
                 # q_den=lu_star,
                 #########

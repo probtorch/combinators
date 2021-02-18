@@ -15,19 +15,19 @@ class Distribution(Program):
     """ Normalized version of Density but trying to limit overly-complex class heirarchies """
 
     def __init__(self, name:str, dist:distributions.Distribution, reparameterized=None):
+        raise Error
         super().__init__()
         self.name = name
         self.dist = dist
         self.RandomVariable = RandomVariable
         self.reparameterized = reparameterized
 
-    def model(self, trace, c, sample_shape=torch.Size([1,1]), reparameterized=None):
-        reparameterized = self.reparameterized if reparameterized is None else reparameterized
+    def model(self, trace, c, sample_shape=torch.Size([1,1])):
         dist = self.dist
 
-        value, provenance, reparameterized = trace_utils.maybe_sample(self._cond_trace, sample_shape, reparameterized=reparameterized)(dist, self.name)
+        value, provenance, _= trace_utils.maybe_sample(self._cond_trace, sample_shape, reparameterized=self.reparameterized)(dist, self.name)
 
-        rv = self.RandomVariable(dist=dist, value=value, provenance=provenance, reparameterized=reparameterized) # <<< rv.log_prob = dist.log_prob(value)
+        rv = self.RandomVariable(dist=dist, value=value, provenance=provenance, reparameterized=self.reparameterized) # <<< rv.log_prob = dist.log_prob(value)
         trace.append(rv, name=self.name)
         return {self.name: rv.value}
 
@@ -36,6 +36,7 @@ class Distribution(Program):
 
 class Normal(Distribution):
     def __init__(self, loc, scale, name, reparam=True, device=None):
+        raise Error
         as_tensor = lambda x: x.to(autodevice(device)) if isinstance(x, Tensor) else torch.tensor(x, dtype=torch.float, requires_grad=reparam, **kw_autodevice(device))
 
         self.loc, self.scale = as_tensor(loc), as_tensor(scale)
@@ -50,6 +51,7 @@ class Normal(Distribution):
 
 class MultivariateNormal(Distribution):
     def __init__(self, loc, cov, name, reparam=True, device=None):
+        raise Error
         as_tensor = lambda x: x.to(autodevice(device)) if isinstance(x, Tensor) else torch.tensor(x, dtype=torch.float, requires_grad=reparam, **kw_autodevice(device))
         self.loc, self.cov = as_tensor(loc), as_tensor(cov)
         dist = distributions.MultivariateNormal(loc=self.loc, covariance_matrix=self.cov)
@@ -68,10 +70,12 @@ class OneHotCategorical(Distribution):
         self.logits = logits
         self.validate_args = validate_args
         super().__init__(name, distributions.OneHotCategorical(probs, logits, validate_args))
+
 class Density(Program):
     """ A program that represents a single unnormalized distribution that you can query logprobs on. """
 
     def __init__(self, name, log_density_fn:Callable[[Tensor], Tensor]):
+        raise Error
         super().__init__()
         self.name = name
         self.log_density_fn = log_density_fn
@@ -88,6 +92,7 @@ class Density(Program):
 
 class Tempered(Density):
     def __init__(self, name, d1:Union[Distribution, Density], d2:Union[Distribution, Density], beta:Tensor, optimize=False):
+        raise Error
         assert torch.all(beta > 0.) and torch.all(beta < 1.), \
             "tempered densities are β=(0, 1) for clarity. Use model directly for β=0 or β=1"
         super().__init__(name, self.log_density_fn)
@@ -117,6 +122,7 @@ class Tempered(Density):
 
 class GMM(Density):
     def __init__(self, locs, covs, name="GMM"):
+        raise Error
         assert len(locs) == len(covs)
         self.K = K = len(locs)
         super().__init__(name, self.log_density_fn)
@@ -157,6 +163,7 @@ class GMM(Density):
 
 class RingGMM(GMM):
     def __init__(self, name="RingGMM", loc_scale=5, scale=1, count=8, device=None):
+        raise Error
         angles = list(range(0, 360, 360//count))[:count] # integer division may give +1
         position = lambda radians: [math.cos(radians), math.sin(radians)]
         locs = torch.tensor([position(a*math.pi/180) for a in angles], **kw_autodevice(device)) * loc_scale

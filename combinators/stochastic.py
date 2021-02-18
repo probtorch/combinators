@@ -345,9 +345,6 @@ class Trace(MutableMapping):
         can_resample = kwargs.pop('can_resample', True)
         dist = Dist(*args, **kwargs)
         assert reparameterized is not None, f"No reparameterized set for {name}: dist={dist}"
-        # if reparameterized is None:
-        #     reparameterized = dist.has_rsample
-
         if value is None:
             if self._cond_trace is not None and name in self._cond_trace:
                 value = self._cond_trace[name].value
@@ -448,9 +445,10 @@ class Trace(MutableMapping):
         for n in nodes:
             if n in self._nodes:
                 node = self._nodes[n]
-                if isinstance(node, RandomVariable) and reparameterized and\
-                   not node.reparameterized:
-                    raise ValueError('All random variables must be sampled by reparameterization.')
+                # FIXME:
+                # if isinstance(node, RandomVariable) and reparameterized and\
+                #    not node.reparameterized:
+                #     raise ValueError('All random variables must be sampled by reparameterization.')
                 log_p = batch_sum(node.log_prob,
                                   sample_dims,
                                   batch_dim)
