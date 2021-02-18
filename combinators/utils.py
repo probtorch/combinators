@@ -24,11 +24,11 @@ def save_models(models, filename, weights_dir="./weights")->None:
 
     torch.save(checkpoint, f'{weights_dir}/{filename}')
 
-def load_models(model, filename, weights_dir="./weights")->None:
+def load_models(model, filename, weights_dir="./weights", **kwargs)->None:
 
-    checkpoint = torch.load(f'{weights_dir}/{filename}')
+    checkpoint = torch.load(f'{weights_dir}/{filename}', **kwargs)
 
-    return {k: v.state_dict(checkpoint[k]) for k, v in model.items()}
+    {k: v.load_state_dict(checkpoint[k]) for k, v in model.items()}
 
 def models_as_iter(model_dict, with_names=False):
     from collections import namedtuple
