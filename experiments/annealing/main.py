@@ -70,8 +70,8 @@ def get_stats(out):
 
 def print_and_sum_loss(loss_fn, out, loss):
     step_loss = loss_fn(out)
-    step_loss = step_loss if not loss == 0. else step_loss.detach()
     loss = loss + step_loss
+    # step_loss = step_loss if not loss == 0. else step_loss.detach()
     # print(loss)
     return loss
 
@@ -85,41 +85,6 @@ def nvi_declarative(targets, forwards, reverses, loss_fn, sample_shape, batch_di
             q = Resample(q)
     out = q(None, sample_shape=sample_shape, sample_dims=sample_dims, batch_dim=batch_dim)
     return out
-
-def main(trainer, K=8, seed=1, eval_break=50, num_iterations=10000, num_samples = 256):
-    # Setup
-    torch.manual_seed(seed)
-    sample_shape=(num_samples,)
-
-    # Models
-    out = paper_model()
-    targets, forwards, reverses = [[m.to(autodevice()) for m in out[n]] for n in ['targets', 'forwards', 'reverses']]
-
-    assert all([len(list(k.parameters())) >  0 for k in [*forwards, *reverses]])
-
-    # logging
-    writer = SummaryWriter()
-
-    optimizer = adam([*forwards, *reverses], lr=1e-3)
-
-    with trange(num_iterations) as bar:
-        for i in bar:
-            lvss, loss = trainer(i, targets, forwards, reverses, sample_shape)
-
-            loss.backward()
-
-            optimizer.step()
-            optimizer.zero_grad()
-
-            with torch.no_grad():
-                ess, lzh, loss_scalar = bar_report(i, lvss, loss)
-                report(writer, ess, lzh, loss_scalar, i, eval_break, targets, forwards)
-
-                bar.set_postfix_str("; ".join([
-                    'loss={: .4f}'.format(loss_scalar),
-                    'logZhat[-1]={:.4f}'.format(lzh[-1].cpu().item()),
-                    'ess[-1]={:.4f}'.format(ess[-1].cpu().item())
-                ]))
 
 def compute_nvi_weight(proposal, target, forward, reverse, lw_in=0., sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=False):
     g0_out = proposal(None, sample_dims=sample_dims, sample_shape=sample_shape, batch_dim=batch_dim)
@@ -324,8 +289,6 @@ def test_nvi_grads(K, sample_shape=(11,), batch_dim=1, sample_dims=0, resample=F
     plot_nvi_run(targets, forwards, reverses, losses, ess, lZ_hat, batch_dim=batch_dim, sample_dims=sample_dims,
                  suffix="_{}_{}_{}_{}".format(K, iterations, loss_fn.__name__, "_r" if resample else ""))
     # plt.show()
-
-
 
 if __name__ == '__main__':
     S = 288

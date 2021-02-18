@@ -337,6 +337,8 @@ class Trace(MutableMapping):
                 value = self._cond_trace[name].value
                 provenance = Provenance.REUSED
             else:
+                if reparameterized:
+                    breakpoint()
                 value = dist.rsample() if reparameterized else dist.sample()
                 provenance = Provenance.SAMPLED
         else:
