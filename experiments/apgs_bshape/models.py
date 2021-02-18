@@ -124,7 +124,7 @@ class Enc_coor(Program):
             return c
         elif ix.dir == 'reverse':
             trace.normal(loc=q_mean,
-                         scale=q_std,  
+                         scale=q_std,
                          name='z_where_%d_%d'%(ix.t, ix.sweep-1),
                          reparameterized=self.reparameterized)
         else:

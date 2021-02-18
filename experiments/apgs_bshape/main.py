@@ -109,32 +109,38 @@ if __name__ == '__main__':
     parser.add_argument('--z_what_dim', default=10, type=int)
 
     args = parser.parse_args()
-    train_apg(num_epochs=args.num_epochs,
-              lr=args.lr,
-              batch_size=args.batch_size,
-              budget=args.budget,
-              num_sweeps=args.num_sweeps,
-              timesteps=args.timesteps,
-              data_dir=args.data_dir,
-              frame_pixels=args.frame_pixels,
-              shape_pixels=args.shape_pixels,
-              num_hidden_digit=args.num_hidden_digit,
-              num_hidden_coor=args.num_hidden_coor,
-              z_where_dim=args.z_where_dim,
-              z_what_dim=args.z_what_dim,
-              num_objects=args.num_objects,
-              device=args.device)
 
-#     test_gibbs_sweep(budget=args.budget, 
-#                      num_sweeps=args.num_sweeps, 
-#                      timesteps=args.timesteps,
-#                      data_dir=args.data_dir,
-#                      frame_pixels=args.frame_pixels, 
-#                      shape_pixels=args.shape_pixels, 
-#                      num_hidden_digit=args.num_hidden_digit, 
-#                      num_hidden_coor=args.num_hidden_coor, 
-#                      z_where_dim=args.z_where_dim, 
-#                      z_what_dim=args.z_what_dim, 
-#                      num_objects=args.num_objects, 
-#                      device=args.device)
+    test = True
+    if test:
+        out, frames = test_gibbs_sweep(
+            budget=args.budget,
+            num_sweeps=args.num_sweeps,
+            timesteps=args.timesteps,
+            data_dir=args.data_dir,
+            frame_pixels=args.frame_pixels,
+            shape_pixels=args.shape_pixels,
+            num_hidden_digit=args.num_hidden_digit,
+            num_hidden_coor=args.num_hidden_coor,
+            z_where_dim=args.z_where_dim,
+            z_what_dim=args.z_what_dim,
+            num_objects=args.num_objects,
+            device=args.device)
+        breakpoint();
 
+    else:
+        train_apg(num_epochs=args.num_epochs,
+                  lr=args.lr,
+                  batch_size=args.batch_size,
+                  budget=args.budget,
+                  num_sweeps=args.num_sweeps,
+                  timesteps=args.timesteps,
+                  data_dir=args.data_dir,
+                  frame_pixels=args.frame_pixels,
+                  shape_pixels=args.shape_pixels,
+                  num_hidden_digit=args.num_hidden_digit,
+                  num_hidden_coor=args.num_hidden_coor,
+                  z_where_dim=args.z_where_dim,
+                  z_what_dim=args.z_what_dim,
+                  num_objects=args.num_objects,
+                  device=args.device)
+    print("done!")
