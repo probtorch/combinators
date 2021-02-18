@@ -14,9 +14,11 @@ apg_ix = namedtuple("apg_ix", ["t", "sweep", "dir"])
 # from combinators.inference import Program, Compose, Extend, Propose, Resample, Condition
 # Path to example programs:
 
-def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, num_objects, mean_shape, device, reparameterized=False):
+def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, num_objects, mean_shape, device, reparameterized=False, use_markov_blanket=True):
     models = dict()
     AT = Affine_Transformer(frame_pixels, shape_pixels, device)
+
+    Decoder = DecoderMarkovBlanket if use_markov_blanket else DecoderFull
 
     models['dec'] = Decoder(num_pixels=shape_pixels**2,
                             num_hidden=num_hidden_digit,
@@ -168,7 +170,7 @@ class Enc_digit(Program):
         else:
             raise ValueError("Kernel must be run either forward or reverse")
 
-class Decoder(Program):
+class DecoderMarkovBlanket(Program):
     """
     decoder
     """
@@ -370,6 +372,99 @@ class Decoder(Program):
                                reparameterized=self.reparameterized,
                                provenance=Provenance.OBSERVED)
 
+
+        return {**{"z_what_%d"%(z_what_index): z_what_val, "frames": c["frames"]},
+                **{"z_where_%d_%d"%(t, ix.sweep): trace._cond_trace['z_where_%d_%d' % (t, ix.sweep)].value for t in range(min(ix.t+1, T))}}
+
+class DecoderFull(Program):
+    """
+    decoder
+    """
+    def __init__(self, num_pixels, num_hidden, z_where_dim, z_what_dim, AT, device, reparameterized=False):
+        super(self.__class__, self).__init__()
+        self.dec_digit_mean = nn.Sequential(nn.Linear(z_what_dim, int(0.5*num_hidden)),
+                                    nn.ReLU(),
+                                    nn.Linear(int(0.5*num_hidden), num_hidden),
+                                    nn.ReLU(),
+                                    nn.Linear(num_hidden, num_pixels),
+                                    nn.Sigmoid())
+
+        self.prior_where0_mu = torch.zeros(z_where_dim, device=device)
+        self.prior_where0_Sigma = torch.ones(z_where_dim, device=device) * 1.0
+        self.prior_wheret_Sigma = torch.ones(z_where_dim, device=device) * 0.2
+        self.prior_what_mu = torch.zeros(z_what_dim, device=device)
+        self.prior_what_std = torch.ones(z_what_dim, device=device)
+        self.AT = AT
+        self.reparameterized = reparameterized
+    # In q_\phi case
+    def get_conv_kernel(self, z_what_value, detach=True):
+        digit_mean = self.dec_digit_mean(z_what_value)  # S * B * K * (28*28)
+        S, B, K, DP2 = digit_mean.shape
+        DP = int(math.sqrt(DP2))
+        digit_mean = digit_mean.view(S, B, K, DP, DP)
+        digit_mean = digit_mean.detach() if detach else digit_mean
+        return digit_mean
+
+    def model(self, trace, c, ix, EPS=1e-9):
+        frames = c["frames"]
+        _, _, T, FP, _ = frames.shape
+        ##################################################################
+        # Remove the optimization by always computing the log joint.
+        # Compute the log prior of z_where_{1:T} and construct a sample
+        # trajectory using sample values
+        # 1. from sweep for preceding and current timesteps i.e. t <= ix.t
+        # 2. from sweep-1 for future timesteps, i.e. t > ix.t
+        ##################################################################
+        z_where_vals = []
+        for t in range(T):
+            if t <= ix.t:
+                if t == 0:
+                    trace.normal(loc=self.prior_where0_mu,
+                                 scale=self.prior_where0_Sigma,
+                                 name='z_where_%d_%d' % (0, ix.sweep),
+                                 reparameterized=self.reparameterized)
+                else:
+                    trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (t-1, ix.sweep)].value,
+                                 scale=self.prior_wheret_Sigma,
+                                 name='z_where_%d_%d' % (t, ix.sweep),
+                                 reparameterized=self.reparameterized)
+                z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep)].value.unsqueeze(2))
+
+            elif t == (ix.t+1):
+                trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (ix.t, ix.sweep)].value,
+                             scale=self.prior_wheret_Sigma,
+                             name='z_where_%d_%d' % (t, ix.sweep-1),
+                             reparameterized=self.reparameterized)
+                z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep-1)].value.unsqueeze(2))
+            else:
+                trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (t-1, ix.sweep-1)].value,
+                             scale=self.prior_wheret_Sigma,
+                             name='z_where_%d_%d' % (t, ix.sweep-1),
+                             reparameterized=self.reparameterized)
+                z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep-1)].value.unsqueeze(2))
+        z_where_vals = torch.cat(z_where_vals, 2)
+
+        # index for z_what given ix
+        if ix.t == T:
+            z_what_index = ix.sweep
+        elif ix.t < T and ix.sweep > 0:
+            z_what_index = ix.sweep - 1
+        else:
+            raise ValueError('You should not call the decoder when t=%d and sweep=%d' % (ix.t, ix.sweep))
+        trace.normal(loc=self.prior_what_mu,
+                     scale=self.prior_what_std,
+                     name='z_what_%d'%(z_what_index),
+                     reparameterized=self.reparameterized)
+        z_what_val = trace._cond_trace["z_what_%d"%(z_what_index)].value
+
+        digit_mean = self.get_conv_kernel(z_what_val, detach=False)
+        recon_frames = torch.clamp(self.AT.digit_to_frame(digit_mean, z_where_vals).sum(-3), min=0.0, max=1.0)
+        _ = trace.variable(Bernoulli,
+                           probs=recon_frames+EPS,
+                           value=frames,
+                           name='recon',
+                           provenance=Provenance.OBSERVED,
+                           reparameterized=self.reparameterized,)
 
         return {**{"z_what_%d"%(z_what_index): z_what_val, "frames": c["frames"]},
                 **{"z_where_%d_%d"%(t, ix.sweep): trace._cond_trace['z_where_%d_%d' % (t, ix.sweep)].value for t in range(min(ix.t+1, T))}}
