@@ -120,7 +120,11 @@ class Tempered(Density):
         assert torch.all(beta > 0.) and torch.all(beta < 1.), \
             "tempered densities are β=(0, 1) for clarity. Use model directly for β=0 or β=1"
         super().__init__(name, self.log_density_fn)
-        self.beta = beta
+        self.optimize = optimize
+        if self.optimize:
+            self.beta = torch.nn.Parameter(beta)
+        else:
+            self.beta = beta
         self.density1 = d1
         self.density2 = d2
 
@@ -135,9 +139,8 @@ class Tempered(Density):
 
             return g.log_density_fn(value) if isinstance(g, Density) else g.dist.log_prob(value)
 
-        t = self.beta
-        return log_prob(self.density1, value)*(1-t) + \
-               log_prob(self.density2, value)*t
+        return log_prob(self.density1, value)*(1-self.beta) + \
+               log_prob(self.density2, value)*self.beta
 
 
     def __repr__(self):
@@ -188,18 +191,14 @@ class RingGMM(GMM):
         y = radius * torch.cos(alpha * torch.arange(count).float())
         locs = torch.stack((x, y), dim=0).T
         covs = torch.stack([torch.eye(2)*scale for m in range(count)], dim=0)
-        # angles = list(range(0, 360, 360//count))[:count] # integer division may give +1
-        # position = lambda radians: [math.cos(radians), math.sin(radians)]
-        # locs = torch.tensor([position(a*math.pi/180) for a in angles], **kw_autodevice(device)) * loc_scale
-        # covs = [torch.eye(2, **kw_autodevice(device)) * scale for _ in range(count)]
         super().__init__(name=name, locs=locs, covs=covs)
 
-def anneal_between(left, right, total_num_targets):
+def anneal_between(left, right, total_num_targets, optimize_path=False):
     proposal_std = total_num_targets
 
     # Make an annealing path
     betas = torch.arange(0., 1., 1./(total_num_targets - 1))[1:] # g_0 is beta=0
-    path = [Tempered(f'g{k}', left, right, beta) for k, beta in zip(range(1, total_num_targets-1), betas)]
+    path = [Tempered(f'g{k}', left, right, beta, optimize=optimize_path) for k, beta in zip(range(1, total_num_targets-1), betas)]
     path = [left] + path + [right]
     assert len(path) == total_num_targets # sanity check that the betas line up
     return path
@@ -224,7 +223,7 @@ def paper_model(num_targets=8, optimize_path=False):
                 dim_out=2).to(autodevice()))
 
     return dict(
-        targets=anneal_between(g0, gK, num_targets),
+        targets=anneal_between(g0, gK, num_targets, optimize_path=optimize_path),
         forwards=[paper_kernel(from_=i, to_=i+1, std=1., reparameterized=True) for i in range(num_targets-1)],
         reverses=[paper_kernel(from_=i+1, to_=i, std=1., reparameterized=False) for i in range(num_targets-1)],
     )

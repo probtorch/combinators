@@ -339,8 +339,8 @@ class Propose(Inf):
             new_out = p_out.output
 
         ### DELETE AFTER ANNEALING WORKS ########
-        assert q_out.trace['g{}'.format(self.ix)].value.grad_fn is None
-        assert q_out.trace['g{}'.format(self.ix)].log_prob.grad_fn is None
+        # assert q_out.trace['g{}'.format(self.ix)].value.grad_fn is None
+        # assert q_out.trace['g{}'.format(self.ix)].log_prob.grad_fn is None
         if c is not None:
             for k,v in new_out.items():
                 assert v.grad_fn is None

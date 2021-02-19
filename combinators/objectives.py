@@ -51,10 +51,8 @@ def nvo_rkl(
                         - proposal_trace.log_joint(sample_dims=sample_dims, batch_dim=1),
                         lv))
     assert (rv_fwd.log_prob.grad_fn is not None)
-    assert (rv_proposal.log_prob.grad_fn is None)
     assert (rv_proposal.value.grad_fn is None)
     assert (rv_target.log_prob.grad_fn is not None)
-    assert (_eval_nrep(rv_target)._log_prob.grad_fn is None), "will fail for star"
     assert (rv_rev.log_prob.grad_fn is not None)
 
     ldZ = lv.detach().logsumexp(dim=sample_dims) - math.log(lv.shape[sample_dims])
