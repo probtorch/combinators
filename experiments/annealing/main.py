@@ -25,7 +25,7 @@ from experiments.annealing.models import paper_model
 
 def traverse_proposals(fn, out, memo=[])->[Tensor]:
     if out.pytype == Propose:
-        return traverse_proposals(fn, out.q_out, memo + [fn(out)])
+        return traverse_proposals(fn, out.q_out, [fn(out)] + memo)
     elif out.pytype == Extend:
         raise ValueError("impossible! traverse proposal will never arrive here")
     elif out.pytype == Compose:
@@ -235,7 +235,7 @@ def test(nvi_program, sample_shape, batch_dim=1, sample_dims=0):
 
     ess = effective_sample_size(lw, sample_dims=sample_dims+1)
     lZ_hat = log_Z_hat(lw, sample_dims=sample_dims+1)
-    samples = [('g{}'.format(t), proposal_traces[t-1]['g{}'.format(t)].value) for t in range(1, len(proposal_traces)+1)]  # skip the initial gaussian proposal
+    samples = [('g{}'.format(t+1), proposal_traces[t]['g{}'.format(t+1)].value) for t in range(len(proposal_traces)-1)]  # skip the initial gaussian proposal
     return loss, ess, lZ_hat, samples
 
 
@@ -307,8 +307,8 @@ if __name__ == '__main__':
     K = 4
     resample = False
     iterations = 20000
-    # objective = nvo_avo
-    objective = nvo_rkl
+    objective = nvo_avo
+    # objective = nvo_rkl
     tt = True
     # tt = False
     torch.manual_seed(0)
@@ -334,9 +334,9 @@ if __name__ == '__main__':
                                                             (1000, 100),
                                                             batch_dim=1,
                                                             sample_dims=0)
-    plot(losses, ess, lZ_hat, samples_test,
-         filename="nvi_weights_{}_S{}_K{}_R{}_I{}".format(objective.__name__, S, K, resample, iterations))
     print("losses:", losses_test.mean(1))
     print("ess:", ess_test.mean(1))
     print("log_Z_hat", lZ_hat_test.mean(1))
+    plot(losses, ess, lZ_hat, samples_test,
+         filename="nvi_weights_{}_S{}_K{}_R{}_I{}".format(objective.__name__, S, K, resample, iterations))
     print("done!")
