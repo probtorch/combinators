@@ -204,7 +204,7 @@ def anneal_between(left, right, total_num_targets):
     assert len(path) == total_num_targets # sanity check that the betas line up
     return path
 
-def paper_model(num_targets=8):
+def paper_model(num_targets=8, optimize_path=False):
     g0 = FixedMultivariateNormal(name=f'g0',
                                  loc=torch.zeros(2, **kw_autodevice()),
                                  cov=torch.eye(2, **kw_autodevice())*5**2)

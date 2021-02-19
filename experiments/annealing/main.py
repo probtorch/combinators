@@ -289,35 +289,66 @@ def train(q,
     # check_weights_zero(forwards[:1], reverses[:1])
     return q, losses, ess, lZ_hat
 
-def save_nvi_model(targets, forwards, reverses, objective, S, K, R, I):
-    save_models(models_as_dict([targets, forwards, reverses], ["targets", "forwards", "reverses"]),
-                filename="nvi_weights_{}_S{}_K{}_R{}_I{}".format(objective.__name__, S, K, R, I))
+def save_nvi_model(targets, forwards, reverses, filename=None):
+    assert filename is not None
+    save_models(models_as_dict([targets, forwards, reverses], ["targets", "forwards", "reverses"]), filename="{}.pt".format(filename))
 
-def load_nvi_model(targets, forwards, reverses, objective, S, K, R, I):
-    load_models(models_as_dict([targets, forwards, reverses], ["targets", "forwards", "reverses"]),
-                filename="nvi_weights_{}_S{}_K{}_R{}_I{}".format(objective.__name__, S, K, R, I))
+def load_nvi_model(targets, forwards, reverses, filename=None):
+    assert filename is not None
+    load_models(models_as_dict([targets, forwards, reverses], ["targets", "forwards", "reverses"]), filename="{}.pt".format(filename))
 
-def mk_model(K):
-    mod = paper_model(K)
+def mk_model(K, optimize_path=False):
+    mod = paper_model(K, optimize_path=optimize_path)
     targets, forwards, reverses = [[m.to(autodevice()) for m in mod[n]] for n in ['targets', 'forwards', 'reverses']]
     return targets, forwards, reverses
 
 if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser('Combinators annealing stats')
+    # data config
+    parser.add_argument('--objective', default='nvo_avo', type=str)
+    parser.add_argument('--seed', default=0, type=int)
+    parser.add_argument('--resample', default=False, type=bool)
+    parser.add_argument('--iterations', default=20000, type=int)
+    parser.add_argument('--num_targets', default=2, type=int)
+    parser.add_argument('--optimize_path', default=False, type=bool)
+
+    args = parser.parse_args()
+
     S = 288
-    K = 4
-    resample = False
-    iterations = 20000
-    objective = nvo_avo
-    # objective = nvo_rkl
+    K = args.num_targets
+    seed = args.seed
+    resample = args.resample
+    iterations = args.iterations
+    optimize_path = args.optimize_path
+
+
+    if args.objective == "nvo_avo":
+        objective = nvo_avo
+    elif args.objective == "nvo_rkl":
+        objective = nvo_rkl
+    else:
+        raise TypeError("objective is one of: {}".format(", ".join(["nvo_avo", "nvo_rkl"])))
+
     tt = True
-    # tt = False
-    torch.manual_seed(0)
-    model = mk_model(K)
+    save_plots = False
+    filename="nvi{}{}_{}_S{}_K{}_I{}_seed{}".format(
+        "r" if resample else "",
+        "+" if optimize_path else "",
+        objective.__name__,
+        S, K, iterations, seed)
+
+    torch.manual_seed(seed)
+    model = mk_model(K, optimize_path=optimize_path)
     q = nvi_declarative(*model,
                         objective,
                         resample=resample)
+    S = 288
+    iterations = args.iterations
 
     losses, ess, lZ_hat = torch.zeros(iterations, K-1, 1), torch.zeros(iterations, K-1, 1), torch.zeros(iterations, K-1, 1)
+
     if tt:
         q, losses, ess, lZ_hat = train(q,
                                     *model,
@@ -327,16 +358,22 @@ if __name__ == '__main__':
                                     sample_dims=0,
                                     resample=resample,
                                     loss_fn=objective)
-        save_nvi_model(*model, objective=objective, S=S, K=K, R=resample, I=iterations)
+        save_nvi_model(*model, filename=filename)
     else:
-        load_nvi_model(*model, objective=objective, S=S, K=K, R=resample, I=iterations)
-    losses_test, ess_test, lZ_hat_test, samples_test = test(q,
-                                                            (1000, 100),
-                                                            batch_dim=1,
-                                                            sample_dims=0)
+        load_nvi_model(*model, filename=filename)
+
+    losses_test, ess_test, lZ_hat_test, samples_test = \
+        test(q, (1000, 100), batch_dim=1, sample_dims=0)
+
+    torch.save((losses_test.mean(1), ess_test.mean(1), lZ_hat_test.mean(1)),
+               '{}-metric-tuple_S{}_B{}-loss-ess-logZhat.pt'.format(
+                   filename, 1000, 100))
+
     print("losses:", losses_test.mean(1))
     print("ess:", ess_test.mean(1))
     print("log_Z_hat", lZ_hat_test.mean(1))
-    plot(losses, ess, lZ_hat, samples_test,
-         filename="nvi_weights_{}_S{}_K{}_R{}_I{}".format(objective.__name__, S, K, resample, iterations))
+
+    if save_plots:
+        plot(losses, ess, lZ_hat, samples_test, filename=filename)
+
     print("done!")
