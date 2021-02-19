@@ -347,7 +347,7 @@ if __name__ == '__main__':
     save_plots = False
     filename="nvi{}{}_{}_S{}_K{}_I{}_seed{}".format(
         "r" if resample else "",
-        "+" if optimize_path else "",
+        "s" if optimize_path else "",
         objective.__name__,
         S, K, iterations, seed)
 

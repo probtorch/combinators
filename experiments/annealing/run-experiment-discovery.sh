@@ -24,27 +24,27 @@ run_methods(){
       --seed=$1\
       --num_targets=$2\
       --objective=nvo_avo\
-      --iterations=$ITERS"
+      --iterations=$ITERS" "avo_K${2}_S${1}"
     # NVI
     submit "python main.py \
       --seed=$1\
       --num_targets=$2\
       --objective=nvo_rkl\
-      --iterations=$ITERS"
+      --iterations=$ITERS" "nvi_K${2}_S${1}"
     # NVIR
     submit "python main.py \
       --seed=$1\
       --num_targets=$2\
       --objective=nvo_rkl\
       --resample=True\
-      --iterations=$ITERS"
+      --iterations=$ITERS" "nvir_K${2}_S${1}"
     # NVI*
     submit "python main.py \
       --seed=$1\
       --num_targets=$2\
       --objective=nvo_rkl\
       --iterations=$ITERS \
-      --optimize_path=True"
+      --optimize_path=True" "nvis_K${2}_S${1}"
     # NVIR*
     submit "python main.py \
       --seed=$1\
@@ -52,7 +52,7 @@ run_methods(){
       --objective=nvo_rkl\
       --iterations=$ITERS \
       --resample=True\
-      --optimize_path=True"
+      --optimize_path=True" "nvirs_K${2}_S${1}"
 }
 
 for seed in 0 1 2 3 4 5 6 7 8 9; do
