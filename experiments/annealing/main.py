@@ -188,7 +188,7 @@ def plot_sample_hist(ax, samples, sort=True, bins=50, range=None, weight_cm=Fals
         ax.imshow(mz, **kwargs)
 
 def plot(losses, ess, lZ_hat, samples, filename=None):
-    K = losses.shape[-1]
+    K = losses.shape[1]
     fig = plt.figure(figsize=(K*4, 3*4), dpi=300)
     for k in range(K):
         ax1 = fig.add_subplot(4, K, k+1)
@@ -301,7 +301,7 @@ def save_nvi_model(targets, forwards, reverses, filename=None):
 
 def load_nvi_model(targets, forwards, reverses, filename=None):
     assert filename is not None
-    load_models(models_as_dict([targets, forwards, reverses], ["targets", "forwards", "reverses"]), filename="./weights/{}.pt".format(filename), weights_dir="./weights")
+    load_models(models_as_dict([targets, forwards, reverses], ["targets", "forwards", "reverses"]), filename="./{}.pt".format(filename), weights_dir="./weights")
 
 def mk_model(K, optimize_path=False):
     mod = paper_model(K, optimize_path=optimize_path)
@@ -314,12 +314,12 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser('Combinators annealing stats')
     # data config
-    parser.add_argument('--objective', default='nvo_avo', type=str)
+    parser.add_argument('--objective', default='nvo_rkl', type=str)
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--resample', default=False, type=bool)
     parser.add_argument('--iterations', default=20000, type=int)
-    parser.add_argument('--num_targets', default=2, type=int)
-    parser.add_argument('--optimize_path', default=False, type=bool)
+    parser.add_argument('--num_targets', default=4, type=int)
+    parser.add_argument('--optimize_path', default=True, type=bool)
 
     args = parser.parse_args()
 
@@ -343,7 +343,7 @@ if __name__ == '__main__':
     else:
         raise TypeError("objective is one of: {}".format(", ".join(["nvo_avo", "nvo_rkl"])))
 
-    tt = True
+    tt = False
     save_plots = False
     filename="nvi{}{}_{}_S{}_K{}_I{}_seed{}".format(
         "r" if resample else "",

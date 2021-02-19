@@ -122,25 +122,20 @@ class Tempered(Density):
         super().__init__(name, self.log_density_fn)
         self.optimize = optimize
         if self.optimize:
-            self.beta = torch.nn.Parameter(beta)
+            self.logit = nn.Parameter(torch.logit(beta))
         else:
-            self.beta = beta
+            self.logit = torch.logit(beta)
         self.density1 = d1
         self.density2 = d2
 
-        if optimize:
-            self.logit = nn.Parameter(torch.logit(beta))
 
     def log_density_fn(self, value:Tensor) -> Tensor:
 
         def log_prob(g, value):
-            # FIXME: technically if we also learn d1 or d2, we must detach parameters first
-            assert all([p.requires_grad == False for p in g.parameters()])
-
             return g.log_density_fn(value) if isinstance(g, Density) else g.dist.log_prob(value)
 
-        return log_prob(self.density1, value)*(1-self.beta) + \
-               log_prob(self.density2, value)*self.beta
+        return log_prob(self.density1, value)*(1-torch.sigmoid(self.logit)) + \
+               log_prob(self.density2, value)*torch.sigmoid(self.logit)
 
 
     def __repr__(self):
