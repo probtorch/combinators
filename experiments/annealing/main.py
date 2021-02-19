@@ -70,7 +70,7 @@ def nvi_declarative(targets, forwards, reverses, loss_fn, resample=False):
                     _no_reruns=False,
                     _debug=True,
                     )
-        if resample:
+        if resample and k < len(forwards) - 1:
             q = Resample(q)
     return q
 
@@ -177,9 +177,9 @@ def plot_sample_hist(ax, samples, sort=True, bins=50, range=None, weight_cm=Fals
     # ax.tick_params(bottom=False, top=False, left=False, right=False,
     #                labelbottom=False, labeltop=False, labelleft=False, labelright=False)
     # ax.grid(False)
+    samples = torch.flatten(samples[:, :10], end_dim=-2)
     x, y = samples.detach().cpu().numpy().T
-    ax.scatter(x, y)
-    return
+    # ax.scatter(x, y)
     mz, x_e, y_e = np.histogram2d(x, y, bins=bins, density=True, range=range)
     X, Y = np.meshgrid(x_e, y_e)
     if weight_cm:
@@ -189,7 +189,7 @@ def plot_sample_hist(ax, samples, sort=True, bins=50, range=None, weight_cm=Fals
 
 def plot(losses, ess, lZ_hat, samples, filename=None):
     K = losses.shape[-1]
-    fig = plt.figure(figsize=(K*4, 3*4))
+    fig = plt.figure(figsize=(K*4, 3*4), dpi=300)
     for k in range(K):
         ax1 = fig.add_subplot(4, K, k+1)
         ax1.plot(losses[:, k].detach().cpu().squeeze())
@@ -207,7 +207,7 @@ def plot(losses, ess, lZ_hat, samples, filename=None):
     for k in range(K):
         ax4 = fig.add_subplot(4, K, k+1+3*K)
         label, X = samples[k]
-        plot_sample_hist(ax4, X)
+        plot_sample_hist(ax4, X, bins=150)
         ax4.set_xlabel(label, fontsize=18)
         if k == 0:
             ax4.set_ylabel("samples", fontsize=18)
@@ -307,19 +307,17 @@ if __name__ == '__main__':
     K = 2
     resample = False
     iterations = 20000
-    objective = nvo_avo
+    # objective = nvo_avo
+    objective = nvo_rkl
     tt = True
     # tt = False
-    # objective = nvo_rkl
-    # test_K_step_nvi(K, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=resample num_seeds=10)
-    # test_K_step_nvi(K, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=resample, num_seeds=10)
     torch.manual_seed(0)
     model = mk_model(K)
     q = nvi_declarative(*model,
                         objective,
                         resample=resample)
 
-    losses, ess, lZ_hat = torch.zeros(iterations, K-1, S, 1), torch.zeros(iterations, K-1, S, 1), torch.zeros(iterations, K-1, S, 1)
+    losses, ess, lZ_hat = torch.zeros(iterations, K-1, 1), torch.zeros(iterations, K-1, 1), torch.zeros(iterations, K-1, 1)
     if tt:
         q, losses, ess, lZ_hat = train(q,
                                     *model,
@@ -341,5 +339,4 @@ if __name__ == '__main__':
     print("losses:", losses_test.mean(1))
     print("ess:", ess_test.mean(1))
     print("log_Z_hat", lZ_hat_test.mean(1))
-    breakpoint()
     print("done!")

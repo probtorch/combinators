@@ -42,10 +42,8 @@ def nvo_rkl(
     rv_fwd = proposal_trace['g{}'.format(out.ix+1)]
     rv_rev = target_trace['g{}'.format(out.ix)]
 
-
-    # lv = rv_target.log_prob + rv_rev.log_prob - (rv_proposal.log_prob + rv_fwd.log_prob)
-
     # Tests
+    # lv = rv_target.log_prob + rv_rev.log_prob - (rv_proposal.log_prob + rv_fwd.log_prob)
     assert(len(proposal_trace) == 2)
     assert(len(target_trace) == 2)
     assert valeq(proposal_trace, target_trace)
@@ -59,39 +57,9 @@ def nvo_rkl(
     assert (_eval_nrep(rv_target)._log_prob.grad_fn is None), "will fail for star"
     assert (rv_rev.log_prob.grad_fn is not None)
 
-    assert (lw == 0).all()
     ldZ = lv.detach().logsumexp(dim=sample_dims) - math.log(lv.shape[sample_dims])
     f = -(lv - ldZ)
-    grad_log_Z1_term = _estimate_mc(rv_proposal._log_prob,
-                                    lw,
-                                    sample_dims=sample_dims,
-                                    reducedims=reducedims,
-                                    keepdims=False,
-                                    ) if not isinstance(rv_proposal, probtorch.RandomVariable) else torch.tensor(0.)
-    grad_log_Z2_term = _estimate_mc(_eval_nrep(rv_target)._log_prob,
-                                    lw+lv.detach(),
-                                    sample_dims=sample_dims,
-                                    reducedims=reducedims,
-                                    keepdims=False,
-                                    ) if not isinstance(rv_target, probtorch.RandomVariable) else torch.tensor(0.)
-    baseline = _estimate_mc(f.detach(),
-                            lw,
-                            sample_dims=sample_dims,
-                            reducedims=reducedims,
-                            keepdims=False,
-                            )
-    kl_term = _estimate_mc((f - baseline) * _eval1(rv_proposal._log_prob - grad_log_Z1_term),
-                           lw,
-                           sample_dims=sample_dims,
-                           reducedims=reducedims,
-                           keepdims=False,
-                           )
-    loss = kl_term + _eval0(grad_log_Z2_term) + baseline
-    return kl_term
 
-    ####
-    ldZ = lv.detach().logsumexp(dim=sample_dims) - math.log(lv.shape[sample_dims])
-    f = -(lv - ldZ)
     grad_log_Z1_term = _estimate_mc(rv_proposal._log_prob,
                                     lw,
                                     sample_dims=sample_dims,
@@ -105,22 +73,24 @@ def nvo_rkl(
                                     keepdims=False,
                                     ) if not isinstance(rv_target, probtorch.RandomVariable) else torch.tensor(0.)
 
-    ## Score function gradient gradient estimator
-    assert not (isinstance(rv_proposal, RandomVariable) and rv_proposal.reparameterized)
     baseline = _estimate_mc(f.detach(),
                             lw,
                             sample_dims=sample_dims,
                             reducedims=reducedims,
                             keepdims=False,
                             )
+
     kl_term = _estimate_mc((f - baseline) * _eval1(rv_proposal._log_prob - grad_log_Z1_term),
                            lw,
                            sample_dims=sample_dims,
                            reducedims=reducedims,
                            keepdims=False,
                            )
+
     loss = kl_term + _eval0(grad_log_Z2_term) + baseline
     return loss
+
+
 
 def _eval0(e):
     return e - e.detach()
