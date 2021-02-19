@@ -49,12 +49,20 @@ def get_stats(out):
     lws, losses, proposal_trace, target_trace, outs = zip(*ret)
     return dict(lw=lws, loss=losses, proposal_trace=proposal_trace, target_trace=target_trace, out=outs)
 
-def print_and_sum_loss(loss_fn, out, loss):
-    step_loss = loss_fn(out)
-    # step_loss = step_loss if not loss == 0. else step_loss.detach()
-    loss = loss + step_loss
-    # print(loss)
-    return loss
+class LossFn(object):
+    def __init__(self, loss_fn):
+        self.loss_fn = loss_fn
+
+    @property
+    def __name__(self):
+        return self.loss_fn.__name__
+
+    def __call__(self, out, loss):
+        step_loss = self.loss_fn(out)
+        # step_loss = step_loss if not loss == 0. else step_loss.detach()
+        loss = loss + step_loss
+        # print(loss)
+        return loss
 
 def nvi_declarative(targets, forwards, reverses, loss_fn, resample=False):
     # assert len(targets) == 2
@@ -65,7 +73,7 @@ def nvi_declarative(targets, forwards, reverses, loss_fn, resample=False):
     for k, (fwd, rev, p) in enumerate(zip(forwards, reverses, targets[1:])):
         q = Propose(p=Extend(p, rev),
                     q=Compose(q, fwd),
-                    loss_fn=partial(print_and_sum_loss, loss_fn),
+                    loss_fn=LossFn(loss_fn),
                     ix=k,
                     _no_reruns=False,
                     _debug=True,

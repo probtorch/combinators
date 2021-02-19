@@ -302,9 +302,13 @@ class Propose(Inf):
 
         p_condition = Condition(self.p, q_out.trace)
         p_out = dispatch(p_condition)(c, **inf_kwargs,  **shared_kwargs)
-        # Need do this to compute sticking (stl) the landing gradient 
-        q_stl_trace = copytraces(q_out.trace, exclude_node='g{}'.format(ix+1))
-        q_stl_trace.append(_eval_detached(q_out.trace['g{}'.format(ix+1)]), name='g{}'.format(ix+1))
+
+        if self.foldr_loss.__name__ == "nvo_avo":
+            q_stl_trace = q_out.trace
+        else:
+            # Need do this to compute sticking (stl) the landing gradient
+            q_stl_trace = copytraces(q_out.trace, exclude_node='g{}'.format(ix+1))
+            q_stl_trace.append(_eval_detached(q_out.trace['g{}'.format(ix+1)]), name='g{}'.format(ix+1))
 
         rho_1 = set(q_out.trace.keys())
         tau_1 = set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED})
