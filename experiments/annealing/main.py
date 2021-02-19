@@ -57,9 +57,9 @@ def print_and_sum_loss(loss_fn, out, loss):
     return loss
 
 def nvi_declarative(targets, forwards, reverses, loss_fn, resample=False):
-    assert len(targets) == 2
-    assert len(forwards) == 1
-    assert len(reverses) == 1
+    # assert len(targets) == 2
+    # assert len(forwards) == 1
+    # assert len(reverses) == 1
     # breakpoint()
     q = targets[0]
     for k, (fwd, rev, p) in enumerate(zip(forwards, reverses, targets[1:])):
@@ -304,7 +304,7 @@ def mk_model(K):
 
 if __name__ == '__main__':
     S = 288
-    K = 2
+    K = 4
     resample = False
     iterations = 20000
     # objective = nvo_avo
