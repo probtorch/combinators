@@ -319,7 +319,7 @@ if __name__ == '__main__':
     parser.add_argument('--resample', default=False, type=bool)
     parser.add_argument('--iterations', default=20000, type=int)
     parser.add_argument('--num_targets', default=4, type=int)
-    parser.add_argument('--optimize_path', default=True, type=bool)
+    parser.add_argument('--optimize_path', default=False, type=bool)
 
     args = parser.parse_args()
 

@@ -4,6 +4,7 @@ export CUDA_VISIBLE_DEVICES=
 
 DATETIME=$(date "+%Y%m%d-%H%M%S")
 LOG_DIR=log/${DATETIME}
+ITERS=20000
 mkdir -p $LOG_DIR
 submit(){
     sbatch \
@@ -23,36 +24,35 @@ run_methods(){
       --seed=$1\
       --num_targets=$2\
       --objective=nvo_avo\
-      --resample=False\
-      --optimize_path=False" "avo_K$2_S$1"
+      --iterations=$ITERS"
     # NVI
     submit "python main.py \
       --seed=$1\
       --num_targets=$2\
       --objective=nvo_rkl\
-      --resample=False\
-      --optimize_path=False" "nvi_K$2_S$1"
+      --iterations=$ITERS"
     # NVIR
     submit "python main.py \
       --seed=$1\
       --num_targets=$2\
       --objective=nvo_rkl\
       --resample=True\
-      --optimize_path=False" "nvir_K$2_S$1"
+      --iterations=$ITERS"
     # NVI*
     submit "python main.py \
       --seed=$1\
       --num_targets=$2\
       --objective=nvo_rkl\
-      --resample=False\
-      --optimize_path=True" "nvis_K$2_S$1"
+      --iterations=$ITERS \
+      --optimize_path=True"
     # NVIR*
     submit "python main.py \
       --seed=$1\
       --num_targets=$2\
       --objective=nvo_rkl\
+      --iterations=$ITERS \
       --resample=True\
-      --optimize_path=True" "nvirs_K$2_S$1"
+      --optimize_path=True"
 }
 
 for seed in 0 1 2 3 4 5 6 7 8 9; do
