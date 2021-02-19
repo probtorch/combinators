@@ -344,7 +344,7 @@ if __name__ == '__main__':
         raise TypeError("objective is one of: {}".format(", ".join(["nvo_avo", "nvo_rkl"])))
 
     tt = True
-    save_plots = True
+    save_plots = False
     filename="nvi{}{}_{}_S{}_K{}_I{}_seed{}".format(
         "r" if resample else "",
         "+" if optimize_path else "",
