@@ -255,7 +255,7 @@ def train(q,
     losses= []
     lws = []
     tqdm_iterations = trange(iterations)
-    for i in tqdm_iterations:
+    for i in range(iterations):
         out = q(None, sample_shape=sample_shape, batch_dim=batch_dim, sample_dims=sample_dims)
         loss = out.loss.mean()
         lw = out.q_out.log_weight if out.type == "Resample" else out.log_weight
@@ -268,12 +268,12 @@ def train(q,
         rev_bias_grad = reverses[0].net.map_mu[0].bias.grad
         optimizer.step()
 
-        # =================================================== #
-        #                    tqdm updates                     #
-        # +++++++++++++++++++++++++++++++++++++++++++++++++++ #
-        tqdm_iterations.set_postfix(loss="{:09.4f}".format(loss.item()),
-                                    ess="{:09.4f}".format(ess.item()),
-                                    log_Z_hat="{:09.4f}".format(lZ_hat.item()))
+        # # =================================================== #
+        # #                    tqdm updates                     #
+        # # +++++++++++++++++++++++++++++++++++++++++++++++++++ #
+        # tqdm_iterations.set_postfix(loss="{:09.4f}".format(loss.item()),
+        #                             ess="{:09.4f}".format(ess.item()),
+        #                             log_Z_hat="{:09.4f}".format(lZ_hat.item()))
         # =================================================== #
 
         stats_nvi_run = get_stats(out)
