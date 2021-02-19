@@ -47,12 +47,13 @@ class Stochastic(object):
 
 class GenericRandomVariable(Stochastic):
     """ Shared between ImproperRandomVariable and RandomVariable """
-    def __init__(self, value, log_prob, provenance=Provenance.SAMPLED, mask=None):
+    def __init__(self, value, log_prob, provenance=Provenance.SAMPLED, mask=None, can_resample=True):
         assert isinstance(provenance, Provenance)
         self._value = value
         self._log_prob = log_prob
         self._provenance = provenance
         self._mask = mask
+        self._can_resample = can_resample
 
     @property
     def value(self):
@@ -74,6 +75,16 @@ class GenericRandomVariable(Stochastic):
     def mask(self):
         return self._mask
 
+    @property
+    def can_resample(self):
+        """
+        Flag to indicate if this random variable _should_ be resampled.
+
+        NOTE: this is not used within any of the probtorch infrastructure and is
+        only respected by combinators.resampling.strategies
+        """
+        return self._can_resample
+
 
 class ImproperRandomVariable(GenericRandomVariable):
     """Improper random variables wrap a PyTorch tensor with an associated log density.
@@ -84,8 +95,8 @@ class ImproperRandomVariable(GenericRandomVariable):
         provenance(:obj:`Provenance`): Indicates whether the value was sampled or observed.
     """
 
-    def __init__(self, log_density_fn:Callable[[Tensor], Tensor], value:Tensor, provenance:Provenance=Provenance.OBSERVED, mask=None, log_prob=None):
-        super().__init__(value=value, log_prob=log_density_fn(value) if log_prob is None else log_prob, provenance=provenance, mask=mask)
+    def __init__(self, log_density_fn:Callable[[Tensor], Tensor], value:Tensor, provenance:Provenance=Provenance.OBSERVED, mask=None, log_prob=None, can_resample=True):
+        super().__init__(value=value, log_prob=log_density_fn(value) if log_prob is None else log_prob, provenance=provenance, mask=mask, can_resample=can_resample)
         self._log_density_fn = log_density_fn
 
     @property
@@ -111,11 +122,11 @@ class RandomVariable(GenericRandomVariable):
         self._dist = dist
         self._use_pmf = use_pmf
         self._reparameterized = reparameterized #dist.has_rsample
-        self._can_resample = can_resample
         super().__init__(
             value=value,
             provenance=provenance,
             mask=mask,
+            can_resample=can_resample,
             log_prob=log_prob if log_prob is not None else \
                 (dist.log_pmf(value) if use_pmf and hasattr(dist, 'log_pmf') else dist.log_prob(value)))
 
@@ -126,16 +137,6 @@ class RandomVariable(GenericRandomVariable):
     @property
     def reparameterized(self):
         return self._reparameterized
-
-    @property
-    def can_resample(self):
-        """
-        Flag to indicate if this random variable _should_ be resampled.
-
-        NOTE: this is not used within any of the probtorch infrastructure and is
-        only respected by combinators.resampling.strategies
-        """
-        return self._can_resample
 
     def __repr__(self):
         return "%s RandomVariable containing: %s" % (type(self._dist).__name__,
