@@ -382,6 +382,9 @@ if __name__ == '__main__':
     else:
         load_nvi_model(*model, filename=filename)
 
+    q = nvi_declarative(*model,
+                        objective,
+                        resample=False)
     losses_test, ess_test, lZ_hat_test, samples_test = \
         test(q, (1000, 100), batch_dim=1, sample_dims=0)
 
