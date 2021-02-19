@@ -235,7 +235,8 @@ def test(nvi_program, sample_shape, batch_dim=1, sample_dims=0):
 
     ess = effective_sample_size(lw, sample_dims=sample_dims+1)
     lZ_hat = log_Z_hat(lw, sample_dims=sample_dims+1)
-    samples = [('g{}'.format(t+1), proposal_traces[t]['g{}'.format(t+1)].value) for t in range(len(proposal_traces)-1)]  # skip the initial gaussian proposal
+    samples = [('g{}'.format(t+1), proposal_traces[t]['g{}'.format(t+1)].value) for t in range(len(proposal_traces))]  # skip the initial gaussian proposal
+
     return loss, ess, lZ_hat, samples
 
 
@@ -291,11 +292,16 @@ def train(q,
 
 def save_nvi_model(targets, forwards, reverses, filename=None):
     assert filename is not None
-    save_models(models_as_dict([targets, forwards, reverses], ["targets", "forwards", "reverses"]), filename="{}.pt".format(filename))
+    save_models(
+        models_as_dict(
+            [targets, forwards, reverses],
+            ["targets", "forwards", "reverses"]
+        ),
+        filename="{}.pt".format(filename), weights_dir="./weights")
 
 def load_nvi_model(targets, forwards, reverses, filename=None):
     assert filename is not None
-    load_models(models_as_dict([targets, forwards, reverses], ["targets", "forwards", "reverses"]), filename="{}.pt".format(filename))
+    load_models(models_as_dict([targets, forwards, reverses], ["targets", "forwards", "reverses"]), filename="./weights/{}.pt".format(filename), weights_dir="./weights")
 
 def mk_model(K, optimize_path=False):
     mod = paper_model(K, optimize_path=optimize_path)
@@ -304,6 +310,7 @@ def mk_model(K, optimize_path=False):
 
 if __name__ == '__main__':
     import argparse
+    import os
 
     parser = argparse.ArgumentParser('Combinators annealing stats')
     # data config
@@ -323,6 +330,11 @@ if __name__ == '__main__':
     iterations = args.iterations
     optimize_path = args.optimize_path
 
+    if not os.path.exists("./weights/"):
+        os.makedirs("./weights/")
+
+    if not os.path.exists("./metrics/"):
+        os.makedirs("./metrics/")
 
     if args.objective == "nvo_avo":
         objective = nvo_avo
@@ -332,7 +344,7 @@ if __name__ == '__main__':
         raise TypeError("objective is one of: {}".format(", ".join(["nvo_avo", "nvo_rkl"])))
 
     tt = True
-    save_plots = False
+    save_plots = True
     filename="nvi{}{}_{}_S{}_K{}_I{}_seed{}".format(
         "r" if resample else "",
         "+" if optimize_path else "",
@@ -366,7 +378,7 @@ if __name__ == '__main__':
         test(q, (1000, 100), batch_dim=1, sample_dims=0)
 
     torch.save((losses_test.mean(1), ess_test.mean(1), lZ_hat_test.mean(1)),
-               '{}-metric-tuple_S{}_B{}-loss-ess-logZhat.pt'.format(
+               './metrics/{}-metric-tuple_S{}_B{}-loss-ess-logZhat.pt'.format(
                    filename, 1000, 100))
 
     print("losses:", losses_test.mean(1))
@@ -374,6 +386,9 @@ if __name__ == '__main__':
     print("log_Z_hat", lZ_hat_test.mean(1))
 
     if save_plots:
+        if not os.path.exists("./figures/"):
+            os.makedirs("./figures/")
+
         plot(losses, ess, lZ_hat, samples_test, filename=filename)
 
     print("done!")

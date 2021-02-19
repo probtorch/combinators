@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -ex
 export CUDA_VISIBLE_DEVICES=
 
@@ -18,13 +18,12 @@ submit(){
 }
 
 run_methods(){
-    # AVO
-    submit "python main.py -m\
-      seed=$1\
-      num_targets=$2\
-      objective=nvo_avo\
-      resample=False\
-      optimize_path=False"
+    submit "python main.py \
+      --seed=$1\
+      --num_targets=$2\
+      --objective=nvo_avo\
+      --resample=False\
+      --optimize_path=False"
 }
 
 for seed in 1 2 3 4 5 6 7 8 9; do
