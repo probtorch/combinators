@@ -99,7 +99,7 @@ def _eval1(e):
 def _eval_nrep(rv):
     value = rv.value.detach()
     if isinstance(rv, RandomVariable):
-        return RandomVariable(value=value, dist=rv.dist, provenance=rv.provenance, reparameterized=rv.reparameterized)
+        return RandomVariable(value=value, dist=rv.dist, provenance=rv.provenance, reparameterized=False)
     elif isinstance(rv, ImproperRandomVariable):
         return ImproperRandomVariable(value=value, log_density_fn=rv.log_density_fn, provenance=rv.provenance)
     else:

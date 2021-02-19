@@ -45,7 +45,7 @@ class Density(Program):
         rv = ImproperRandomVariable(log_density_fn=self.log_density_fn, value=trace._cond_trace[self.name].value, provenance=Provenance.REUSED)
         # assert rv.log_prob.grad_fn is not None
         trace.append(rv, name=self.name)
-        return {self.name: rv.value.detach()}
+        return {self.name: rv.value}
 
     def __repr__(self):
         return f'[{self.name}]' + super().__repr__()
@@ -89,28 +89,27 @@ class ConditionalMultivariateNormal(Program):
             cov:Tensor,
             net:nn.Module,
             reparameterized,
-            embedding_dim:int=2,
-            cov_embedding:CovarianceEmbedding=CovarianceEmbedding.SoftPlusDiagonal,
         ):
         super().__init__()
         self.ext_from = ext_from
         self.ext_to = ext_to
         self.dim_in = 2
         self.cov_dim = cov.shape[0]
-        self.cov_embedding = cov_embedding
-        self.register_parameter(self.cov_embedding.embed_name, nn.Parameter(self.cov_embedding.embed(cov, embedding_dim)))
+
+        self.cov_emb = cov.diag().expm1().log()
         self.net = net
-        self.net.initialize_(torch.zeros_like(loc), self.cov_embedding.embed(cov, embedding_dim))
+        self.net.initialize_(torch.zeros_like(loc), self.cov_emb)
         self.reparameterized = reparameterized
 
+
     def model(self, trace, c, *shared):
-        mu, cov_emb = self.net(c[self.ext_from])
-        cov = self.cov_embedding.unembed(cov_emb, self.cov_dim)
+        out = self.net(c[self.ext_from])
+        mu, cov_emb = torch.split(out, [2, 2], dim=-1)
+        cov = torch.diag_embed(torch.nn.functional.softplus(cov_emb))
 
         value = trace.multivariate_normal(
             loc=mu,
             covariance_matrix=cov,
-            value=trace[self.ext_to].value if self.ext_to in trace else None,
             name=self.ext_to,
             reparameterized=self.reparameterized,
         )
@@ -173,110 +172,59 @@ class GMM(Density):
         trace.append(rv, name=self.name)
         return trace, xs
 
-    def log_density_fn(self, value): # , log_weights, cond_set, param_set):
+    def log_density_fn(self, value):
         lds = []
         for i, comp in enumerate(self.components):
-            ld_i = comp.log_prob(value) # + log_weights[i]
+            ld_i = comp.log_prob(value)
             lds.append(ld_i)
         lds_ = torch.stack(lds, dim=0)
         ld = torch.logsumexp(lds_, dim=0)
         return ld
 
 class RingGMM(GMM):
-    def __init__(self, name="RingGMM", loc_scale=5, scale=1, count=8, device=None):
-        angles = list(range(0, 360, 360//count))[:count] # integer division may give +1
-        position = lambda radians: [math.cos(radians), math.sin(radians)]
-        locs = torch.tensor([position(a*math.pi/180) for a in angles], **kw_autodevice(device)) * loc_scale
-        covs = [torch.eye(2, **kw_autodevice(device)) * scale for _ in range(count)]
+    def __init__(self, name="RingGMM", radius=10, scale=0.5, count=8, device=None):
+        alpha = 2*math.pi / count
+        x = radius * torch.sin(alpha * torch.arange(count).float())
+        y = radius * torch.cos(alpha * torch.arange(count).float())
+        locs = torch.stack((x, y), dim=0).T
+        covs = torch.stack([torch.eye(2)*scale for m in range(count)], dim=0)
+        # angles = list(range(0, 360, 360//count))[:count] # integer division may give +1
+        # position = lambda radians: [math.cos(radians), math.sin(radians)]
+        # locs = torch.tensor([position(a*math.pi/180) for a in angles], **kw_autodevice(device)) * loc_scale
+        # covs = [torch.eye(2, **kw_autodevice(device)) * scale for _ in range(count)]
         super().__init__(name=name, locs=locs, covs=covs)
-
-
-def mk_kernel(from_:int, to_:int, std:float, num_hidden:int, reparameterized:bool, activation=nn.ReLU):
-    embedding_dim = 2
-    return ConditionalMultivariateNormal(
-        ext_from=f'g{from_}',
-        ext_to=f'g{to_}',
-        loc=torch.zeros(2, **kw_autodevice()),
-        cov=torch.eye(2, **kw_autodevice())*std**2,
-        reparameterized=reparameterized,
-        net=ResMLPJ(
-            dim_in=2,
-            dim_hidden=num_hidden,
-            dim_out=embedding_dim).to(autodevice()))
-
-def mk_mnlinear_kernel(from_:int, to_:int, std:float, dim:int):
-    return MultivariateNormalLinearKernel(
-        ext_from=f'g{from_}',
-        ext_to=f'g{to_}',
-        loc=torch.zeros(dim, **kw_autodevice()),
-        cov=torch.eye(dim, **kw_autodevice())*std**2)
-
-def mk_nlinear_kernel(from_:int, to_:int, std:float, dim:int):
-    return NormalLinearKernel(ext_from=f'g{from_}', ext_to=f'g{to_}')
-
-def anneal_to_ring(num_targets):
-    proposal_std = 5
-    g0 = mk_mvn(0, 0, std=proposal_std)
-    gK = RingGMM(loc_scale=3, scale=0.16, count=2, name=f"g{num_targets - 1}").to(autodevice())
-    return anneal_between(g0, gK, num_targets)
 
 def anneal_between(left, right, total_num_targets):
     proposal_std = total_num_targets
 
     # Make an annealing path
     betas = torch.arange(0., 1., 1./(total_num_targets - 1))[1:] # g_0 is beta=0
-    path = [Tempered(f'g{k}', left, right, beta) for k, beta in zip(range(1,total_num_targets-1), betas)]
+    path = [Tempered(f'g{k}', left, right, beta) for k, beta in zip(range(1, total_num_targets-1), betas)]
     path = [left] + path + [right]
-
     assert len(path) == total_num_targets # sanity check that the betas line up
     return path
 
-
-def anneal_between_mvns(left_loc, right_loc, total_num_targets, reparameterized):
-    g0 = mk_mvn(0, left_loc, reparameterized)
-    gK =  mk_mvn(total_num_targets-1, right_loc, reparameterized)
-
-    return anneal_between(g0, gK, total_num_targets)
-
-def anneal_between_ns(left_loc, right_loc, total_num_targets):
-    g0 = mk_n(0, left_loc)
-    gK =  mk_n(total_num_targets-1, right_loc)
-
-    return anneal_between(g0, gK, total_num_targets)
-
-def mk_mvn(i, loc, std, reparameterized):
-    return FixedMultivariateNormal(name=f'g{i}', loc=torch.ones(2, **kw_autodevice())*loc, cov=torch.eye(2, **kw_autodevice())*std**2)
-
-def mk_n(i, loc):
-    return Normal(name=f'g{i}', loc=torch.ones(1, **kw_autodevice())*loc, scale=torch.ones(1, **kw_autodevice())**2)
-
 def paper_model(num_targets=8):
-    g0 = mk_mvn(0, loc=0, std=5, reparameterized=False)
-    gK = RingGMM(loc_scale=10, scale=0.5, count=8, name=f"g{num_targets - 1}").to(autodevice())
+    g0 = FixedMultivariateNormal(name=f'g0',
+                                 loc=torch.zeros(2, **kw_autodevice()),
+                                 cov=torch.eye(2, **kw_autodevice())*5**2)
+    # FIXME: THIS WAS A BUG IN NVI FRAMEWORK/ANNEALING MODE -> sqrt(5) = std
+    gK = RingGMM(radius=10, scale=0.5, count=8, name=f"g{num_targets - 1}").to(autodevice())
 
     def paper_kernel(from_:int, to_:int, std:float, reparameterized:bool):
-        return mk_kernel(from_, to_, std, num_hidden=50, activation=nn.Sigmoid, reparameterized=reparameterized)
+        return ConditionalMultivariateNormal(
+            ext_from=f'g{from_}',
+            ext_to=f'g{to_}',
+            loc=torch.zeros(2, **kw_autodevice()),
+            cov=torch.eye(2, **kw_autodevice())*std**2,
+            reparameterized=reparameterized,
+            net=ResMLPJ(
+                dim_in=2,
+                dim_hidden=50,
+                dim_out=2).to(autodevice()))
 
     return dict(
         targets=anneal_between(g0, gK, num_targets),
         forwards=[paper_kernel(from_=i, to_=i+1, std=1., reparameterized=True) for i in range(num_targets-1)],
         reverses=[paper_kernel(from_=i+1, to_=i, std=1., reparameterized=False) for i in range(num_targets-1)],
     )
-
-def mk_model(num_targets:int):
-    return dict(
-        targets=anneal_to_ring(num_targets),
-        forwards=[mk_kernel(from_=i, to_=i+1, std=1., num_hidden=64) for i in range(num_targets-1)],
-        reverses=[mk_kernel(from_=i+1, to_=i, std=1., num_hidden=64) for i in range(num_targets-1)],
-    )
-
-def sample_along(proposal, kernels, sample_shape=(2000,)):
-    samples = []
-    tr, _, out = proposal(sample_shape=sample_shape)
-    samples.append(out)
-    for k in kernels:
-        proposal = Forward(k, proposal)
-        tr, _, out = proposal(sample_shape=sample_shape)
-        samples.append(out)
-    return samples
-

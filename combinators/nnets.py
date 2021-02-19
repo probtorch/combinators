@@ -30,7 +30,7 @@ class ResMLPJ(nn.Module):
         y = self.map_joint(x)
         mu = self.map_mu(y) + x
         cov_emb = self.map_cov(y)
-        return mu, cov_emb
+        return torch.cat((mu, cov_emb), dim=-1)
 
     def initialize_(self, loc_offset, cov_emb):
         nn.init.zeros_(self.map_mu[0].weight)

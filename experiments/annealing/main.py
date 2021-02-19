@@ -17,30 +17,11 @@ from combinators import effective_sample_size, log_Z_hat
 from combinators import Systematic
 from combinators.inference import copytraces
 from combinators.trace.utils import valeq
+from combinators.stochastic import Trace
+from combinators.utils import save_models, load_models, models_as_dict
 
 import experiments.visualize as V
-from experiments.annealing.models import sample_along, paper_model
-
-# TODO: delete and replace with traverse_proposals, below
-def _get_stats(out, lw=[], loss=[], proposal_traces=[], target_traces=[], resample=False)->[Tensor]:
-    if resample:
-        out=out.q_out
-    assert out.type == "Propose"
-
-    _lw = [out.log_weight.detach().cpu()] + lw
-    _loss = [out.loss.detach().cpu()] + loss
-    _proposal_traces = [out.proposal_trace] + proposal_traces
-    _target_traces = [out.target_trace] + target_traces
-
-    if out.q_out.q1_out.type == "Propose" or (resample and out.q_out.q1_out.type == "Resample"):
-        out = out.q_out.q1_out
-        return _get_stats(out, lw=_lw, loss=_loss, resample=resample)
-    elif out.q_out.q2_out.type == "Propose" or (resample and out.q_out.q2_out.type == "Resample"):
-        out = out.q_out.q2_out
-        return _get_stats(out, lw=_lw, loss=_loss, resample=resample)
-    else:
-        return (_lw, _loss, _proposal_traces, target_traces)
-    #FIXME: It is this gd fn
+from experiments.annealing.models import paper_model
 
 def traverse_proposals(fn, out, memo=[])->[Tensor]:
     if out.pytype == Propose:
@@ -70,21 +51,28 @@ def get_stats(out):
 
 def print_and_sum_loss(loss_fn, out, loss):
     step_loss = loss_fn(out)
-    loss = loss + step_loss
     # step_loss = step_loss if not loss == 0. else step_loss.detach()
+    loss = loss + step_loss
     # print(loss)
     return loss
 
-def nvi_declarative(targets, forwards, reverses, loss_fn, sample_shape, batch_dim, sample_dims, resample=False):
+def nvi_declarative(targets, forwards, reverses, loss_fn, resample=False):
+    assert len(targets) == 2
+    assert len(forwards) == 1
+    assert len(reverses) == 1
+    # breakpoint()
     q = targets[0]
     for k, (fwd, rev, p) in enumerate(zip(forwards, reverses, targets[1:])):
         q = Propose(p=Extend(p, rev),
                     q=Compose(q, fwd),
-                    loss_fn=partial(print_and_sum_loss, loss_fn), _debug=True, ix=k, loss0=torch.zeros(1, **kw_autodevice()))
+                    loss_fn=partial(print_and_sum_loss, loss_fn),
+                    ix=k,
+                    _no_reruns=False,
+                    _debug=True,
+                    )
         if resample:
             q = Resample(q)
-    out = q(None, sample_shape=sample_shape, sample_dims=sample_dims, batch_dim=batch_dim)
-    return out
+    return q
 
 def compute_nvi_weight(proposal, target, forward, reverse, lw_in=0., sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=False):
     g0_out = proposal(None, sample_dims=sample_dims, sample_shape=sample_shape, batch_dim=batch_dim)
@@ -116,12 +104,11 @@ def test_1_step_nvi(sample_shape=(10, 5), batch_dim=1, sample_dims=0):
     out = paper_model(2)
     targets, forwards, reverses = [[m.to(autodevice()) for m in out[n]] for n in ['targets', 'forwards', 'reverses']]
 
+    q = nvi_declarative(targets, forwards, reverses, nvo_avo, sample_shape, batch_dim=batch_dim, sample_dims=sample_dims)
     seeds = torch.arange(100)
     for seed in seeds:
         torch.manual_seed(seed)
-        out = nvi_declarative(targets, forwards, reverses, nvo_avo,
-                              sample_shape, batch_dim=batch_dim, sample_dims=sample_dims)
-
+        out = q(None, sample_shape=sample_shape, sample_dims=sample_dims, batch_dim=batch_dim)
         torch.manual_seed(seed)
 
         lw, _ = compute_nvi_weight(targets[0], targets[1], forwards[0], reverses[0], lw_in=0.,
@@ -140,7 +127,7 @@ def test_K_step_nvi(K, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resampl
         out = nvi_declarative(targets, forwards, reverses, nvo_avo,
                               sample_shape, batch_dim=batch_dim, sample_dims=sample_dims,
                               resample=resample)
-        stats_nvi_dec = get_stats(out)
+        stats_nvi_run = get_stats(out)
 
         torch.manual_seed(seed)
         lw = 0.
@@ -175,9 +162,9 @@ def test_K_step_nvi(K, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resampl
                 out_refs.append(out_refs[-1].q_out.q1_out)
 
             # Check weights, proposal_trace, and, target_trace at every step
-            assert (valeq(proposal_trace_manual, stats_nvi_dec["proposal_trace"][-(k+1)])), "proposal_traces not equal {}".format(k)
-            assert (valeq(target_trace_manual, stats_nvi_dec["target_trace"][-(k+1)])), "proposal_traces not equal {}".format(k)
-            assert (lw_ == stats_nvi_dec["lw"][-(k+1)]).all(), "log weights not equal {}".format(k)
+            assert (valeq(proposal_trace_manual, stats_nvi_run["proposal_trace"][-(k+1)])), "proposal_traces not equal {}".format(k)
+            assert (valeq(target_trace_manual, stats_nvi_run["target_trace"][-(k+1)])), "proposal_traces not equal {}".format(k)
+            assert (lw_ == stats_nvi_run["lw"][-(k+1)]).all(), "log weights not equal {}".format(k)
 
 def test_nvi_sampling_scheme(num_seeds=100):
     print(f"Testing NVI sampling scheme without resampling (num_seeds: {num_seeds})")
@@ -200,7 +187,8 @@ def plot_sample_hist(ax, samples, sort=True, bins=50, range=None, weight_cm=Fals
     else:
         ax.imshow(mz, **kwargs)
 
-def plot_nvi_run(targets, forwards, reverses, losses, ess, lZ_hat, batch_dim, sample_dims, suffix=""):
+def plot(losses, ess, lZ_hat, samples, filename=None):
+    K = losses.shape[-1]
     fig = plt.figure(figsize=(K*4, 3*4))
     for k in range(K):
         ax1 = fig.add_subplot(4, K, k+1)
@@ -216,9 +204,6 @@ def plot_nvi_run(targets, forwards, reverses, losses, ess, lZ_hat, batch_dim, sa
         if k == 0:
             ax3.set_ylabel("log_Z_hat", fontsize=18)
 
-    tr = forward_sample(targets[0], forwards, sample_shape=(10000,), batch_dim=batch_dim, sample_dims=sample_dims,)
-    samples = [(t.name, tr[t.name].value) for t in targets[1:]]  # skip the initial gaussian proposal
-
     for k in range(K):
         ax4 = fig.add_subplot(4, K, k+1+3*K)
         label, X = samples[k]
@@ -228,39 +213,59 @@ def plot_nvi_run(targets, forwards, reverses, losses, ess, lZ_hat, batch_dim, sa
             ax4.set_ylabel("samples", fontsize=18)
 
     fig.tight_layout(pad=1.0)
-    fig.savefig("results/nvi_run_{}.pdf".format(suffix), bbox_inches='tight')
+    if filename is not None:
+        fig.savefig("figures/{}".format(filename), bbox_inches='tight')
 
-def forward_sample(proposal, kernels, sample_shape=(2000,), sample_dims=None, batch_dim=None):
-    q = proposal
-    for k in kernels:
-        q = Compose(q, k)
-    out = q(None, sample_shape=sample_shape, sample_dims=sample_dims, batch_dim=batch_dim)
-    return out.trace
+def check_weights_zero(forwards, reverses):
+    for forward, reverse in zip(forwards, reverses):
+        assert (forward.net.map_cov[0].weight == 0.).all()
+        assert (reverse.net.map_cov[0].weight == 0.).all()
+        assert (forward.net.map_mu[0].weight == 0.).all()
+        assert (reverse.net.map_mu[0].weight == 0.).all()
+        assert (forward.net.map_mu[0].bias == 0.).all()
+        assert (reverse.net.map_mu[0].bias == 0.).all()
 
-def test_nvi_grads(K, sample_shape=(11,), batch_dim=1, sample_dims=0, resample=False, iterations=100, loss_fn=nvo_avo):
-    out = paper_model(K+1)
-    targets, forwards, reverses = [[m.to(autodevice()) for m in out[n]] for n in ['targets', 'forwards', 'reverses']]
-    optimizer = adam([*targets, *forwards, *reverses])
+def test(nvi_program, sample_shape, batch_dim=1, sample_dims=0):
+    out = nvi_program(None, sample_shape=sample_shape, sample_dims=sample_dims, batch_dim=batch_dim)
+    stats_nvi_run = get_stats(out)
+    lw = torch.stack(stats_nvi_run['lw'])
+    loss = torch.stack(stats_nvi_run['loss'])
+    proposal_traces = stats_nvi_run['proposal_trace']
+    target_traces = stats_nvi_run['target_trace']
 
+    ess = effective_sample_size(lw, sample_dims=sample_dims+1)
+    lZ_hat = log_Z_hat(lw, sample_dims=sample_dims+1)
+    samples = [('g{}'.format(t), proposal_traces[t-1]['g{}'.format(t)].value) for t in range(1, len(proposal_traces)+1)]  # skip the initial gaussian proposal
+    return loss, ess, lZ_hat, samples
+
+
+def train(q,
+          targets, forwards, reverses,
+          sample_shape=(11,),
+          batch_dim=1,
+          sample_dims=0,
+          resample=False,
+          iterations=100,
+          loss_fn=nvo_avo):
     # Check inizialization
-    test_initial_weights = forwards[0].net.map_cov[0].weight
-    assert (test_initial_weights == 0.).all()
+    optimizer = adam([*targets, *forwards, *reverses])
+    check_weights_zero(forwards[:1], reverses[:1])
 
     losses= []
     lws = []
     tqdm_iterations = trange(iterations)
     for i in tqdm_iterations:
-        out = nvi_declarative(targets, forwards, reverses, loss_fn,
-                              sample_shape, batch_dim=batch_dim, sample_dims=sample_dims,
-                              resample=resample)
+        out = q(None, sample_shape=sample_shape, batch_dim=batch_dim, sample_dims=sample_dims)
         loss = out.loss.mean()
         lw = out.q_out.log_weight if out.type == "Resample" else out.log_weight
         ess = effective_sample_size(lw, sample_dims=sample_dims)
         lZ_hat = log_Z_hat(lw, sample_dims=sample_dims)
 
-        loss.backward()
-        optimizer.step()
         optimizer.zero_grad()
+        loss.backward()
+        fwd_bias_grad = forwards[0].net.map_mu[0].bias.grad
+        rev_bias_grad = reverses[0].net.map_mu[0].bias.grad
+        optimizer.step()
 
         # =================================================== #
         #                    tqdm updates                     #
@@ -270,33 +275,71 @@ def test_nvi_grads(K, sample_shape=(11,), batch_dim=1, sample_dims=0, resample=F
                                     log_Z_hat="{:09.4f}".format(lZ_hat.item()))
         # =================================================== #
 
-        lw, loss, proposal_traces, target_traces = _get_stats(out, resample=resample)
+        stats_nvi_run = get_stats(out)
+        lw, loss, _, _ = stats_nvi_run['lw'], stats_nvi_run['loss'], stats_nvi_run['proposal_trace'], stats_nvi_run['target_trace']
         losses.append(torch.stack(loss, dim=0))
         lws.append(torch.stack(lw, dim=0))
 
     lws = torch.stack(lws, dim=0)
     losses = torch.stack(losses, dim=0)
     ess = effective_sample_size(lws, sample_dims=2)
-    lZ_hat = effective_sample_size(lws, sample_dims=2)
-    # SHould only work if we detach first loss term
-    assert (forwards[0].net.map_cov[0].weight == 0.).all()
-    assert (reverses[0].net.map_cov[0].weight == 0.).all()
-    assert (forwards[0].net.map_mu[0].weight == 0.).all()
-    assert (reverses[0].net.map_mu[0].weight == 0.).all()
-    assert (forwards[0].net.map_mu[0].bias == 0.).all()
-    assert (reverses[0].net.map_mu[0].bias == 0.).all()
+    lZ_hat = log_Z_hat(lws, sample_dims=2)
 
-    plot_nvi_run(targets, forwards, reverses, losses, ess, lZ_hat, batch_dim=batch_dim, sample_dims=sample_dims,
-                 suffix="_{}_{}_{}_{}".format(K, iterations, loss_fn.__name__, "_r" if resample else ""))
-    # plt.show()
+    # Should only work if we detach first loss term
+    # check_weights_zero(forwards[:1], reverses[:1])
+    return q, losses, ess, lZ_hat
+
+def save_nvi_model(targets, forwards, reverses, objective, S, K, R, I):
+    save_models(models_as_dict([targets, forwards, reverses], ["targets", "forwards", "reverses"]),
+                filename="nvi_weights_{}_S{}_K{}_R{}_I{}".format(objective.__name__, S, K, R, I))
+
+def load_nvi_model(targets, forwards, reverses, objective, S, K, R, I):
+    load_models(models_as_dict([targets, forwards, reverses], ["targets", "forwards", "reverses"]),
+                filename="nvi_weights_{}_S{}_K{}_R{}_I{}".format(objective.__name__, S, K, R, I))
+
+def mk_model(K):
+    mod = paper_model(K)
+    targets, forwards, reverses = [[m.to(autodevice()) for m in mod[n]] for n in ['targets', 'forwards', 'reverses']]
+    return targets, forwards, reverses
 
 if __name__ == '__main__':
     S = 288
     K = 2
-    iterations = 10
-    objective = nvo_rkl
-    # objective = nvo_avo
-    # test_K_step_nvi(K, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=False, num_seeds=10)
-    # test_K_step_nvi(K, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=True, num_seeds=10)
-    test_nvi_grads(K, sample_shape=(S//K,1), iterations=iterations, batch_dim=1, sample_dims=0, resample=False, loss_fn=objective)
+    resample = False
+    iterations = 20000
+    objective = nvo_avo
+    tt = True
+    # tt = False
+    # objective = nvo_rkl
+    # test_K_step_nvi(K, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=resample num_seeds=10)
+    # test_K_step_nvi(K, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=resample, num_seeds=10)
+    torch.manual_seed(0)
+    model = mk_model(K)
+    q = nvi_declarative(*model,
+                        objective,
+                        resample=resample)
+
+    losses, ess, lZ_hat = torch.zeros(iterations, K-1, S, 1), torch.zeros(iterations, K-1, S, 1), torch.zeros(iterations, K-1, S, 1)
+    if tt:
+        q, losses, ess, lZ_hat = train(q,
+                                    *model,
+                                    sample_shape=(S//K,1),
+                                    iterations=iterations,
+                                    batch_dim=1,
+                                    sample_dims=0,
+                                    resample=resample,
+                                    loss_fn=objective)
+        save_nvi_model(*model, objective=objective, S=S, K=K, R=resample, I=iterations)
+    else:
+        load_nvi_model(*model, objective=objective, S=S, K=K, R=resample, I=iterations)
+    losses_test, ess_test, lZ_hat_test, samples_test = test(q,
+                                                            (1000, 100),
+                                                            batch_dim=1,
+                                                            sample_dims=0)
+    plot(losses, ess, lZ_hat, samples_test,
+         filename="nvi_weights_{}_S{}_K{}_R{}_I{}".format(objective.__name__, S, K, resample, iterations))
+    print("losses:", losses_test.mean(1))
+    print("ess:", ess_test.mean(1))
+    print("log_Z_hat", lZ_hat_test.mean(1))
+    breakpoint()
     print("done!")

@@ -265,6 +265,16 @@ class Compose(Inf):
         return self._out
 
 
+def _eval_detached(rv):
+    if not isinstance(rv, RandomVariable):
+        raise ValueError("Node type not supported")
+    dist = rv.dist
+    param_dict = {k: dist.__dict__[k].detach() for k, _ in dist.arg_constraints.items() if k in dist.__dict__}
+    dist = dist.__class__(**param_dict)
+    rv_detached = RandomVariable(dist, rv.value, rv.reparameterized)
+    assert torch.equal(rv.log_prob, rv_detached.log_prob)
+    return rv_detached
+
 
 class Propose(Inf):
     def __init__(self,
@@ -330,18 +340,20 @@ class Propose(Inf):
             output=new_out,
             extras=dict(
                 # FIXME: Delete before publishing - this is for debugging only
-                lu=(lu_1 + lu_star),
-                lu_1=lu_1,
-                lu_star=lu_star,
-                rho_1=rho_1,
-                tau_1=tau_1,
-                tau_2=tau_2,
-                nodes=nodes,
+                #lu=(lu_1 + lu_star),
+                #lu_1=lu_1,
+                #lu_star=lu_star,
+                #rho_1=rho_1,
+                #tau_1=tau_1,
+                #tau_2=tau_2,
+                #nodes=nodes,
                 ## stats ##
-                ess = effective_sample_size(lw_out, sample_dims=sample_dims),
+                # ess = effective_sample_size(lw_out.detach(), sample_dims=sample_dims),
                 ## objectives api ##
                 lv=lv,
-                proposal_trace=copytraces(q_out.trace, exclude_node=set(q_out.trace.keys()) - nodes),
+                lw=lw_1.detach() if isinstance(lw_1, torch.Tensor) else torch.tensor(lw_1),
+                # proposal_trace=copytraces(q_out.trace, exclude_node=set(q_out.trace.keys()) - nodes),
+                proposal_trace=copytraces(q_out.trace),
                 target_trace=copytraces(p_out.trace, p_out.trace_star) if "trace_star" in p_out else p_out.trace,
                 ## apg ##
                 forward_trace = q_out.q2_out.trace if q_out.type == "Compose" else None,
