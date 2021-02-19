@@ -15,35 +15,81 @@ def _estimate_mc(values: Tensor, log_weights: Tensor, sample_dims: Tuple[int], r
     return (nw * values).sum(dim=reducedims, keepdim=keepdims)
 
 def nvo_avo(out, sample_dims=0) -> Tensor:
-    # proposal_trace = out.proposal_trace
-    # target_trace = out.target_trace
-    # rv_proposal = list(proposal_trace.values())[1]
-    # rv_target = list(target_trace.values())[0]
-
+    reducedims = (sample_dims,)
+    lw = torch.zeros_like(out.lv)
     f = -out.lv
-    log_weights = torch.zeros_like(out.lv)
-
-    nw = torch.nn.functional.softmax(log_weights, dim=sample_dims)
-    loss = (nw * f).sum(dim=(sample_dims,), keepdim=False)
+    loss = _estimate_mc(f,
+                        lw,
+                        sample_dims=sample_dims,
+                        reducedims=reducedims,
+                        keepdims=False,
+                        )
     return loss
 
 def nvo_rkl(
     out,
     sample_dims=0,
-    reducedims=None,
     **kwargs,
 ) -> Tensor:
-    if reducedims is None:
-        reducedims = (sample_dims,)
+    reducedims = (sample_dims,)
 
-    lw = out.log_weight.detach()
+    lw = out.lw.detach()
     lv = out.lv
     proposal_trace = out.proposal_trace
     target_trace = out.target_trace
-    rv_proposal_name, rv_proposal = list(proposal_trace.items())[1]
-    rv_target_name, rv_target = list(target_trace.items())[0]
+    rv_proposal = proposal_trace['g{}'.format(out.ix)]
+    rv_target = target_trace['g{}'.format(out.ix+1)]
+    rv_fwd = proposal_trace['g{}'.format(out.ix+1)]
+    rv_rev = target_trace['g{}'.format(out.ix)]
 
-    lw = lw.detach()
+
+    # lv = rv_target.log_prob + rv_rev.log_prob - (rv_proposal.log_prob + rv_fwd.log_prob)
+
+    # Tests
+    assert(len(proposal_trace) == 2)
+    assert(len(target_trace) == 2)
+    assert valeq(proposal_trace, target_trace)
+    assert (torch.equal(target_trace.log_joint(sample_dims=sample_dims, batch_dim=1)\
+                        - proposal_trace.log_joint(sample_dims=sample_dims, batch_dim=1),
+                        lv))
+    assert (rv_fwd.log_prob.grad_fn is not None)
+    assert (rv_proposal.log_prob.grad_fn is None)
+    assert (rv_proposal.value.grad_fn is None)
+    assert (rv_target.log_prob.grad_fn is not None)
+    assert (_eval_nrep(rv_target)._log_prob.grad_fn is None), "will fail for star"
+    assert (rv_rev.log_prob.grad_fn is not None)
+
+    assert (lw == 0).all()
+    ldZ = lv.detach().logsumexp(dim=sample_dims) - math.log(lv.shape[sample_dims])
+    f = -(lv - ldZ)
+    grad_log_Z1_term = _estimate_mc(rv_proposal._log_prob,
+                                    lw,
+                                    sample_dims=sample_dims,
+                                    reducedims=reducedims,
+                                    keepdims=False,
+                                    ) if not isinstance(rv_proposal, probtorch.RandomVariable) else torch.tensor(0.)
+    grad_log_Z2_term = _estimate_mc(_eval_nrep(rv_target)._log_prob,
+                                    lw+lv.detach(),
+                                    sample_dims=sample_dims,
+                                    reducedims=reducedims,
+                                    keepdims=False,
+                                    ) if not isinstance(rv_target, probtorch.RandomVariable) else torch.tensor(0.)
+    baseline = _estimate_mc(f.detach(),
+                            lw,
+                            sample_dims=sample_dims,
+                            reducedims=reducedims,
+                            keepdims=False,
+                            )
+    kl_term = _estimate_mc((f - baseline) * _eval1(rv_proposal._log_prob - grad_log_Z1_term),
+                           lw,
+                           sample_dims=sample_dims,
+                           reducedims=reducedims,
+                           keepdims=False,
+                           )
+    loss = kl_term + _eval0(grad_log_Z2_term) + baseline
+    return kl_term
+
+    ####
     ldZ = lv.detach().logsumexp(dim=sample_dims) - math.log(lv.shape[sample_dims])
     f = -(lv - ldZ)
     grad_log_Z1_term = _estimate_mc(rv_proposal._log_prob,
@@ -74,20 +120,6 @@ def nvo_rkl(
                            keepdims=False,
                            )
     loss = kl_term + _eval0(grad_log_Z2_term) + baseline
-
-    # Tests
-    rv_fwd_name, rv_fwd= list(proposal_trace.items())[0]
-    rv_rev_name, rv_rev= list(target_trace.items())[0]
-    assert(len(proposal_trace) == 2)
-    assert(len(target_trace) == 2)
-    assert valeq(proposal_trace, target_trace)
-    assert (torch.equal(target_trace.log_joint(sample_dims=sample_dims, batch_dim=1) - proposal_trace.log_joint(sample_dims=sample_dims, batch_dim=1),
-                        lv))
-    assert (rv_proposal.log_prob.grad_fn is None), "will fail for *"
-    assert (rv_fwd.log_prob.grad_fn is not None)
-    assert (rv_target.log_prob.grad_fn is not None)
-    assert (_eval_nrep(rv_target)._log_prob.grad_fn is None), "will fail for star"
-    assert (rv_rev.log_prob.grad_fn is not None)
     return loss
 
 def _eval0(e):

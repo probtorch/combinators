@@ -302,12 +302,16 @@ class Propose(Inf):
 
         p_condition = Condition(self.p, q_out.trace)
         p_out = dispatch(p_condition)(c, **inf_kwargs,  **shared_kwargs)
+        # Need do this to compute sticking (stl) the landing gradient 
+        q_stl_trace = copytraces(q_out.trace, exclude_node='g{}'.format(ix+1))
+        q_stl_trace.append(_eval_detached(q_out.trace['g{}'.format(ix+1)]), name='g{}'.format(ix+1))
 
         rho_1 = set(q_out.trace.keys())
         tau_1 = set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED})
         tau_2 = set({k for k, v in p_out.trace.items() if v.provenance != Provenance.OBSERVED})
         nodes = rho_1 - (tau_1 - tau_2)
-        lu_1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
+
+        lu_1 = q_stl_trace.log_joint(nodes=nodes, **shape_kwargs)
         # τ*, by definition, can't have OBSERVE or REUSED random variables
         # FIXME: precision errors when converting python into pytorch, see tests.
         lu_star = 0.0 if 'trace_star' not in p_out else q_out.trace.log_joint(nodes=set(p_out.trace_star.keys()), **shape_kwargs)
@@ -334,6 +338,14 @@ class Propose(Inf):
         else:
             new_out = p_out.output
 
+        ### DELETE AFTER ANNEALING WORKS ########
+        assert q_out.trace['g{}'.format(self.ix)].value.grad_fn is None
+        assert q_out.trace['g{}'.format(self.ix)].log_prob.grad_fn is None
+        if c is not None:
+            for k,v in new_out.items():
+                assert v.grad_fn is None
+        #########################################
+
         self._out = Out(
             trace=p_out.trace if self._no_reruns else rerun_with_detached_values(p_out.trace),
             log_weight=lw_out.detach(),
@@ -356,7 +368,7 @@ class Propose(Inf):
                 proposal_trace=copytraces(q_out.trace),
                 target_trace=copytraces(p_out.trace, p_out.trace_star) if "trace_star" in p_out else p_out.trace,
                 ## apg ##
-                forward_trace = q_out.q2_out.trace if q_out.type == "Compose" else None,
+                # forward_trace = q_out.q2_out.trace if q_out.type == "Compose" else None,
                 # p_num=p_out.p_out.log_weight if (p_out.type == "Extend") else p_out.log_weight,
                 # q_den=lu_star,
                 #########
@@ -365,11 +377,11 @@ class Propose(Inf):
                 type=type(self).__name__,
                 pytype=type(self),
                 # FIXME: can we ditch this? how important is this for objectives
-                trace_star=p_out.trace_star if 'trace_star' in p_out else None,
+                # trace_star=p_out.trace_star if 'trace_star' in p_out else None,
                 ix=ix,
                 ),
         )
-        self._out['loss'] = self.foldr_loss(self._out, maybe(q_out, 'loss', self.loss0))
+        self._out['loss'] = self.foldr_loss(self._out, 0. if 'loss' not in q_out else q_out.loss)
 
         if self._debug or _debug:
             self._out['q_out'] = q_out
