@@ -1,2 +1,0 @@
-* Proto-Combinators
-prototype of combinator semantics in haskell

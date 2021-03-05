@@ -7,10 +7,12 @@ from torch import Tensor
 import hypothesis.strategies as st
 from hypothesis import given
 
+# TODO: annotation to convert pure functions to Programs is sugar for later
+_ = '''
 from combinators import model
 
 
-@mark.skip("TODO: after observe statements are more conrcete")
+@mark.skip()
 def test_simple_program_creation():
     @model()
     def program(trace):
@@ -28,7 +30,7 @@ def test_simple_program_creation():
     assert 'x' in eval_log_probs.keys() and not torch.allclose(log_probs['x'], eval_log_probs['x'])
 
 
-@mark.skip("TODO: after observe statements are more conrcete")
+@mark.skip()
 def test_slightly_more_complex_program_creation():
     @model()
     def program(trace, g, x):
@@ -56,3 +58,4 @@ def test_slightly_more_complex_program_creation():
 
     for k in program.variables:
        assert torch.equal(log_probs[k], eval_log_probs[k])
+'''
