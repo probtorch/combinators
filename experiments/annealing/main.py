@@ -184,7 +184,7 @@ def plot_sample_hist(ax, samples, sort=True, bins=50, range=None, weight_cm=Fals
     import numpy as np
     # ax.tick_params(bottom=False, top=False, left=False, right=False,
     #                labelbottom=False, labeltop=False, labelleft=False, labelright=False)
-    # ax.grid(False)
+    ax.grid(False)
     samples = torch.flatten(samples[:, :10], end_dim=-2)
     x, y = samples.detach().cpu().numpy().T
     # ax.scatter(x, y)
@@ -233,8 +233,8 @@ def check_weights_zero(forwards, reverses):
         assert (forward.net.map_mu[0].bias == 0.).all()
         assert (reverse.net.map_mu[0].bias == 0.).all()
 
-def test(nvi_program, sample_shape, batch_dim=1, sample_dims=0):
-    out = nvi_program(None, sample_shape=sample_shape, sample_dims=sample_dims, batch_dim=batch_dim)
+def test(nvi_program, sample_shape, batch_dim=1, sample_dims=0, _debug=False):
+    out = nvi_program(None, sample_shape=sample_shape, sample_dims=sample_dims, batch_dim=batch_dim, _debug=_debug)
     stats_nvi_run = get_stats(out)
     lw = torch.stack(stats_nvi_run['lw'])
     loss = torch.stack(stats_nvi_run['loss'])
@@ -244,8 +244,10 @@ def test(nvi_program, sample_shape, batch_dim=1, sample_dims=0):
     ess = effective_sample_size(lw, sample_dims=sample_dims+1)
     lZ_hat = log_Z_hat(lw, sample_dims=sample_dims+1)
     samples = [('g{}'.format(t+1), proposal_traces[t]['g{}'.format(t+1)].value) for t in range(len(proposal_traces))]  # skip the initial gaussian proposal
-
-    return loss, ess, lZ_hat, samples
+    if _debug:
+        return loss, ess, lZ_hat, samples, out
+    else:
+        return loss, ess, lZ_hat, samples
 
 
 def train(q,

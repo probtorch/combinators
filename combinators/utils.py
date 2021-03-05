@@ -69,11 +69,11 @@ def models_as_iter(model_dict, with_names=False):
     return (groups, names) if with_names else groups
 
 def models_as_dict(model_iter, names):
-    assert isinstance(model_iter, list) or all(map(lambda ms: isinstance(ms, list), model_iter.values())), "takes a list or dict of lists"
+    assert isinstance(model_iter, (tuple, list)) or all(map(lambda ms: isinstance(ms, (tuple,list)), model_iter.values())), "takes a list or dict of lists"
     assert len(names) == len(model_iter), 'names must exactly align with model lists'
 
     model_dict = dict()
-    for i, (name, models) in enumerate(zip(names, model_iter) if isinstance(model_iter, list) else model_iter.items()):
+    for i, (name, models) in enumerate(zip(names, model_iter) if isinstance(model_iter, (tuple, list)) else model_iter.items()):
         for j, m in enumerate(models):
             model_dict[f'{str(i)}_{name}_{str(j)}'] = m
     return model_dict

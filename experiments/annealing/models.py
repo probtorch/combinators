@@ -139,7 +139,7 @@ class Tempered(Density):
 
 
     def __repr__(self):
-        return "[β={:.4f}]".format(self.beta.item()) + super().__repr__()
+        return "[β={:.4f}]".format(torch.sigmoid(self.logit).item()) + super().__repr__()
 
 class GMM(Density):
     def __init__(self, locs, covs, name="GMM"):
@@ -152,7 +152,7 @@ class GMM(Density):
         """ only used to visualize samples """
         # NOTE: no trace being used here
         trace = Trace()
-        zs = distributions.Categorical(torch.ones(K, device="cpu")).sample(sample_shape=sample_shape)
+        zs = distributions.Categorical(torch.ones(len(self.components), device="cpu")).sample(sample_shape=sample_shape)
 
         # trace.update(a_trace)
         cluster_shape = (1, *zs.shape[1:-1])
@@ -164,11 +164,14 @@ class GMM(Density):
             x_k = self.components[k].sample(sample_shape=(n_k, *zs.shape[1:-1]))
             xs.append(x_k)
 
-        xs = torch.cat(xs)[indicies]
+        # xs = torch.cat(xs)[indicies]
+        xs = torch.cat(xs)
+        ix = torch.randperm(xs.shape[0])
 
-        rv = ImproperRandomVariable(log_density_fn=self.log_density_fn, value=xs, provenance=Provenance.SAMPLED)
-        trace.append(rv, name=self.name)
-        return trace, xs
+        # rv = ImproperRandomVariable(log_density_fn=self.log_density_fn, value=xs, provenance=Provenance.SAMPLED)
+        # trace.append(rv, name=self.name)
+        # return trace, xs[ix].view(xs.size())
+        return None, xs[ix].view(xs.size())
 
     def log_density_fn(self, value):
         lds = []
