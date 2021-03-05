@@ -7,11 +7,33 @@ from torch import Tensor
 from typing import Tuple
 import combinators.stochastic as probtorch
 from combinators.stochastic import RandomVariable, ImproperRandomVariable
+from combinators.inference import copytraces
 from combinators.trace.utils import valeq
+
 
 def _estimate_mc(values: Tensor, log_weights: Tensor, sample_dims: Tuple[int], reducedims: Tuple[int], keepdims: bool) -> Tensor:
     nw = F.softmax(log_weights, dim=sample_dims)
     return (nw * values).sum(dim=reducedims, keepdim=keepdims)
+
+
+def _eval_detached(rv):
+    if not isinstance(rv, RandomVariable):
+        raise ValueError("Node type not supported")
+    dist = rv.dist
+    param_dict = {k: dist.__dict__[k].detach() for k, _ in dist.arg_constraints.items() if k in dist.__dict__}
+    dist = dist.__class__(**param_dict)
+    rv_detached = RandomVariable(dist, rv.value, rv.reparameterized)
+    assert torch.equal(rv.log_prob, rv_detached.log_prob)
+    return rv_detached
+
+
+def stl_lv(out):
+    ix = out.ix
+    # Need do this to compute sticking (stl) the landing gradient
+    q_stl_trace = copytraces(q_out.trace, exclude_node='g{}'.format(ix+1))
+    q_stl_trace.append(_eval_detached(q_out.trace['g{}'.format(ix+1)]), name='g{}'.format(ix+1))
+    lu_1 = q_stl_trace.log_joint(nodes=out.nodes, **shape_kwargs)
+
 
 def nvo_avo(out, sample_dims=0) -> Tensor:
     reducedims = (sample_dims,)

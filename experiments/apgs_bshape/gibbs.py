@@ -31,11 +31,10 @@ def loss_apg(out, total_loss):
     log_q = forward_trace.log_joint(**jkwargs)
     # !!! need this metric as <density>
 
-    loss_phi = (w * (- log_q)).sum(0).mean()
+    loss_phi = (w * (-log_q)).sum(0).mean()
     loss_theta = (w * (-log_p)).sum(0).mean()
 
     return loss_phi + loss_theta + total_loss
-#     return loss_tuple(phi=total_loss.phi + loss_phi, theta=total_loss.theta + loss_theta)
 
 class Noop(Program):
     def __init__(self):

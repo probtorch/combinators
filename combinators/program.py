@@ -69,7 +69,7 @@ def dispatch(fn):
             _dispatch_kwargs = {**_extra_kwargs, **_dispatch_kwargs}
 
         if isinstance(fn, Program):
-            ''' additionally, if the function is a Progrm, we need to check model '''
+            ''' additionally, if the function is a Program, we need to check model '''
             _extra_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn.model) and k not in _dispatch_kwargs}
             _dispatch_kwargs = {**_extra_kwargs, **_dispatch_kwargs}
 

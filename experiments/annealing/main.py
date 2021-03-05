@@ -361,15 +361,6 @@ if __name__ == '__main__':
         objective.__name__,
         S, K, iterations, seed)
 
-    # ===================
-    tt = False
-    save_plots = True
-    optimize_path = False
-    resample = False
-    K = 6
-    filename = "../sync/weights/nvir_nvo_rkl_S288_K6_I20000_seed2"
-    # ===================
-
     torch.manual_seed(seed)
     model = mk_model(K, optimize_path=optimize_path)
     q = nvi_declarative(*model,

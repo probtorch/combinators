@@ -15,8 +15,7 @@ from combinators.metrics import effective_sample_size
 # FIXME: move to probtorch
 def copytraces(*traces, exclude_node=None):
     """
-    merge any traces together. domains should be disjoint or else
-    last-write-wins.
+    merge traces together. domains should be disjoint otherwise last-write-wins.
     """
     newtrace = Trace()
     if exclude_node is None:
@@ -33,11 +32,9 @@ def copytraces(*traces, exclude_node=None):
 # FIXME: move to probtorch
 def rerun_with_detached_values(trace:Trace):
     """
-    Rerun a trace with detached values, keeping an equivalent gradient on
-    the distributions and log-probs, but allowing us to disconnect the gradient
-    from the value and prevent a gradient leak.
+    Rerun a trace with detached values, recomputing the computation graph so that
+    value do not cause a gradient leak.
     """
-
     newtrace = Trace()
 
     def rerun_rv(rv):
@@ -159,13 +156,12 @@ class Resample(Inf):
 
         tr_2, lw_2 = self.resampler(q_out.trace, q_out.log_weight, **passable_kwargs)
 
-
         # If we resample, we still need to  corresponding outputs from
         # kernel programs. We enforce that they follow the convention of always
         # passing a dict as output with addresses as keys.
         #
-        # Better, long-term fix: Bring back "kernels" and have them be "programs that output {addresses:values}"
-        # Or, say "outputs are always dicts"
+        # Better, long-term fix: Bring back "kernels" and have them be "programs
+        # that output {addresses:values}" Or, say "outputs are always dicts"
         c1 = q_out.output
         assert isinstance(c1, dict)
         c2 = {k: v for k, v in c1.items()}
@@ -216,7 +212,6 @@ class Extend(Inf, Conditionable):
         inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
         if self._cond_trace is None:
-            """ conditioned evaluation """
             p_out = dispatch(self.p)(c, **inf_kwargs, **shared_kwargs)
 
             f_out = dispatch(self.f)(p_out.output, **inf_kwargs, **shared_kwargs)
@@ -225,6 +220,7 @@ class Extend(Inf, Conditionable):
             assert len({k for k, v in f_out.trace.items() if v.provenance == Provenance.OBSERVED or v.provenance == Provenance.REUSED}) == 0
 
         else:
+            """ conditioned evaluation """
             p_out = dispatch(Condition(self.p, self._cond_trace))(c, **inf_kwargs, **shared_kwargs)
 
             f_out = dispatch(Condition(self.f, self._cond_trace))(p_out.output, **inf_kwargs, **shared_kwargs)
@@ -248,7 +244,7 @@ class Extend(Inf, Conditionable):
 
         self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in q_out else q_out['loss'])
 
-        if _debug:
+        if debugging:
             self._out['p_out'] = p_out
             self._out['f_out'] = f_out
 
@@ -263,15 +259,18 @@ class Compose(Inf):
             loss_fn=(lambda x, fin: fin),
             loss0=None,
             ix=None,
+            _debug=False,
     ) -> None:
-        Inf.__init__(self, loss_fn=loss_fn, loss0=loss0, ix=ix)
+        Inf.__init__(self, loss_fn=loss_fn, loss0=loss0, ix=ix, _debug=_debug)
         self.q1 = q1
         self.q2 = q2
 
-    def __call__(self, c:Any, sample_dims=None, batch_dim=None, _debug=False, _debug_extras=None, reparameterized=True, ix=None, **shared_kwargs) -> Out:
+    def __call__(self, c:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Compose """
-        shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
+        debugging = _debug or self._debug
         ix = self.ix if self.ix is not None else ix
+
+        shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
         inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
         q1_out = dispatch(self.q1)(c, **inf_kwargs, **shared_kwargs)
@@ -291,22 +290,12 @@ class Compose(Inf):
 
         self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in q_out else q_out['loss'])
 
-        if _debug:
-            out['q1_out'] = q1_out
-            out['q2_out'] = q2_out
+        if debugging:
+            self._out['q1_out'] = q1_out
+            self._out['q2_out'] = q2_out
 
         return self._out
 
-
-def _eval_detached(rv):
-    if not isinstance(rv, RandomVariable):
-        raise ValueError("Node type not supported")
-    dist = rv.dist
-    param_dict = {k: dist.__dict__[k].detach() for k, _ in dist.arg_constraints.items() if k in dist.__dict__}
-    dist = dist.__class__(**param_dict)
-    rv_detached = RandomVariable(dist, rv.value, rv.reparameterized)
-    assert torch.equal(rv.log_prob, rv_detached.log_prob)
-    return rv_detached
 
 
 class Propose(Inf):
@@ -316,8 +305,9 @@ class Propose(Inf):
             loss_fn=(lambda x, fin: fin),
             loss0=None,
             ix=None,
+            _debug=False,
             _no_reruns:bool=True):
-        Inf.__init__(self, loss_fn=loss_fn, loss0=loss0, ix=ix)
+        Inf.__init__(self, loss_fn=loss_fn, loss0=loss0, ix=ix, _debug=_debug)
         assert not isinstance(p, Compose)
         self.p = p
         self.q = q
@@ -326,29 +316,22 @@ class Propose(Inf):
 
     def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Propose """
-        shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
+        debugging = _debug or self._debug
         ix = self.ix if self.ix is not None else ix
+
+        shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
         inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
         q_out = dispatch(self.q)(c, **inf_kwargs, **shared_kwargs)
 
-        p_condition = Condition(self.p, q_out.trace)
-        p_out = dispatch(p_condition)(c, **inf_kwargs,  **shared_kwargs)
-
-        # STL, needs documentation
-        if self.foldr_loss.__name__ == "nvo_avo":
-            q_stl_trace = q_out.trace
-        else:
-            # Need do this to compute sticking (stl) the landing gradient
-            q_stl_trace = copytraces(q_out.trace, exclude_node='g{}'.format(ix+1))
-            q_stl_trace.append(_eval_detached(q_out.trace['g{}'.format(ix+1)]), name='g{}'.format(ix+1))
+        p_out = dispatch(Condition(self.p, q_out.trace))(c, **inf_kwargs,  **shared_kwargs)
 
         rho_1 = set(q_out.trace.keys())
         tau_1 = set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED})
         tau_2 = set({k for k, v in p_out.trace.items() if v.provenance != Provenance.OBSERVED})
         nodes = rho_1 - (tau_1 - tau_2)
 
-        lu_1 = q_stl_trace.log_joint(nodes=nodes, **shape_kwargs)
+        lu_1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
         # τ*, by definition, can't have OBSERVE or REUSED random variables
         # FIXME: precision errors when converting python into pytorch, see tests.
         lu_star = 0.0 if 'trace_star' not in p_out else q_out.trace.log_joint(nodes=set(p_out.trace_star.keys()), **shape_kwargs)
@@ -374,27 +357,22 @@ class Propose(Inf):
                     new_out[k] = v
         else:
             new_out = p_out.output
-
-        ### DELETE AFTER ANNEALING WORKS ########
-        if c is not None:
-            for k,v in new_out.items():
-                assert v.grad_fn is None
-        #########################################
+        # =============================================== #
 
         self._out = Out(
             trace=p_out.trace if self._no_reruns else rerun_with_detached_values(p_out.trace),
             log_weight=lw_out.detach(),
             output=new_out,
             extras=dict(
+                ## stl api ##
+                nodes=nodes,
                 ## objectives api ##
                 lv=lv,
                 lw=lw_1.detach() if isinstance(lw_1, torch.Tensor) else torch.tensor(lw_1),
                 proposal_trace=copytraces(q_out.trace),
                 target_trace=copytraces(p_out.trace, p_out.trace_star) if "trace_star" in p_out else p_out.trace,
                 ## apg ##
-                # forward_trace = q_out.q2_out.trace if q_out.type == "Compose" else None,
-                # p_num=p_out.p_out.log_weight if (p_out.type == "Extend") else p_out.log_weight,
-                # q_den=lu_star,
+                forward_trace = q_out.q2_out.trace if q_out.type == "Compose" else None,
                 #########
                 type=type(self),
                 ix=ix,
@@ -403,7 +381,7 @@ class Propose(Inf):
 
         self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in q_out else q_out['loss'])
 
-        if _debug:
+        if debugging:
             self._out['q_out'] = q_out
             self._out['p_out'] = p_out
 
