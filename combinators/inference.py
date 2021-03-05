@@ -55,12 +55,6 @@ def rerun_with_detached_values(trace:Trace):
     return newtrace
 
 
-# FIXME: move to utils
-def maybe(obj, name, default, fn=(lambda x: x)):
-    """ maybe :: Dict[key, value] -> key -> value' -> Callable[[value], value'] -> value' """
-    return fn(getattr(obj, name)) if hasattr(obj, name) else default
-
-
 class Inf(ABC):
     """
     Superclass of Inference combinators. This class serves two purposes:
@@ -170,7 +164,8 @@ class Resample(Inf):
         # kernel programs. We enforce that they follow the convention of always
         # passing a dict as output with addresses as keys.
         #
-        # Better, long-term fix: Bring back kernels and have them be "programs that output {addresses:values}"
+        # Better, long-term fix: Bring back "kernels" and have them be "programs that output {addresses:values}"
+        # Or, say "outputs are always dicts"
         c1 = q_out.output
         assert isinstance(c1, dict)
         c2 = {k: v for k, v in c1.items()}
@@ -189,10 +184,10 @@ class Resample(Inf):
             output=c2,
         )
 
-        self._out['loss'] = self.foldr_loss(self._out, maybe(q_out, 'loss', self.loss0))
+        self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in q_out else q_out['loss'])
 
         if debugging:
-            self._out['q_out']=q_out
+            self._out['q_out'] = q_out
 
         return self._out
 
@@ -204,21 +199,24 @@ class Extend(Inf, Conditionable):
             f: Program,
             loss_fn=(lambda _, fin: fin),
             loss0=None,
-            ix=None
+            ix=None,
+            _debug=False,
     ) -> None:
         Conditionable.__init__(self)
-        Inf.__init__(self, loss_fn=loss_fn, loss0=loss0, device=device, ix=ix, _debug=_debug)
+        Inf.__init__(self, loss_fn=loss_fn, loss0=loss0, ix=ix, _debug=_debug)
         self.p = p
         self.f = f
 
     def __call__(self, c:Any, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs:Any) -> Out:
-        """ Extend """
+        """ Extend Combinator """
+        debugging = _debug or self._debug
+        ix = self.ix if self.ix is not None else ix
 
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
-        ix = self.ix if self.ix is not None else ix
         inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
         if self._cond_trace is None:
+            """ conditioned evaluation """
             p_out = dispatch(self.p)(c, **inf_kwargs, **shared_kwargs)
 
             f_out = dispatch(self.f)(p_out.output, **inf_kwargs, **shared_kwargs)
@@ -248,7 +246,7 @@ class Extend(Inf, Conditionable):
                 ix=ix,
                 ))
 
-        self._out['loss'] = self.foldr_loss(self._out, maybe(p_out, 'loss', self.loss0))
+        self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in q_out else q_out['loss'])
 
         if _debug:
             self._out['p_out'] = p_out
@@ -291,7 +289,7 @@ class Compose(Inf):
                 ix=ix,
                 ))
 
-        self._out['loss'] = self.foldr_loss(self._out, maybe(q1_out, 'loss', self.loss0))
+        self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in q_out else q_out['loss'])
 
         if _debug:
             out['q1_out'] = q1_out
@@ -403,7 +401,7 @@ class Propose(Inf):
                 ),
         )
 
-        self._out['loss'] = self.foldr_loss(self._out, 0. if 'loss' not in q_out else q_out.loss)
+        self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in q_out else q_out['loss'])
 
         if _debug:
             self._out['q_out'] = q_out

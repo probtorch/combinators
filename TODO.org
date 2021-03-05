@@ -6,4 +6,6 @@
 ** TODO add some basic objectives and two simple examples (in tutorial)
 *** TODO Standard VI: inclusive / exclusive
 *** TODO Regression
+** TODO Condition should be unified across: Extend, Program, and Condition
+*** move "Condition" to combinators.program
 * documentation
