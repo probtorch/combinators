@@ -9,4 +9,5 @@
 ** TODO Condition should be unified across: Extend, Program, and Condition
 *** move "Condition" to combinators.program
 ** TODO marginalize combinator instead of the star trace
+** TODO RV.resamplable should be handled at a higher level
 * documentation
