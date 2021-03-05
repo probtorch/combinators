@@ -48,7 +48,7 @@ class Systematic(Resampler):
         new_trace = Trace()
         for key, rv in trace._nodes.items():
             # WARNING: Semantics only support resampling on traces (taus not rhos) which do not include OBSERVED RVs
-            if not rv.can_resample or rv.provenance == Provenance.OBSERVED:
+            if not rv.resamplable or rv.provenance == Provenance.OBSERVED:
                 new_trace.append(rv, name=key)
                 continue
 

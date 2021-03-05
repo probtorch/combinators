@@ -47,13 +47,13 @@ class Stochastic(object):
 
 class GenericRandomVariable(Stochastic):
     """ Shared between ImproperRandomVariable and RandomVariable """
-    def __init__(self, value, log_prob, provenance=Provenance.SAMPLED, mask=None, can_resample=True):
+    def __init__(self, value, log_prob, provenance=Provenance.SAMPLED, mask=None, resamplable=True):
         assert isinstance(provenance, Provenance)
         self._value = value
         self._log_prob = log_prob
         self._provenance = provenance
         self._mask = mask
-        self._can_resample = can_resample
+        self._resamplable = resamplable
 
     @property
     def value(self):
@@ -76,14 +76,14 @@ class GenericRandomVariable(Stochastic):
         return self._mask
 
     @property
-    def can_resample(self):
+    def resamplable(self):
         """
         Flag to indicate if this random variable _should_ be resampled.
 
         NOTE: this is not used within any of the probtorch infrastructure and is
         only respected by combinators.resampling.strategies
         """
-        return self._can_resample
+        return self._resamplable
 
 
 class ImproperRandomVariable(GenericRandomVariable):
@@ -95,8 +95,8 @@ class ImproperRandomVariable(GenericRandomVariable):
         provenance(:obj:`Provenance`): Indicates whether the value was sampled or observed.
     """
 
-    def __init__(self, log_density_fn:Callable[[Tensor], Tensor], value:Tensor, provenance:Provenance=Provenance.OBSERVED, mask=None, log_prob=None, can_resample=True):
-        super().__init__(value=value, log_prob=log_density_fn(value) if log_prob is None else log_prob, provenance=provenance, mask=mask, can_resample=can_resample)
+    def __init__(self, log_density_fn:Callable[[Tensor], Tensor], value:Tensor, provenance:Provenance=Provenance.OBSERVED, mask=None, log_prob=None, resamplable=True):
+        super().__init__(value=value, log_prob=log_density_fn(value) if log_prob is None else log_prob, provenance=provenance, mask=mask, resamplable=resamplable)
         self._log_density_fn = log_density_fn
 
     @property
@@ -118,7 +118,7 @@ class RandomVariable(GenericRandomVariable):
         observed(bool): Indicates whether the value was sampled or observed.
     """
 
-    def __init__(self, dist, value, reparameterized, provenance=Provenance.SAMPLED, mask=None, use_pmf=True, log_prob=None, can_resample=True):
+    def __init__(self, dist, value, reparameterized, provenance=Provenance.SAMPLED, mask=None, use_pmf=True, log_prob=None, resamplable=True):
         self._dist = dist
         self._use_pmf = use_pmf
         self._reparameterized = reparameterized #dist.has_rsample
@@ -126,7 +126,7 @@ class RandomVariable(GenericRandomVariable):
             value=value,
             provenance=provenance,
             mask=mask,
-            can_resample=can_resample,
+            resamplable=resamplable,
             log_prob=log_prob if log_prob is not None else \
                 (dist.log_pmf(value) if use_pmf and hasattr(dist, 'log_pmf') else dist.log_prob(value)))
 
@@ -343,7 +343,7 @@ class Trace(MutableMapping):
         value = kwargs.pop('value', None)
         provenance = kwargs.pop('provenance', None)
         reparameterized = kwargs.pop('reparameterized', None)
-        can_resample = kwargs.pop('can_resample', True)
+        resamplable = kwargs.pop('resamplable', True)
         dist = Dist(*args, **kwargs)
         assert reparameterized is not None, f"No reparameterized set for {name}: dist={dist}"
         if value is None:
@@ -358,7 +358,7 @@ class Trace(MutableMapping):
                 provenance = Provenance.OBSERVED
             if isinstance(value, RandomVariable):
                 value = value.value
-        node = RandomVariable(dist, value, reparameterized, provenance=provenance, can_resample=can_resample, mask=self._mask)
+        node = RandomVariable(dist, value, reparameterized, provenance=provenance, resamplable=resamplable, mask=self._mask)
         if name is None:
             self.append(node)
         else:
@@ -615,8 +615,8 @@ def _autogen_trace_methods():
                 args = args + ', ' + kwargs
 
             env = {'obj': obj, 'torch': _torch}
-            s = ("""def f({0}, name=None, value=None, reparameterized=None, can_resample=True):
-                    return self.variable(obj, {1}, name=name, value=value, reparameterized=reparameterized, can_resample=can_resample)""")
+            s = ("""def f({0}, name=None, value=None, reparameterized=None, resamplable=True):
+                    return self.variable(obj, {1}, name=name, value=value, reparameterized=reparameterized, resamplable=resamplable)""")
             input_args = ', '.join(asp.args[1:])
             exec(s.format(args, input_args), env)
             f = env['f']

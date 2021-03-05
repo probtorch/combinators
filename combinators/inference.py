@@ -143,33 +143,34 @@ class Resample(Inf):
             ix=None,
             loss0=None,
             resampler=None,
-            quiet=False,
             normalize_weights=False,
             _debug=False
     ):
         Inf.__init__(self, ix=ix, loss0=loss0, _debug=_debug)
         self.q = q
-        self.resampler = resamplers.Systematic(quiet=quiet, normalize_weights=normalize_weights)
+        self.resampler = resamplers.Systematic(normalize_weights=normalize_weights) if resampler is None else resampler
         self.normalize_weights = normalize_weights
 
     def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
-        """ Resample """
+        """ Resample Combinator """
         debugging = _debug or self._debug
+        ix = self.ix if self.ix is not None else ix
 
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
-        ix = self.ix if self.ix is not None else ix
         inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
         q_out = self.q(c, **inf_kwargs, **shared_kwargs)
 
-        passable_kwargs = {k: v for k, v in shape_kwargs.items() if check_passable_kwarg(k, self.strategy)}
+        passable_kwargs = {k: v for k, v in shape_kwargs.items() if check_passable_kwarg(k, self.resampler)}
 
-        tr_2, lw_2 = self.strategy(q_out.trace, q_out.log_weight, **passable_kwargs)
+        tr_2, lw_2 = self.resampler(q_out.trace, q_out.log_weight, **passable_kwargs)
 
 
         # If we resample, we still need to  corresponding outputs from
         # kernel programs. We enforce that they follow the convention of always
         # passing a dict as output with addresses as keys.
+        #
+        # Better, long-term fix: Bring back kernels and have them be "programs that output {addresses:values}"
         c1 = q_out.output
         assert isinstance(c1, dict)
         c2 = {k: v for k, v in c1.items()}
