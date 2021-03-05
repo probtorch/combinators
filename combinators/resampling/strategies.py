@@ -1,14 +1,10 @@
 import torch
 import torch.nn.functional as F
-from torch import Tensor, nn
+from torch import Tensor
 from typing import Optional, Tuple
 import math
 import torch.distributions as D
-from torch.distributions.categorical import Categorical
-from torch.distributions.uniform import Uniform
-from combinators.tensor.utils import kw_autodevice
 from combinators.stochastic import Trace, RandomVariable, ImproperRandomVariable, Provenance
-import combinators.stochastic as probtorch
 
 class Strategy:
     def __call__(self, trace:Trace, log_weight:Tensor, sample_dims:int, batch_dim:int)->Tuple[Trace, Tensor]:

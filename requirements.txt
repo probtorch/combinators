@@ -1,7 +1,6 @@
 torch>=1.7.1
 probtorch
 numpy # don't forget mkl
-typeguard
 tqdm
 
 # testing
@@ -10,20 +9,19 @@ pytest-mock
 pytest-cov
 hypothesis
 typeguard
-# mypy # : ( mypy, why do fail me so often?
-# sparklines
+# mypy # : ( mypy, why do you fail me so often?
 
 # docs
 Sphinx
 
-# maybe optional
-pandas
-scipy
+# # maybe optional
+# pandas
+# scipy
 
-# dataset dependencies
-torchvision
-scikit-image
-scikit-learn
+# # dataset dependencies
+# torchvision
+# scikit-image
+# scikit-learn
 
 # debugging
 ipdb
@@ -31,9 +29,4 @@ tensorboard
 
 # visualization / notebooks
 matplotlib
-seaborn
 ipywidgets
-
-# currently having some trouble with mach-nix
-hydra-core>=1.0.0
-hydra_colorlog

@@ -5,7 +5,6 @@ import torch.nn.functional as F
 
 from torch import Tensor
 from typing import Tuple
-from combinators.trace import utils as trace_utils
 import combinators.stochastic as probtorch
 from combinators.stochastic import RandomVariable, ImproperRandomVariable
 from combinators.trace.utils import valeq

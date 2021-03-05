@@ -1,10 +1,7 @@
-import math
-import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from collections import namedtuple
-from combinators import Trace, Program, copytraces, Compose, Propose, Resample, Extend
-from experiments.apgs_bshape.models import Enc_coor, Enc_digit, Decoder, apg_ix
+from combinators import Program, Compose, Propose, Resample, Extend
+from experiments.apgs_bshape.models import apg_ix
 
 loss_tuple = namedtuple('loss_tuple', ['phi', 'theta'])
 

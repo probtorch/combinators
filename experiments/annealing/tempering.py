@@ -18,11 +18,11 @@ from combinators.trace.utils import RequiresGrad
 from combinators.tensor.utils import autodevice, kw_autodevice, copy, show
 from combinators.densities import MultivariateNormal, Tempered, RingGMM, Normal
 from combinators.densities.kernels import MultivariateNormalKernel, MultivariateNormalLinearKernel, NormalLinearKernel
-from combinators.nnets import ResMLPJ
-from combinators.objectives import nvo_rkl, nvo_avo
 from combinators import Forward, Reverse, Propose
 from combinators.stochastic import RandomVariable, ImproperRandomVariable
 from combinators.metrics import effective_sample_size, log_Z_hat
+from experiments.annealing.nnets import ResMLPJ
+from combinators.annealing.objectives import nvo_rkl, nvo_avo
 import visualize as V
 
 def mk_kernel(from_:int, to_:int, std:float, num_hidden:int):
@@ -98,8 +98,8 @@ import combinators.trace.utils as trace_utils
 from combinators.tensor.utils import autodevice, kw_autodevice
 from combinators.densities import MultivariateNormal, Tempered, RingGMM
 from combinators.densities.kernels import MultivariateNormalKernel
-from combinators.nnets import ResMLPJ
-from combinators.objectives import nvo_rkl
+from experiments.annealing.nnets import ResMLPJ
+from experiments.annealing.objectives import nvo_rkl
 from combinators import Forward, Reverse, Propose
 from combinators.stochastic import RandomVariable, ImproperRandomVariable
 from combinators.metrics import effective_sample_size, log_Z_hat

@@ -4,11 +4,7 @@ import argparse
 import torch
 import numpy as np
 from random import shuffle
-from torch import optim, Tensor, nn
-from combinators import debug
-from combinators import git_root, save_models, load_models
-from combinators import ImproperRandomVariable, RandomVariable, Trace, Program, Extend, Compose, Propose, Condition, Resample
-from combinators import trace_utils, adam, ppr, autodevice, kw_autodevice, nvo_rkl, nvo_avo, effective_sample_size, log_Z_hat
+from combinators import debug, save_models, adam
 from combinators.utils import save_models
 
 from experiments.apgs_bshape.gibbs import gibbs_sweeps
