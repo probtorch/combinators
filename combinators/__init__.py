@@ -9,7 +9,7 @@ import combinators.trace.utils as trace_utils
 from combinators.utils import adam, ppr, git_root, save_models, load_models
 from combinators.tensor.utils import autodevice, kw_autodevice
 from combinators.metrics import effective_sample_size, log_Z_hat
-from combinators.resampling.strategies import Systematic
+from combinators.resamplers import Systematic
 
 # Reexports
 from torch import Tensor

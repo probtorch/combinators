@@ -4,15 +4,15 @@ from abc import ABC
 from torch import Tensor
 from typing import Any, Tuple, Optional, Union, Set, Callable, NamedTuple
 
-import combinators.resampling.strategies as rstrat
+import combinators.resamplers as resamplers
 
 from combinators.out import Out
-from combinators.tensor.utils import autodevice, kw_autodevice
 from combinators.stochastic import Trace, Provenance, RandomVariable, ImproperRandomVariable
 from combinators.program import Conditionable, Program, dispatch, check_passable_kwarg
 from combinators.metrics import effective_sample_size
 
 
+# FIXME: move to probtorch
 def copytraces(*traces, exclude_node=None):
     """
     merge any traces together. domains should be disjoint or else
@@ -30,6 +30,7 @@ def copytraces(*traces, exclude_node=None):
     return newtrace
 
 
+# FIXME: move to probtorch
 def rerun_with_detached_values(trace:Trace):
     """
     Rerun a trace with detached values, keeping an equivalent gradient on
@@ -54,50 +55,72 @@ def rerun_with_detached_values(trace:Trace):
     return newtrace
 
 
+# FIXME: move to utils
 def maybe(obj, name, default, fn=(lambda x: x)):
     """ maybe :: Dict[key, value] -> key -> value' -> Callable[[value], value'] -> value' """
     return fn(getattr(obj, name)) if hasattr(obj, name) else default
 
 
 class Inf(ABC):
+    """
+    Superclass of Inference combinators. This class serves two purposes:
+
+    1. Typechecking. While not enforced at present, we can add @typechecked
+       annotations to make this code type-safe. Arguably, typeguard's typeerrors
+       are, at times, impenetrable and assert statements might be more
+       user-friendly.
+
+    2. Global variables for the inference state. The inference state is
+       fragmented across Trace (for \rho, \tau, sample and observe statements),
+       combinators.Out for runtime state found in `extras`, and in this
+       superclass for global state.
+    """
     def __init__(
             self,
             loss_fn:Callable[[Out, Tensor], Tensor]=(lambda _, fin: fin),
             loss0=None,
             ix:Union[Tuple[int], NamedTuple, None]=None,
             sample_dims=None,
-            batch_dim=None):
+            batch_dim=None,
+            _debug=False
+    ):
         self.loss0 = 0.0 if loss0 is None else loss0
         self.foldr_loss = loss_fn
         self.ix = ix
         self._out = Out(None, None, None)
+        self._debug = _debug
         self.batch_dim = batch_dim
         self.sample_dims = sample_dims
 
     def __call__(self, *args:Any, _debug=False, **kwargs:Any) -> Out:
-        raise NotImplementedError("@abstractproperty but python's type system doesn't understand this")
+        raise NotImplementedError("@abstractproperty but python's type system doesn't maintain the Callable signature.")
 
 
 class Condition(Inf):
     """ Conditioned evaluation. """
-    def __init__(self,
+    def __init__(
+            self,
             program: Conditionable,
             cond_trace: Optional[Trace]=None,
             ix=None,
-            loss_fn=(lambda x, fin: fin),
-            loss0=None) -> None:
-        Inf.__init__(self, ix=ix, loss_fn=loss_fn, loss0=loss0)
+            loss_fn=(lambda _, fin: fin),
+            loss0=None,
+            _debug=False
+    ) -> None:
+        Inf.__init__(self, ix=ix, loss_fn=loss_fn, loss0=loss0, _debug=_debug)
         self.program = program
-        self.conditioning_trace = copytraces(cond_trace) # FIXME: do we actually need a copy of the trace?
+
+        # FIXME: do we actually need a copy of the trace? Might cause a dangling ref.
+        self.conditioning_trace = copytraces(cond_trace)
 
     def __call__(self, c:Any, _debug=False, **kwargs:Any) -> Out:
-        """ Condition """
-
+        """ Conditioned evaluation """
+        debugging = _debug or self._debug
         self.program._cond_trace = self.conditioning_trace
         out = dispatch(self.program)(c, _debug=_debug, **kwargs)
         out['type']=type(self)
 
-        if _debug:
+        if debugging:
             """ NOTE: holding on to traces like this is a good way to cause space leaks """
             out['cond_trace']=self.conditioning_trace
 
@@ -119,17 +142,19 @@ class Resample(Inf):
             q: Union[Program, Inf],
             ix=None,
             loss0=None,
-            strategy=None,
+            resampler=None,
             quiet=False,
-            normalize_weights=False
+            normalize_weights=False,
+            _debug=False
     ):
-        Inf.__init__(self, ix=ix, loss0=loss0)
+        Inf.__init__(self, ix=ix, loss0=loss0, _debug=_debug)
         self.q = q
-        self.strategy = rstrat.Systematic(quiet=quiet, normalize_weights=normalize_weights)
+        self.resampler = resamplers.Systematic(quiet=quiet, normalize_weights=normalize_weights)
         self.normalize_weights = normalize_weights
 
     def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Resample """
+        debugging = _debug or self._debug
 
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
         ix = self.ix if self.ix is not None else ix
@@ -165,8 +190,8 @@ class Resample(Inf):
 
         self._out['loss'] = self.foldr_loss(self._out, maybe(q_out, 'loss', self.loss0))
 
-        if _debug:
-            out['q_out']=q_out
+        if debugging:
+            self._out['q_out']=q_out
 
         return self._out
 
@@ -225,8 +250,8 @@ class Extend(Inf, Conditionable):
         self._out['loss'] = self.foldr_loss(self._out, maybe(p_out, 'loss', self.loss0))
 
         if _debug:
-            out['p_out'] = p_out
-            out['f_out'] = f_out
+            self._out['p_out'] = p_out
+            self._out['f_out'] = f_out
 
         return self._out
 

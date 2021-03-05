@@ -1,0 +1,9 @@
+#+TITLE: TODO for release
+
+* tests
+** TODO test copying the trace for conditioning
+* code
+** TODO add some basic objectives and two simple examples (in tutorial)
+*** TODO Standard VI: inclusive / exclusive
+*** TODO Regression
+* documentation
