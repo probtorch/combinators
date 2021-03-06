@@ -7,11 +7,11 @@ class Simple1(Program):
         super().__init__()
 
     def model(self, trace, c=None):
-        z_1 = trace.normal(loc=torch.ones(1), scale=torch.ones(1), name="z_1")
-        z_2 = trace.normal(loc=torch.ones(1)*2, scale=torch.ones(1)*2, name="z_2")
+        z_1 = trace.normal(loc=torch.ones(1), scale=torch.ones(1), reparameterized=False, name="z_1")
+        z_2 = trace.normal(loc=torch.ones(1)*2, scale=torch.ones(1)*2, reparameterized=False, name="z_2")
 
-        trace.normal(loc=torch.ones(1), scale=torch.ones(1), value=z_1, name="x_1")
-        trace.normal(loc=torch.ones(1), scale=torch.ones(1), value=z_2, name="x_2")
+        trace.normal(loc=torch.ones(1), scale=torch.ones(1), value=z_1, reparameterized=False, name="x_1")
+        trace.normal(loc=torch.ones(1), scale=torch.ones(1), value=z_2, reparameterized=False, name="x_2")
         return torch.tensor(3.)
 
 class Simple2(Program):
@@ -19,11 +19,11 @@ class Simple2(Program):
         super().__init__()
 
     def model(self, trace, c=None):
-        z_2 = trace.normal(loc=torch.ones(1)*2, scale=torch.ones(1)*2, name="z_2")
-        z_3 = trace.normal(loc=torch.ones(1)*3, scale=torch.ones(1)*3, name="z_3")
+        z_2 = trace.normal(loc=torch.ones(1)*2, scale=torch.ones(1)*2, reparameterized=False, name="z_2")
+        z_3 = trace.normal(loc=torch.ones(1)*3, scale=torch.ones(1)*3, reparameterized=False, name="z_3")
 
-        trace.normal(loc=torch.ones(1), scale=torch.ones(1), value=z_2, name="x_2")
-        trace.normal(loc=torch.ones(1), scale=torch.ones(1), value=z_3, name="x_3")
+        trace.normal(loc=torch.ones(1), scale=torch.ones(1), value=z_2, reparameterized=False, name="x_2")
+        trace.normal(loc=torch.ones(1), scale=torch.ones(1), value=z_3, reparameterized=False, name="x_3")
         return torch.tensor(1.)
 
 class Simple3(Program):
@@ -31,15 +31,15 @@ class Simple3(Program):
         super().__init__()
 
     def model(self, trace, c):
-        z_3 = trace.normal(loc=torch.ones(1)*c, scale=torch.ones(1)*3, name="z_3")
-        trace.normal(loc=torch.ones(1), scale=torch.ones(1), value=z_3, name="x_3")
+        z_3 = trace.normal(loc=torch.ones(1)*c, scale=torch.ones(1)*3, reparameterized=False, name="z_3")
+        trace.normal(loc=torch.ones(1), scale=torch.ones(1), value=z_3, reparameterized=False, name="x_3")
 
 class Simple4(Program):
     def __init__(self):
         super().__init__()
 
     def model(self, trace, c):
-        z_1 = trace.normal(loc=torch.ones(1)*c, scale=torch.ones(1), name="z_1")
+        z_1 = trace.normal(loc=torch.ones(1)*c, scale=torch.ones(1), reparameterized=False, name="z_1")
 
 # ===== #
 # TESTS #
@@ -48,7 +48,7 @@ class Simple4(Program):
 def test_run_a_primitive_program():
     s1_out = Simple1()(None)
     assert set(s1_out.trace.keys()) == {"z_1", "z_2", "x_1", "x_2"}
-    assert s1_out.log_weight == s1_out.trace.log_joint(nodes={"x_1", "x_2"})
+    assert s1_out.log_weight == s1_out.trace.log_joint(sample_dims=0, batch_dim=1, nodes={"x_1", "x_2"})
 
 def test_cond_eval():
     s1_out = Simple1()(None)

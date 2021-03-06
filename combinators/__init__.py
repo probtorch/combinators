@@ -2,7 +2,7 @@
 
 from combinators.stochastic import ImproperRandomVariable, RandomVariable, Trace, Provenance
 from combinators.program import Program, dispatch
-from combinators.inference import Extend, Compose, Propose, Condition, Resample, copytraces, rerun_with_detached_values, maybe
+from combinators.inference import Extend, Compose, Propose, Condition, Resample, copytraces, rerun_with_detached_values
 
 # Optional
 import combinators.trace.utils as trace_utils
@@ -21,7 +21,7 @@ _exports = \
 
 __all__ = [cls.__name__ for cls in _exports] + [
     "dispatch",
-    "copytraces", "rerun_with_detached_values", "maybe",
+    "copytraces", "rerun_with_detached_values",
 
     "trace_utils",
     "adam", "ppr",
