@@ -398,9 +398,10 @@ class Trace(MutableMapping):
 
     def log_joint(self, sample_dims=None, batch_dim=None, nodes=None, reparameterized=True):
         """ probtorch.utils.partial_sum expects a specific order """
-        assert isinstance(sample_dims, int), "probtoch does currently no work properly for multiple batch or sample dims"
-        assert isinstance(batch_dim, int), "probtoch does currently no work properly for multiple batch or sample dims"
-        assert sample_dims < batch_dim, "probtorch currently only works if sample_dims < batch_dim"
+        collapses_all = sample_dims is None and batch_dim is None
+        has_shape = isinstance(sample_dims, int) and isinstance(batch_dim, int)
+        assert collapses_all or has_shape, "probtoch does currently no work properly for multiple batch or sample dims"
+        assert collapses_all or sample_dims < batch_dim, "probtorch currently only works if sample_dims < batch_dim"
         return self._log_joint(sample_dims=sample_dims, batch_dim=batch_dim, nodes=nodes, reparameterized=reparameterized)
 
 
@@ -494,65 +495,6 @@ class Trace(MutableMapping):
         log_pw_joints[range(batch_size), range(batch_size)] -= math.log(bias)
         log_pw_joints = log_mean_exp(log_pw_joints, 1).transpose(0, batch_dim)
         return log_pw_joints, log_marginals, log_prod_marginals
-
-class ConditioningTrace(Trace):
-    """
-    A trace-like datastructure which allows for in-place mutation.
-
-    Conditioning traces track what random variables are mutated and can be
-    converted into a Trace in one of two ways -- either by discarding untouched
-    random variables or by keeping all random variables.
-
-    Any random variable that a ConditioningTrace is initialized with have their
-    provenance changed to OBSERVED.
-    """
-    def __init__(self, tr: Trace):
-        super().__init__()
-        self._initialized = dict()
-        self._mutated = dict()
-        for k, rv in tr.items():
-            cls = type(rv)
-            if cls == RandomVariable:
-                newrv = cls(rv.dist, rv.value, provenance=Provenance.OBSERVED, mask=rv.mask, use_pmf=rv._use_pmf)
-            else:
-                newrv = cls(rv._log_density_fn, rv.value, provenance=Provenance.OBSERVED, mask=rv.mask)
-            self._nodes[k] = newrv
-            self._initialized[k] = True
-
-    def __setitem__(self, name, node):
-        """ allow for setting varialbles in a conditioning trace """
-        if not isinstance(node, Stochastic):
-            raise TypeError("Argument node must be an instance of "
-                            "probtorch.Stochastic")
-        if (node.log_prob != node.log_prob).sum() > 0:
-            raise ValueError("NaN log prob encountered in node"
-                             "with name: " + name)
-        self._mutated[name] = True
-        self._nodes[name] = node
-
-    def as_trace(self, access_only):
-        newtr = Trace()
-        # FIXME: I need to change logic for the following as well if access_only
-        newtr._counters = self._counters
-        newtr._mask = self._mask
-        newtr.idempotent = self.idempotent
-        newtr.lazy_observations = self.lazy_observations
-        mutated = set(self._mutated.keys())
-        newtr._nodes = {k:v for k, v in self._nodes.items() if (access_only and k in mutated) or not access_only }
-
-        return newtr
-
-    def append(self, node, name=None):
-        """ append bypasses __setitem__ restrictions and may create a key if name=None """
-        start_keys = set(self.keys())
-        out = super().append(node, name=name)
-        end_keys = set(self.keys())
-        new_keys = list(end_keys - start_keys)
-        if len(new_keys) > 0:
-            self._mutated[new_keys[0]] = True
-        else:
-            self._mutated[name] = True
-        return out
 
 
 def _autogen_trace_methods():

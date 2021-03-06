@@ -242,7 +242,7 @@ class Extend(Inf, Conditionable):
                 ix=ix,
                 ))
 
-        self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in q_out else q_out['loss'])
+        self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in p_out else p_out['loss'])
 
         if debugging:
             self._out['p_out'] = p_out
@@ -288,7 +288,8 @@ class Compose(Inf):
                 ix=ix,
                 ))
 
-        self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in q_out else q_out['loss'])
+        # FIXME: be a fold over both losses?
+        self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in q1_out else q1_out['loss'])
 
         if debugging:
             self._out['q1_out'] = q1_out
