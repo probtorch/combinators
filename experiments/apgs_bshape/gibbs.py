@@ -1,10 +1,7 @@
-import math
-import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from collections import namedtuple
-from combinators import Trace, Program, copytraces, Compose, Propose, Resample, Extend
-from experiments.apgs_bshape.models import Enc_coor, Enc_digit, Decoder, apg_ix
+from combinators import Program, Compose, Propose, Resample, Extend
+from experiments.apgs_bshape.models import apg_ix
 
 loss_tuple = namedtuple('loss_tuple', ['phi', 'theta'])
 
@@ -34,11 +31,10 @@ def loss_apg(out, total_loss):
     log_q = forward_trace.log_joint(**jkwargs)
     # !!! need this metric as <density>
 
-    loss_phi = (w * (- log_q)).sum(0).mean()
+    loss_phi = (w * (-log_q)).sum(0).mean()
     loss_theta = (w * (-log_p)).sum(0).mean()
 
     return loss_phi + loss_theta + total_loss
-#     return loss_tuple(phi=total_loss.phi + loss_phi, theta=total_loss.theta + loss_theta)
 
 class Noop(Program):
     def __init__(self):

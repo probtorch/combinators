@@ -8,8 +8,6 @@ import torch.distributions as D
 from combinators import (ImproperRandomVariable, RandomVariable, autodevice,
                          effective_sample_size, kw_autodevice, log_Z_hat,
                          nvo_avo, nvo_rkl)
-from combinators.embeddings import CovarianceEmbedding
-from combinators.nnets import ResMLPJ
 from combinators.program import Program
 from combinators.stochastic import (ImproperRandomVariable, Provenance,
                                     RandomVariable, Trace)
@@ -31,6 +29,9 @@ import combinators.trace.utils as trace_utils
 from combinators.program import Program
 from combinators.embeddings import CovarianceEmbedding
 from combinators.stochastic import Trace, ImproperRandomVariable, RandomVariable, Provenance
+
+from experiments.annealing.embeddings import CovarianceEmbedding
+from experiments.annealing.nnets import ResMLPJ
 
 class Density(Program):
     """ A program that represents a single unnormalized distribution that you can query logprobs on. """

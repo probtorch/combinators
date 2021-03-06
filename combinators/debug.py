@@ -3,29 +3,11 @@
 import os
 import torch
 from torch import Tensor
-from torch import nn
 import torch.distributions as dist
-from combinators.stochastic import Trace
 from typeguard import typechecked
-from typing import Callable
 import numpy as np
 import random
-from torch.utils.tensorboard import SummaryWriter
 
-class xMaybeWriter(SummaryWriter):
-    def __init__(self, enable=True):
-        super().__init__()
-        self.enabled = enable
-
-    def maybe_run(self, function, *args, **kwargs):
-        if self.enabled:
-            return function(self, *args, **kwargs)
-
-    def add_scalar(self,*args, **kwargs):
-        self.maybe_run(super().add_scalar, *args, **kwargs)
-
-    def add_figure(self,*args, **kwargs):
-        self.maybe_run(super().add_figure, *args, **kwargs)
 
 @typechecked
 def runtime() -> str:
@@ -36,25 +18,12 @@ def runtime() -> str:
             return 'jupyter'
         if 'terminal' in ipy_str:
             return 'ipython'
+        else:
+            raise Exception()
     except:
         return 'terminal'
 
-
-def excise(t:Tensor) -> Tensor:
-    """ clone a tensor and remove it from the computation graph """
-    return torch.clone(t).detach()
-
-def excise_trace(tr:Trace) -> Trace:
-    """ deep-copy a trace and remove all tensors from the computation graph. """
-    newtr = Trace()
-    for k, rv in tr.items():
-        RVClass = type(rv)
-        newval = excise(rv.value)
-        # FIXME: should also excise rv.dist parameters, but this isn't necessary for testing yet
-        newrv = RVClass(rv.dist, newval, provenance=rv.provenance, mask=rv.mask)
-        newtr.append(newrv, name=k)
-    return newtr
-
+@typechecked
 def seed(s=42):
     torch.manual_seed(s)
     np.random.seed(s)
@@ -62,19 +31,11 @@ def seed(s=42):
     # torch.set_deterministic(True)
     torch.backends.cudnn.benchmark = True # just incase something goes wrong with set_deterministic
 
-def is_smoketest():
+
+def is_smoketest()->bool:
     env_var = os.getenv('SMOKE')
     return env_var is not None and env_var == 'true'
 
-def print_grad(*args:nn.Module):
-    for i, x in enumerate(*args):
-        for j, param in enumerate(x.parameters()):
-            print(i, j, param.grad)
-
-def print_grads(learnables, bools_only=True):
-    for i, k in enumerate(learnables):
-        for j, p in enumerate(k.parameters()):
-            print(i, j, "none" if p is None or torch.all(p == 0) else ('exists' if bools_only else p))
 
 def propagate(N:dist.MultivariateNormal, F:Tensor, t:Tensor, B:Tensor, marginalize:bool=False, reverse_order:bool=False)-> dist.MultivariateNormal:
     # N is normal starting from
@@ -102,11 +63,3 @@ def propagate(N:dist.MultivariateNormal, F:Tensor, t:Tensor, B:Tensor, marginali
             m = torch.cat((b, a))
         return dist.MultivariateNormal(loc=m, covariance_matrix=C)
 
-def empirical_marginal_mean_std(runnable:Callable[[], Tensor], num_validate_samples = 400):
-    with torch.no_grad():
-        samples = []
-        for _ in range(num_validate_samples):
-            out = runnable()
-            samples.append(out)
-        evaluation = torch.cat(samples)
-        return evaluation.mean().item(), evaluation.std().item()

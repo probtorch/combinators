@@ -11,7 +11,6 @@ from functools import partial
 
 from combinators import adam, ppr
 from combinators import autodevice, kw_autodevice
-from combinators import nvo_rkl, nvo_avo
 from combinators import Propose, Extend, Compose, Resample
 from combinators import effective_sample_size, log_Z_hat
 from combinators import Systematic
@@ -22,6 +21,7 @@ from combinators.utils import save_models, load_models, models_as_dict
 
 import experiments.visualize as V
 from experiments.annealing.models import paper_model
+from experiments.annealing.objectives import nvo_rkl, nvo_avo
 
 def traverse_proposals(fn, out, memo=[])->[Tensor]:
     if out.pytype == Propose:

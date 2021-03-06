@@ -1,13 +1,11 @@
-""" type aliases """
-
 from torch import Tensor
-from typing import Any, Tuple, Optional, Dict, List, Union, Set, Callable
-from combinators.stochastic import Trace, Factor, GenericRandomVariable
+from typing import Any, Optional
+from combinators.stochastic import Trace
 import combinators.tensor.utils as tensor_utils
-import inspect
 
 
-class property_dict(dict):
+class PropertyDict(dict):
+    """ quick hack to prototype program outputs """
     def __getattr__(self, name):
         if name in self:
             return self[name]
@@ -24,9 +22,11 @@ class property_dict(dict):
             raise AttributeError("No such attribute: " + name)
 
     def __repr__(self):
-        return "<property_dict>:\n" + show_nest(self, pd_header="<property_dict>")
+        return "<PropertyDict>:\n" + show_nest(self, pd_header="<PropertyDict>")
 
-def show_nest(p:property_dict, nest_level=0, indent_len:Optional[int]=None, pd_header="<property_dict>"):
+
+def show_nest(p:PropertyDict, nest_level=0, indent_len:Optional[int]=None, pd_header="<PropertyDict>"):
+    """ show the nesting level of a PropertyDict via indentation """
     _max_len = max(map(len, p.keys()))
     max_len = _max_len + nest_level * (_max_len if indent_len is None else indent_len)
     delimiter = "\n  "
@@ -38,13 +38,13 @@ def show_nest(p:property_dict, nest_level=0, indent_len:Optional[int]=None, pd_h
         else:
             return repr(v)
 
-    unnested = dict(filter(lambda kv: not isinstance(kv[1], property_dict), p.items()))
+    unnested = dict(filter(lambda kv: not isinstance(kv[1], PropertyDict), p.items()))
     unnested_str = delimiter.join([
         *[("{:>"+ str(max_len)+ "}: {}").format(k, showitem(v)) for k, v in unnested.items()
          ]
     ])
 
-    nested = dict(filter(lambda kv: isinstance(kv[1], property_dict), p.items()))
+    nested = dict(filter(lambda kv: isinstance(kv[1], PropertyDict), p.items()))
     nested_str = delimiter.join([
         *[("{:>"+ str(max_len)+ "}: {}").format(k + pd_header, "\n"+show_nest(v, nest_level=nest_level+1)) for k, v in nested.items()
          ]
@@ -52,20 +52,19 @@ def show_nest(p:property_dict, nest_level=0, indent_len:Optional[int]=None, pd_h
 
     return unnested_str + delimiter + nested_str
 
-PropertyDict = property_dict
-
-class iproperty_dict(property_dict):
-    def __iter__(self):
-        for v in self.values():
-            yield v
-
-IPropertyDict = iproperty_dict
 
 class Out(PropertyDict):
+    '''
+    Prototype of a Program's return type. This will be replaced with the
+    inference state. Programs always return three things: a trace, log_weight,
+    and output, but in some cases (like propose) we need to pass around more
+    information. We place this in 'extras' and merge this directly into the
+    dict.
+    '''
     def __init__(self, trace:Trace, log_weight:Optional[Tensor], output:Any, extras:dict=dict()):
-        self.trace = trace       # τ; ρ
-        self.log_weight = log_weight # w      FIXME: this should be log weight
-        self.output = output     # c
+        self.trace = trace            # τ; ρ
+        self.log_weight = log_weight  # w
+        self.output = output          # c
         for k, v in extras.items():
             self[k] = v
 

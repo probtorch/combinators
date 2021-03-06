@@ -267,7 +267,7 @@ class DecoderMarkovBlanket(Program):
                     value=old_recon.value,
                     log_prob=dummy_zeros,
                     reparameterized=self.reparameterized,
-                    can_resample=False,
+                    resamplable=False,
                     provenance=Provenance.REUSED), # Needs to be reused to be picked up into tau_2, i.e. the weight computation
                 name=old_recon_name)
 
@@ -294,7 +294,7 @@ class DecoderMarkovBlanket(Program):
                     value=frames[:,:,ix.t,:,:],
                     log_prob=opt_fake_likelihood,
                     reparameterized=self.reparameterized,
-                    can_resample=False,
+                    resamplable=False,
                     provenance=Provenance.REUSED),
                 name='recon_opt_%d_%d' % (ix.t, ix.sweep))
 
@@ -335,7 +335,7 @@ class DecoderMarkovBlanket(Program):
                     value=frames[:,:,ix.t,:,:],
                     log_prob=opt_fake_likelihood,
                     reparameterized=self.reparameterized,
-                    can_resample=False,
+                    resamplable=False,
                     provenance=Provenance.REUSED),
                 name='recon_opt_%d_%d' % (ix.t, ix.sweep))
 
@@ -357,7 +357,7 @@ class DecoderMarkovBlanket(Program):
                         value=frames[:,:,:T-1,:,:],
                         log_prob=opt_fake_likelihood,
                         reparameterized=self.reparameterized,
-                        can_resample=False,
+                        resamplable=False,
                         provenance=Provenance.REUSED),
                     name='recon_opt_%d_%d' % (ix.t, ix.sweep))
 

@@ -24,6 +24,7 @@ def save_models(models, filename, weights_dir="./weights")->None:
 
     torch.save(checkpoint, f'{weights_dir}/{filename}')
 
+
 def load_models(model, filename, weights_dir="./weights", **kwargs)->None:
     path = os.path.normpath(f'{weights_dir}/{filename}')
 
@@ -31,44 +32,9 @@ def load_models(model, filename, weights_dir="./weights", **kwargs)->None:
 
     {k: v.load_state_dict(checkpoint[k]) for k, v in model.items()}
 
-def models_as_iter(model_dict, with_names=False):
-    from collections import namedtuple
-    model_spec = namedtuple('model_spec', ['group_ix', 'model_ix', 'group'])
-
-    def to_model_spec(name):
-        parts = name.split("_")
-        group_order = int(parts[0])
-        model_order = int(parts[-1])
-        group = "_".join(parts[1:-1])
-        return model_spec(group_order, model_order, group)
-
-    def from_model_spec(spec):
-        return f'{spec.group_ix}_{spec.group}_{spec.model_ix}'
-
-    spec = {to_model_spec(name) for name in model_dict.keys()}
-    group_names = {(group, gix) for (gix, mix, group) in spec}
-    groups = [None] * len(group_names)
-    names = [None] * len(group_names)
-    model_len = None
-
-    for g, gix in group_names:
-        gspec = list(filter(lambda t: t.group==g, spec))
-        _model_len = max(map(lambda t: t.model_ix, gspec))
-        if model_len is None:
-            model_len = _model_len
-        assert model_len == _model_len
-
-        models = [None]*model_len
-        for mspec in gspec:
-            model_key = from_model_spec(mspec)
-            models[mspec.model_ix] = model_dict[model_key]
-
-        groups[gix] = models
-        names[gix] = g
-
-    return (groups, names) if with_names else groups
 
 def models_as_dict(model_iter, names):
+    """ (for annealing) given a list of list of targets and kernels -- flatten for save_models and load_models, above """
     assert isinstance(model_iter, (tuple, list)) or all(map(lambda ms: isinstance(ms, (tuple,list)), model_iter.values())), "takes a list or dict of lists"
     assert len(names) == len(model_iter), 'names must exactly align with model lists'
 
@@ -78,14 +44,20 @@ def models_as_dict(model_iter, names):
             model_dict[f'{str(i)}_{name}_{str(j)}'] = m
     return model_dict
 
+
 def adam(models, **kwargs):
+    """ Adam for dicts or iterables of models """
     iterable = models.values() if isinstance(models, dict) else models
     return optim.Adam([dict(params=x.parameters()) for x in iterable], **kwargs)
 
-def git_root():
+
+def git_root()->str:
+    """ print the root of the project """
     return subprocess.check_output('git rev-parse --show-toplevel', shell=True).decode("utf-8").rstrip()
 
-def ppr_show(a:Any, m='dv', debug=False, **kkwargs):
+
+def ppr_show(a:Any, m:str='dv', debug:bool=False, **kkwargs:Any):
+    """ show instance of a prettified object """
     if debug:
         print(type(a))
     if isinstance(a, Tensor):
@@ -118,9 +90,7 @@ def ppr_show(a:Any, m='dv', debug=False, **kkwargs):
     else:
         return repr(a)
 
+
 def ppr(a:Any, m='dv', debug=False, desc='', **kkwargs):
+    """ a pretty printer that relies ppr_show """
     print(desc, ppr_show(a, m=m, debug=debug, **kkwargs))
-
-def pprm(a:Tensor, name='', **kkwargs):
-    ppr(a, desc="{} ({: .4f})".format(name, a.detach().cpu().mean().item()), **kkwargs)
-

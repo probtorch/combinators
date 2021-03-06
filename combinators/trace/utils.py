@@ -9,12 +9,17 @@ import combinators.tensor.utils as tensor_utils
 from combinators.program import check_passable_kwarg
 import inspect
 
+
 TraceLike = Union[Trace, Dict[str, Union[Tensor, GenericRandomVariable]]]
+
+
 def distprops(dist):
+    """ return a list of a distribution's properties """
     return [
         p for p in (set(inspect.getfullargspec(dist.__init__).args) - {'self'})
             if hasattr(dist, p)
     ]
+
 
 @typechecked
 def maybe_sample(trace:Optional[Trace], sample_shape:Union[Tuple[int], None, tuple], reparameterized:Optional[bool]=None) -> Callable[[D.Distribution, str], Tuple[Tensor, Provenance]]:
@@ -28,6 +33,7 @@ def maybe_sample(trace:Optional[Trace], sample_shape:Union[Tuple[int], None, tup
         else:
             return (dist.rsample(sample_shape) if _reparameterized else dist.sample(sample_shape), Provenance.SAMPLED, _reparameterized)
     return curried
+
 
 @typechecked
 def valeq(t1:Trace, t2:Trace, nodes:Union[Dict[str, Any], List[Tuple[str, str]], None]=None, check_exist:bool=True, strict:bool=False)->bool:
@@ -61,19 +67,24 @@ def valeq(t1:Trace, t2:Trace, nodes:Union[Dict[str, Any], List[Tuple[str, str]],
 
     return True
 
+
 @typechecked
 def show(tr:TraceLike, fix_width=False):
+    """ show a trace """
     get_value = lambda v: v if isinstance(v, Tensor) else v.value
     ten_show = lambda v: tensor_utils.show(get_value(v), fix_width=fix_width)
     return "{" + "; ".join([f"'{k}'-➢{ten_show(v)}" for k, v in tr.items()]) + "}"
 
+
 def showDist(dist):
-    ''' prettier show instance wit more relevant information for a distribution '''
+    ''' prettier show instance for distributions more information when debugging '''
     props = distprops(dist)
     sattrs = [f'{p}:{tensor_utils.show(getattr(dist, p))}' for p in props]
     return type(dist).__name__ + "(" +", ".join(sattrs)+ ")"
 
+
 def showRV(v, args=[], dists=False):
+    ''' prettier show instance for RandomVariables with more information when debugging '''
     if len(args) == 0 and not dists:
         print("[WARNING] asked to show a RV, but no arguments passed")
     name = ""
@@ -85,8 +96,10 @@ def showRV(v, args=[], dists=False):
         arglist.append('dist=' + name + "(" + ", ".join(sattrs) + ")")
     return name + ", ".join(arglist)
 
+
 @typechecked
 def showall(tr:Trace, delim="; ", pretty=True, mlen=0, sort=True, args=[], dists=False):
+    """ show instance for a trace, using showRV """
     items = list(tr.items())
     if len(items) == 0:
         return "Trace{}"
@@ -99,15 +112,21 @@ def showall(tr:Trace, delim="; ", pretty=True, mlen=0, sort=True, args=[], dists
 
     return "{" + pref + delim.join([("{:>"+str(mlen)+"}-➢{}").format(k, showRV(v, args=args, dists=dists)) for k, v in items]) + "}"
 
+
 @typechecked
 def showvals(tr:Trace, delim="; ", pretty=True, mlen=0, sort=True):
     return showall(tr, args=['value'])
+
+
 @typechecked
 def showprobs(tr:Trace, delim="; ", pretty=True, mlen=0, sort=True):
     return showall(tr, args=['log_prob'])
+
+
 @typechecked
 def showdists(tr:Trace, delim="; ", pretty=True, mlen=0, sort=True):
     return showall(tr, args=[], dists=True)
+
 
 @typechecked
 def trace_eq(t0:Trace, t1:Trace, name:str):
