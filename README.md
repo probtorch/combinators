@@ -7,7 +7,8 @@ To cite, use:
 ``` bibtex
 @misc{stites-zimmerman2021LearningProposals,
       title={Learning Proposals for Probabilistic Programs with Inference Combinators}, 
-      author={Sam Stites and Heiko Zimmermann and Hao Wu and Eli Sennesh and Jan-Willem van de Meent},
+      author={Sam Stites and Heiko Zimmerman and Hao Wu and Eli Sennesh and Jan-Willem van de Meent},
+      shortauthor={Stites and Zimmermann},
       year={2021},
       eprint={2103.00668},
       archivePrefix={arXiv},
