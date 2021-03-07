@@ -1,6 +1,7 @@
 from enum import Enum, auto
 import math
 import torch
+from combinators.tensor.utils import kw_autodevice
 
 class CovarianceEmbedding(Enum):
     LogDiagonal = auto()

@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 import torch
 import math
 import torch.nn.functional as F
@@ -28,10 +27,11 @@ def _eval_detached(rv):
 
 
 def stl_lv(out):
+    """ TODO """
     ix = out.ix
     # Need do this to compute sticking (stl) the landing gradient
-    q_stl_trace = copytraces(q_out.trace, exclude_node='g{}'.format(ix+1))
-    q_stl_trace.append(_eval_detached(q_out.trace['g{}'.format(ix+1)]), name='g{}'.format(ix+1))
+    q_stl_trace = copytraces(out.q_out.trace, exclude_node='g{}'.format(ix+1))
+    q_stl_trace.append(_eval_detached(out.q_out.trace['g{}'.format(ix+1)]), name='g{}'.format(ix+1))
     lu_1 = q_stl_trace.log_joint(nodes=out.nodes, **shape_kwargs)
 
 
@@ -110,12 +110,13 @@ def nvo_rkl(
     return loss
 
 
-
 def _eval0(e):
     return e - e.detach()
 
+
 def _eval1(e):
     return torch.exp(_eval0(e))
+
 
 def _eval_nrep(rv):
     value = rv.value.detach()
