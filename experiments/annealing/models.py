@@ -1,41 +1,21 @@
 #!/usr/bin/env python3
 import math
-from typing import Callable, Dict, Optional, Tuple, Union
+from typing import Union, Callable
+
+import torch
+import torch.nn.functional as F
+from torch import Tensor, distributions, nn
 
 import combinators.trace.utils as trace_utils
-import torch
-import torch.distributions as D
-from combinators import (ImproperRandomVariable, RandomVariable, autodevice,
-                         effective_sample_size, kw_autodevice, log_Z_hat,
-                         nvo_avo, nvo_rkl)
-from combinators.program import Program
-from combinators.stochastic import (ImproperRandomVariable, Provenance,
-                                    RandomVariable, Trace)
-from combinators.tensor.utils import autodevice, kw_autodevice
-from matplotlib import pyplot as plt
-from torch import Tensor, distributions, nn
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import trange
+from combinators import (
+    Program, ImproperRandomVariable, RandomVariable,
+    autodevice, kw_autodevice, Provenance
+)
 
-
-import math
-import torch
-from torch import Tensor, distributions, nn
-import torch.distributions as D
-from typing import Optional, Dict, Union, Callable
-from combinators.tensor.utils import kw_autodevice, autodevice
-import combinators.trace.utils as trace_utils
-
-from combinators.program import Program
-from combinators.embeddings import CovarianceEmbedding
-from combinators.stochastic import Trace, ImproperRandomVariable, RandomVariable, Provenance
-
-from experiments.annealing.embeddings import CovarianceEmbedding
 from experiments.annealing.nnets import ResMLPJ
 
 class Density(Program):
     """ A program that represents a single unnormalized distribution that you can query logprobs on. """
-
     def __init__(self, name, log_density_fn:Callable[[Tensor], Tensor]):
         super().__init__()
         self.name = name
@@ -44,7 +24,6 @@ class Density(Program):
     def model(self, trace, c):
         assert trace._cond_trace is not None and self.name in trace._cond_trace, "an improper RV can only condition on values in an existing trace"
         rv = ImproperRandomVariable(log_density_fn=self.log_density_fn, value=trace._cond_trace[self.name].value, provenance=Provenance.REUSED)
-        # assert rv.log_prob.grad_fn is not None
         trace.append(rv, name=self.name)
         return {self.name: rv.value}
 
@@ -88,7 +67,7 @@ class ConditionalMultivariateNormal(Program):
             ext_to:str,
             loc:Tensor,
             cov:Tensor,
-            net:nn.Module,
+            net,
             reparameterized,
         ):
         super().__init__()
@@ -106,7 +85,7 @@ class ConditionalMultivariateNormal(Program):
     def model(self, trace, c, *shared):
         out = self.net(c[self.ext_from])
         mu, cov_emb = torch.split(out, [2, 2], dim=-1)
-        cov = torch.diag_embed(torch.nn.functional.softplus(cov_emb))
+        cov = torch.diag_embed(F.softplus(cov_emb))
 
         value = trace.multivariate_normal(
             loc=mu,
@@ -151,27 +130,19 @@ class GMM(Density):
 
     def sample(self, sample_shape=torch.Size([1])):
         """ only used to visualize samples """
-        # NOTE: no trace being used here
-        trace = Trace()
         zs = distributions.Categorical(torch.ones(len(self.components), device="cpu")).sample(sample_shape=sample_shape)
 
-        # trace.update(a_trace)
-        cluster_shape = (1, *zs.shape[1:-1])
         xs = []
-        values, indicies = torch.sort(zs)
+        values, _ = torch.sort(zs)
 
         for k in range(self.K):
             n_k = (values == k).sum()
             x_k = self.components[k].sample(sample_shape=(n_k, *zs.shape[1:-1]))
             xs.append(x_k)
 
-        # xs = torch.cat(xs)[indicies]
         xs = torch.cat(xs)
         ix = torch.randperm(xs.shape[0])
 
-        # rv = ImproperRandomVariable(log_density_fn=self.log_density_fn, value=xs, provenance=Provenance.SAMPLED)
-        # trace.append(rv, name=self.name)
-        # return trace, xs[ix].view(xs.size())
         return None, xs[ix].view(xs.size())
 
     def log_density_fn(self, value):
@@ -193,8 +164,6 @@ class RingGMM(GMM):
         super().__init__(name=name, locs=locs, covs=covs)
 
 def anneal_between(left, right, total_num_targets, optimize_path=False):
-    proposal_std = total_num_targets
-
     # Make an annealing path
     betas = torch.arange(0., 1., 1./(total_num_targets - 1))[1:] # g_0 is beta=0
     path = [Tempered(f'g{k}', left, right, beta, optimize=optimize_path) for k, beta in zip(range(1, total_num_targets-1), betas)]
@@ -206,7 +175,6 @@ def paper_model(num_targets=8, optimize_path=False):
     g0 = FixedMultivariateNormal(name=f'g0',
                                  loc=torch.zeros(2, **kw_autodevice()),
                                  cov=torch.eye(2, **kw_autodevice())*5**2)
-    # FIXME: THIS WAS A BUG IN NVI FRAMEWORK/ANNEALING MODE -> sqrt(5) = std
     gK = RingGMM(radius=10, scale=0.5, count=8, name=f"g{num_targets - 1}").to(autodevice())
 
     def paper_kernel(from_:int, to_:int, std:float, reparameterized:bool):

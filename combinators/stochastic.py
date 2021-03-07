@@ -398,7 +398,7 @@ class Trace(MutableMapping):
 
     def log_joint(self, sample_dims=None, batch_dim=None, nodes=None, reparameterized=True):
         """ probtorch.utils.partial_sum expects a specific order """
-        if (isinstance(sample_dims, int) and isinstance(batch_dim, int)) and sample_dims < batch_dim:
+        if (isinstance(sample_dims, int) and isinstance(batch_dim, int)) and sample_dims > batch_dim:
             raise RuntimeError("don't run into probtorch.utils L89 condition")
 
         return self._log_joint(sample_dims=sample_dims, batch_dim=batch_dim, nodes=nodes, reparameterized=reparameterized)
