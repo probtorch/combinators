@@ -82,7 +82,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_dir', default='./dataset/')
     parser.add_argument('--frame_pixels', default=96, type=int)
     parser.add_argument('--shape_pixels', default=28, type=int)
-    parser.add_argument('--timesteps', default=3, type=int)
+    parser.add_argument('--timesteps', default=10, type=int)
     parser.add_argument('--num_objects', default=3, type=int)
     # training config
     parser.add_argument('--device', default='cpu', type=str)

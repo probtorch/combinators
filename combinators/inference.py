@@ -373,7 +373,7 @@ class Propose(Inf):
                 proposal_trace=copytraces(q_out.trace),
                 target_trace=copytraces(p_out.trace, p_out.trace_star) if "trace_star" in p_out else p_out.trace,
                 ## apg ##
-                forward_trace = q_out.q2_out.trace if q_out.type == "Compose" else None,
+                forward_trace = q_out.q2_out.trace if q_out.type == Compose else None,
                 #########
                 type=type(self),
                 ix=ix,
