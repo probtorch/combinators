@@ -48,7 +48,7 @@ class Simple4(Program):
 def test_run_a_primitive_program():
     s1_out = Simple1()(None)
     assert set(s1_out.trace.keys()) == {"z_1", "z_2", "x_1", "x_2"}
-    assert s1_out.log_weight == s1_out.trace.log_joint(sample_dims=0, batch_dim=1, nodes={"x_1", "x_2"})
+    assert s1_out.log_weight == s1_out.trace.log_joint(nodes={"x_1", "x_2"})
 
 def test_cond_eval():
     s1_out = Simple1()(None)
@@ -80,10 +80,10 @@ def test_propose():
     lw_1 = out.q_out.log_weight
     lv = out.p_out.log_weight - (lu_1 + lu_star)
     lw_out = lw_1 + lv
-    assert torch.equal(lw_out, out.log_weight), "lw_out"
+    assert torch.equal(lw_out.squeeze(), out.log_weight), "lw_out"
 
 def test_compose():
-    out = Compose(q1=Simple1(), q2=Simple3())(None)
+    out = Compose(q1=Simple1(), q2=Simple3())(None, _debug=True)
 
     assert set(out.trace.keys()) == {'x_1', 'x_2', 'x_3', 'z_1', 'z_2', 'z_3'}
     assert torch.equal(out.q1_out.log_weight, out.q1_out.trace.log_joint(nodes={'x_1', 'x_2'}))
@@ -97,8 +97,8 @@ def test_extend_unconditioned():
     assert torch.equal(out.log_weight, out.p_out.log_weight + out.f_out.trace.log_joint())
 
 def test_extend_conditioned():
-    q_out = Compose(q1=Simple1(), q2=Simple3())(None)
-    p_out = Condition(Extend(p=Simple2(), f=Simple4()), cond_trace=q_out.trace)(None)
+    q_out = Compose(q1=Simple1(), q2=Simple3())(None, _debug=True)
+    p_out = Condition(Extend(p=Simple2(), f=Simple4()), cond_trace=q_out.trace)(None, _debug=True)
     tau_0  = {'z_1', 'z_2', 'z_3', 'x_2', 'x_3', 'x_1'}
     assert set(q_out.trace.keys()) == tau_0
 
@@ -127,7 +127,7 @@ def test_extend_propose():
     debug.seed(7)
     Q = Compose(q1=Simple1(), q2=Simple3())
     P = Extend(p=Simple2(), f=Simple4())
-    out = Propose(p=P, q=Q)(None)
+    out = Propose(p=P, q=Q)(None, _debug=True)
 
     # Test compose inside propose
     tau_1  = {'z_1', 'z_2', 'z_3', 'x_2', 'x_3', 'x_1'}
