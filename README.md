@@ -5,7 +5,7 @@ Code for *Learning Proposals for Probabilistic Programs with Inference Combinato
 To cite, use:
 
 ``` bibtex
-@misc{stites2021learning,
+@misc{stites-zimmerman2021LearningProposals,
       title={Learning Proposals for Probabilistic Programs with Inference Combinators}, 
       author={Sam Stites and Heiko Zimmermann and Hao Wu and Eli Sennesh and Jan-Willem van de Meent},
       year={2021},
