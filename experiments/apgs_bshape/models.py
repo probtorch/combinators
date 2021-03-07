@@ -2,7 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from combinators.stochastic import Trace, Provenance, RandomVariable
+from combinators.stochastic import Provenance, RandomVariable
 from combinators.program import Program
 from torch.distributions.normal import Normal
 from torch.distributions.bernoulli import Bernoulli
@@ -11,35 +11,42 @@ from collections import namedtuple
 
 apg_ix = namedtuple("apg_ix", ["t", "sweep", "dir"])
 
-# from combinators.inference import Program, Compose, Extend, Propose, Resample, Condition
-# Path to example programs:
-
 def init_models(frame_pixels, shape_pixels, num_hidden_digit, num_hidden_coor, z_where_dim, z_what_dim, num_objects, mean_shape, device, reparameterized=False, use_markov_blanket=True):
-    models = dict()
     AT = Affine_Transformer(frame_pixels, shape_pixels, device)
 
     Decoder = DecoderMarkovBlanket if use_markov_blanket else DecoderFull
 
-    models['dec'] = Decoder(num_pixels=shape_pixels**2,
-                            num_hidden=num_hidden_digit,
-                            z_where_dim=z_where_dim,
-                            z_what_dim=z_what_dim,
-                            AT=AT,
-                            device=device,
-                            reparameterized=reparameterized).to(device)
-    models['enc_coor'] = Enc_coor(num_pixels=(frame_pixels-shape_pixels+1)**2,
-                                  mean_shape=mean_shape,
-                                  num_hidden=num_hidden_coor,
-                                  z_where_dim=z_where_dim,
-                                  AT=AT,
-                                  dec=models["dec"],
-                                  num_objects=num_objects,
-                                  reparameterized=reparameterized).to(device)
-    models['enc_digit'] = Enc_digit(num_pixels=shape_pixels**2,
-                                    num_hidden=num_hidden_digit,
-                                    z_what_dim=z_what_dim,
-                                    AT=AT,
-                                    reparameterized=reparameterized).to(device)
+    models = dict()
+
+    models['dec'] = Decoder(
+        num_pixels=shape_pixels**2,
+        num_hidden=num_hidden_digit,
+        z_where_dim=z_where_dim,
+        z_what_dim=z_what_dim,
+        AT=AT,
+        device=device,
+        reparameterized=reparameterized
+    ).to(device)
+
+    models['enc_coor'] = Enc_coor(
+        num_pixels=(frame_pixels-shape_pixels+1)**2,
+        mean_shape=mean_shape,
+        num_hidden=num_hidden_coor,
+        z_where_dim=z_where_dim,
+        AT=AT,
+        dec=models["dec"],
+        num_objects=num_objects,
+        reparameterized=reparameterized
+    ).to(device)
+
+    models['enc_digit'] = Enc_digit(
+        num_pixels=shape_pixels**2,
+        num_hidden=num_hidden_digit,
+        z_what_dim=z_what_dim,
+        AT=AT,
+        reparameterized=reparameterized
+    ).to(device)
+
     return models
 
 class Enc_coor(Program):
@@ -47,7 +54,7 @@ class Enc_coor(Program):
     encoder of the digit positions
     """
     def __init__(self, num_pixels, num_hidden, z_where_dim, AT, dec, mean_shape, num_objects, reparameterized=False):
-        super(self.__class__, self).__init__()
+        super().__init__()
         self.enc_coor_hidden = nn.Sequential(
                             nn.Linear(num_pixels, num_hidden),
                             nn.ReLU())
@@ -71,7 +78,7 @@ class Enc_coor(Program):
         frames = c["frames"]
         S, B, T, FP, _ = frames.shape
         if ix.sweep == 0:
-            # FIXME: FIgure out if we can use cheaper expand here
+            # FIXME: Figure out if we can use cheaper expand here
             conv_kernel = self.mean_shape.repeat(S, B, self.K, 1, 1)
         else:
             if ix.dir == "forward":
@@ -132,12 +139,13 @@ class Enc_coor(Program):
         else:
             raise ValueError("Kernel must be run either forward or reverse")
 
+
 class Enc_digit(Program):
     """
     encoder of digit features
     """
     def __init__(self, num_pixels, num_hidden, z_what_dim, AT, reparameterized=False):
-        super(self.__class__, self).__init__()
+        super().__init__()
         self.enc_digit_hidden = nn.Sequential(
                         nn.Linear(num_pixels, num_hidden),
                         nn.ReLU(),
@@ -170,12 +178,10 @@ class Enc_digit(Program):
         else:
             raise ValueError("Kernel must be run either forward or reverse")
 
+
 class DecoderMarkovBlanket(Program):
-    """
-    decoder
-    """
     def __init__(self, num_pixels, num_hidden, z_where_dim, z_what_dim, AT, device, reparameterized=False):
-        super(self.__class__, self).__init__()
+        super().__init__()
         self.dec_digit_mean = nn.Sequential(nn.Linear(z_what_dim, int(0.5*num_hidden)),
                                     nn.ReLU(),
                                     nn.Linear(int(0.5*num_hidden), num_hidden),
@@ -376,12 +382,10 @@ class DecoderMarkovBlanket(Program):
         return {**{"z_what_%d"%(z_what_index): z_what_val, "frames": c["frames"]},
                 **{"z_where_%d_%d"%(t, ix.sweep): trace._cond_trace['z_where_%d_%d' % (t, ix.sweep)].value for t in range(min(ix.t+1, T))}}
 
+
 class DecoderFull(Program):
-    """
-    decoder
-    """
     def __init__(self, num_pixels, num_hidden, z_where_dim, z_what_dim, AT, device, reparameterized=False):
-        super(self.__class__, self).__init__()
+        super().__init__()
         self.dec_digit_mean = nn.Sequential(nn.Linear(z_what_dim, int(0.5*num_hidden)),
                                     nn.ReLU(),
                                     nn.Linear(int(0.5*num_hidden), num_hidden),

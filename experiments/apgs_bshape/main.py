@@ -2,26 +2,19 @@ import os
 import time
 import argparse
 import torch
-import numpy as np
 from random import shuffle
-from combinators import debug, save_models, adam
+from combinators import save_models, adam
 from combinators.utils import save_models
 
 from experiments.apgs_bshape.gibbs import gibbs_sweeps
 from experiments.apgs_bshape.models import init_models
-
-if debug.runtime() == 'jupyter':
-    from tqdm.notebook import trange, tqdm
-else:
-    from tqdm import trange, tqdm
-from tqdm.contrib import tenumerate
 
 def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_dir, **kwargs):
 #     torch.autograd.set_detect_anomaly(True)
     device = torch.device(kwargs['device'])
     sample_size = budget // (num_sweeps + 1)
     assert sample_size > 0, 'non-positive sample size =%d' % sample_size
-    mean_shape = torch.load(data_dir + 'mean_shape.pt').to(device)    
+    mean_shape = torch.load(data_dir + 'mean_shape.pt').to(device)
     data_paths = []
     for file in os.listdir(data_dir+'/video/'):
         if file.endswith('.pt') and \
@@ -71,7 +64,7 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
 def test_gibbs_sweep(budget, num_sweeps, timesteps, data_dir, **kwargs):
     device = torch.device(kwargs['device'])
     sample_size = budget // (num_sweeps+1)
-    mean_shape = torch.load(data_dir + 'mean_shape.pt').to(device)    
+    mean_shape = torch.load(data_dir + 'mean_shape.pt').to(device)
     data_paths = []
     for file in os.listdir(data_dir+'/video/'):
         if file.endswith('.pt'):
@@ -103,11 +96,12 @@ if __name__ == '__main__':
     parser.add_argument('--num_hidden_coor', default=400, type=int)
     parser.add_argument('--z_where_dim', default=2, type=int)
     parser.add_argument('--z_what_dim', default=10, type=int)
+    # test config
+    parser.add_argument('--test', default=False, type=bool)
 
     args = parser.parse_args()
 
-    test = True
-    if test:
+    if args.test:
         out, frames = test_gibbs_sweep(
             budget=args.budget,
             num_sweeps=args.num_sweeps,
@@ -121,8 +115,6 @@ if __name__ == '__main__':
             z_what_dim=args.z_what_dim,
             num_objects=args.num_objects,
             device=args.device)
-        breakpoint();
-
     else:
         train_apg(num_epochs=args.num_epochs,
                   lr=args.lr,
