@@ -6,7 +6,7 @@ from typing import List
 from matplotlib import pyplot as plt
 
 from combinators import adam, autodevice
-from combinators import Propose, Extend, Compose, Resample, Condition
+from combinators import Propose, Extend, Compose, Resample
 from combinators import effective_sample_size, log_Z_hat
 from combinators.utils import save_models, load_models, models_as_dict
 

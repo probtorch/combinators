@@ -2,7 +2,7 @@
 
 from combinators.stochastic import ImproperRandomVariable, RandomVariable, Trace, Provenance
 from combinators.program import Program, dispatch
-from combinators.inference import Extend, Compose, Propose, Condition, Resample, copytraces, rerun_with_detached_values
+from combinators.inference import Extend, Compose, Propose, Resample, copytraces, rerun_with_detached_values
 
 # Optional
 import combinators.trace.utils as trace_utils
@@ -15,7 +15,7 @@ from combinators.resamplers import Systematic
 from torch import Tensor
 
 _exports = \
-  [Extend, Compose, Propose, Condition, Resample] + \
+  [Extend, Compose, Propose, Resample] + \
   [Program] + \
   [Trace, RandomVariable, ImproperRandomVariable, Provenance]
 

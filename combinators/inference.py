@@ -8,25 +8,10 @@ import combinators.resamplers as resamplers
 
 from combinators.out import Out
 from combinators.stochastic import Trace, Provenance, RandomVariable, ImproperRandomVariable
-from combinators.program import Conditionable, Program, dispatch, check_passable_kwarg
+from combinators.program import Conditionable, Program, dispatch, check_passable_kwarg, EvalSubCtx, copytraces
 from combinators.metrics import effective_sample_size
 
 
-# FIXME: move to probtorch
-def copytraces(*traces, exclude_nodes=None):
-    """
-    merge traces together. domains should be disjoint otherwise last-write-wins.
-    """
-    newtrace = Trace()
-    if exclude_nodes is None:
-        exclude_nodes = {}
-
-    for tr in traces:
-        for k, rv in tr.items():
-            if k in exclude_nodes:
-                continue
-            newtrace.append(rv, name=k)
-    return newtrace
 
 
 # FIXME: move to probtorch
@@ -86,40 +71,6 @@ class Inf(ABC):
     def __call__(self, *args:Any, _debug=False, **kwargs:Any) -> Out:
         raise NotImplementedError("@abstractproperty but python's type system doesn't maintain the Callable signature.")
 
-
-class Condition(Inf):
-    """ Conditioned evaluation. """
-    def __init__(
-            self,
-            program: Conditionable,
-            cond_trace: Optional[Trace]=None,
-            ix=None,
-            loss_fn=(lambda _, fin: fin),
-            loss0=None,
-            _debug=False
-    ) -> None:
-        Inf.__init__(self, ix=ix, loss_fn=loss_fn, loss0=loss0, _debug=_debug)
-        self.program = program
-
-        # FIXME: do we actually need a copy of the trace? Might cause a dangling ref.
-        self.conditioning_trace = copytraces(cond_trace)
-
-    def __call__(self, c:Any, _debug=False, **kwargs:Any) -> Out:
-        """ Conditioned evaluation """
-        debugging = _debug or self._debug
-        self.program._cond_trace = self.conditioning_trace
-        out = dispatch(self.program)(c, _debug=_debug, **kwargs)
-        out['type']=type(self)
-
-        if debugging:
-            """ NOTE: holding on to traces like this is a good way to cause space leaks """
-            out['cond_trace']=self.conditioning_trace
-
-        self.program._cond_trace = None
-        # Also clear cond_trace reference in trace to keep memory profile slim.
-        out.trace._cond_trace = None
-
-        return out
 
 
 class Resample(Inf):
@@ -211,20 +162,14 @@ class Extend(Inf, Conditionable):
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
         inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
-        if self._cond_trace is None:
+        with EvalSubCtx(self.p, self._cond_trace), EvalSubCtx(self.f, self._cond_trace):
             p_out = dispatch(self.p)(c, **inf_kwargs, **shared_kwargs)
-
             f_out = dispatch(self.f)(p_out.output, **inf_kwargs, **shared_kwargs)
 
+        if self._cond_trace is None:
             assert (f_out.log_weight == 0.0)
             assert len({k for k, v in f_out.trace.items() if v.provenance == Provenance.OBSERVED or v.provenance == Provenance.REUSED}) == 0
-
         else:
-            """ conditioned evaluation """
-            p_out = dispatch(Condition(self.p, self._cond_trace))(c, **inf_kwargs, **shared_kwargs)
-
-            f_out = dispatch(Condition(self.f, self._cond_trace))(p_out.output, **inf_kwargs, **shared_kwargs)
-
             assert len({k for k, v in f_out.trace.items() if v.provenance == Provenance.OBSERVED}) == 0
 
         assert len(set(f_out.trace.keys()).intersection(set(p_out.trace.keys()))) == 0
@@ -254,7 +199,7 @@ class Extend(Inf, Conditionable):
 class Compose(Inf):
     def __init__(
             self,
-            q1: Union[Program, Condition, Resample, Inf],
+            q1: Union[Program, Resample, Inf],
             q2: Program,
             loss_fn=(lambda x, fin: fin),
             loss0=None,
@@ -333,7 +278,8 @@ class Propose(Inf):
 
         q_out = dispatch(self.q)(c, **inf_kwargs, **shared_kwargs)
 
-        p_out = dispatch(Condition(self.p, q_out.trace))(c, **inf_kwargs,  **shared_kwargs)
+        with EvalSubCtx(self.p, q_out.trace):
+            p_out = dispatch(self.p)(c, **inf_kwargs,  **shared_kwargs)
 
         rho_1 = set(q_out.trace.keys())
         tau_1 = set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED})

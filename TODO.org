@@ -1,12 +1,13 @@
 #+TITLE: TODO for release
-* tests
-** TODO test copying the trace for conditioning
 * code
 ** TODO add some basic objectives and two simple examples (in tutorial)
 *** TODO Standard VI: inclusive / exclusive
 *** TODO Regression
-** TODO Condition should be unified across: Extend, Program, and Condition
-*** move "Condition" to combinators.program
+** DONE Condition should be unified across: Extend, Program, and Condition
 ** DONE marginalize combinator instead of the star trace
 ** TODO RV.resamplable should be handled at a higher level
-* documentation
+* TODO documentation
+* next
+** DONE substitution ctx mngr -> inference state + ctx on inf state
+** TODO profiling + discovery
+*** TODO test copying the trace for conditioning
