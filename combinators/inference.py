@@ -13,18 +13,18 @@ from combinators.metrics import effective_sample_size
 
 
 # FIXME: move to probtorch
-def copytraces(*traces, exclude_node=None):
+def copytraces(*traces, exclude_nodes=None):
     """
     merge traces together. domains should be disjoint otherwise last-write-wins.
     """
     newtrace = Trace()
-    if exclude_node is None:
-        exclude_node = {}
+    if exclude_nodes is None:
+        exclude_nodes = {}
 
     for tr in traces:
         for k, rv in tr.items():
-            if k in exclude_node:
-                break
+            if k in exclude_nodes:
+                continue
             newtrace.append(rv, name=k)
     return newtrace
 
@@ -170,7 +170,7 @@ class Resample(Inf):
             assert isinstance(c2[rs_out_addr], torch.Tensor)
             c2[rs_out_addr] = tr_2[rs_out_addr].value
 
-        self._out = Out(
+        out = Out(
             extras=dict(
                 type=type(self),
                 ix=ix,
@@ -180,12 +180,12 @@ class Resample(Inf):
             output=c2,
         )
 
-        self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in q_out else q_out['loss'])
+        out['loss'] = self.foldr_loss(out, self.loss0 if 'loss' not in q_out else q_out['loss'])
 
         if debugging:
-            self._out['q_out'] = q_out
+            out['q_out'] = q_out
 
-        return self._out
+        return out
 
 
 class Extend(Inf, Conditionable):
@@ -231,24 +231,24 @@ class Extend(Inf, Conditionable):
 
         log_u2 = f_out.trace.log_joint(**shape_kwargs, nodes={k for k,v in f_out.trace.items() if v.provenance != Provenance.OBSERVED})
 
-        self._out = Out(
-            trace=p_out.trace,
+        out = Out(
+            trace=copytraces(p_out.trace, f_out.trace),
             log_weight=p_out.log_weight + log_u2, # $w_1 \cdot u_2$
-            output=p_out.output,
+            output=f_out.output,
             extras=dict(
-                # FIXME: switch with marginal semantics
-                trace_star = f_out.trace,
+                marginal_keys = set(p_out.trace.keys()),
+                marginal_out  = p_out.output,
                 type=type(self),
                 ix=ix,
                 ))
 
-        self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in p_out else p_out['loss'])
+        out['loss'] = self.foldr_loss(out, self.loss0 if 'loss' not in p_out else p_out['loss'])
 
         if debugging:
-            self._out['p_out'] = p_out
-            self._out['f_out'] = f_out
+            out['p_out'] = p_out
+            out['f_out'] = f_out
 
-        return self._out
+        return out
 
 
 class Compose(Inf):
@@ -279,7 +279,7 @@ class Compose(Inf):
 
         assert len(set(q2_out.trace.keys()).intersection(set(q1_out.trace.keys()))) == 0, "addresses must not overlap"
 
-        self._out = Out(
+        out = Out(
             trace=copytraces(q2_out.trace, q1_out.trace),
             log_weight=q1_out.log_weight + q2_out.log_weight,
             output=q2_out.output,
@@ -289,14 +289,13 @@ class Compose(Inf):
                 ))
 
         # FIXME: be a fold over both losses?
-        self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in q1_out else q1_out['loss'])
+        out['loss'] = self.foldr_loss(out, self.loss0 if 'loss' not in q1_out else q1_out['loss'])
 
         if debugging:
-            self._out['q1_out'] = q1_out
-            self._out['q2_out'] = q2_out
+            out['q1_out'] = q1_out
+            out['q2_out'] = q2_out
 
-        return self._out
-
+        return out
 
 
 class Propose(Inf):
@@ -314,6 +313,15 @@ class Propose(Inf):
         self.q = q
         # APG, needs documentation
         self._no_reruns = _no_reruns
+
+    @classmethod
+    def marginalize(cls, p, p_out):
+        if isinstance(p, Extend):
+            assert "marginal_keys" in p_out
+            return p_out.marginal_out, copytraces(p_out.trace, exclude_nodes=set(p_out.trace.keys()) - p_out.marginal_keys)
+
+        else:
+            return p_out.output, p_out.trace
 
     def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
         """ Propose """
@@ -333,35 +341,37 @@ class Propose(Inf):
         nodes = rho_1 - (tau_1 - tau_2)
 
         lu_1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
-        # τ*, by definition, can't have OBSERVE or REUSED random variables
-        # FIXME: precision errors when converting python into pytorch, see tests.
-        lu_star = 0.0 if 'trace_star' not in p_out else q_out.trace.log_joint(nodes=set(p_out.trace_star.keys()), **shape_kwargs)
+
 
         lw_1 = q_out.log_weight
         # We call that lv because its the incremental weight in the IS sense
-        # In the semantics this corresponds to lw_2 - (lu + [lu_star])
-        lv = p_out.log_weight - (lu_1 + lu_star)
+        lv = p_out.log_weight - lu_1
         lw_out = lw_1 + lv
+
+        m_output, m_trace = Propose.marginalize(self.p, p_out)
 
         # =============================================== #
         # detach c                                        #
         # =============================================== #
         new_out = None
-        if isinstance(p_out.output, torch.Tensor):
-            new_out = p_out.output.detach()
-        elif isinstance(p_out.output, dict):
+        if isinstance(m_output, torch.Tensor):
+            new_out = m_output.detach()
+        elif isinstance(m_output, dict):
             new_out = {}
-            for k, v in p_out.output.items():
+            for k, v in m_output.items():
                 if isinstance(v, torch.Tensor):
                     new_out[k] = v.detach()
                 else:
                     new_out[k] = v
         else:
-            new_out = p_out.output
+            new_out = m_output
         # =============================================== #
+        proposal_trace=copytraces(q_out.trace)
+        target_trace=copytraces(p_out.trace)
+        lv_ = target_trace.log_joint(sample_dims=sample_dims, batch_dim=1) - proposal_trace.log_joint(sample_dims=sample_dims, batch_dim=1)
 
-        self._out = Out(
-            trace=p_out.trace if self._no_reruns else rerun_with_detached_values(p_out.trace),
+        out = Out(
+            trace=m_trace if self._no_reruns else rerun_with_detached_values(m_trace),
             log_weight=lw_out.detach(),
             output=new_out,
             extras=dict(
@@ -371,19 +381,19 @@ class Propose(Inf):
                 lv=lv,
                 lw=lw_1.detach() if isinstance(lw_1, torch.Tensor) else torch.tensor(lw_1),
                 proposal_trace=copytraces(q_out.trace),
-                target_trace=copytraces(p_out.trace, p_out.trace_star) if "trace_star" in p_out else p_out.trace,
+                target_trace=copytraces(p_out.trace),
                 ## apg ##
-                forward_trace = q_out.q2_out.trace if q_out.type == Compose else None,
+                forward_trace = q_out.q2_out.trace if q_out.type == Compose and debugging else None,
                 #########
                 type=type(self),
                 ix=ix,
                 ),
         )
 
-        self._out['loss'] = self.foldr_loss(self._out, self.loss0 if 'loss' not in q_out else q_out['loss'])
+        out['loss'] = self.foldr_loss(out, self.loss0 if 'loss' not in q_out else q_out['loss'])
 
         if debugging:
-            self._out['q_out'] = q_out
-            self._out['p_out'] = p_out
+            out['q_out'] = q_out
+            out['p_out'] = p_out
 
-        return self._out
+        return out

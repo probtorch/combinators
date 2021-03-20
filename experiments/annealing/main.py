@@ -114,7 +114,7 @@ def check_weights_zero(forwards, reverses):
         assert (forward.net.map_mu[0].bias == 0.).all()
         assert (reverse.net.map_mu[0].bias == 0.).all()
 
-def test(nvi_program, sample_shape, batch_dim=1, sample_dims=0):
+def nvi_test(nvi_program, sample_shape, batch_dim=1, sample_dims=0):
     out = nvi_program(None, sample_shape=sample_shape, sample_dims=sample_dims, batch_dim=batch_dim, _debug=True)
     stats_nvi_run = get_stats(out)
     lw = torch.stack(stats_nvi_run['lw'])
@@ -127,7 +127,7 @@ def test(nvi_program, sample_shape, batch_dim=1, sample_dims=0):
     return loss, ess, lZ_hat, samples, out
 
 
-def train(q, targets, forwards, reverses,
+def nvi_train(q, targets, forwards, reverses,
           sample_shape=(11,),
           batch_dim=1,
           sample_dims=0,
@@ -140,7 +140,7 @@ def train(q, targets, forwards, reverses,
     lws = []
     tqdm_iterations = trange(iterations)
     for i in tqdm_iterations:
-        out = q(None, sample_shape=sample_shape, batch_dim=batch_dim, sample_dims=sample_dims)
+        out = q(None, sample_shape=sample_shape, batch_dim=batch_dim, sample_dims=sample_dims, _debug=True)
         loss = out.loss.mean()
         lw = out.q_out.log_weight if out.type == "Resample" else out.log_weight
         ess = effective_sample_size(lw, sample_dims=sample_dims)
@@ -243,7 +243,7 @@ if __name__ == '__main__':
     losses, ess, lZ_hat = torch.zeros(iterations, K-1, 1), torch.zeros(iterations, K-1, 1), torch.zeros(iterations, K-1, 1)
 
     if tt:
-        q, losses, ess, lZ_hat = train(q,
+        q, losses, ess, lZ_hat = nvi_train(q,
                                     *model,
                                     sample_shape=(S//K,1),
                                     iterations=iterations,
@@ -257,7 +257,7 @@ if __name__ == '__main__':
                         objective,
                         resample=False)
     losses_test, ess_test, lZ_hat_test, samples_test, _ = \
-        test(q, (1000, 100), batch_dim=1, sample_dims=0)
+        nvi_test(q, (1000, 100), batch_dim=1, sample_dims=0)
 
     torch.save((losses_test.mean(1), ess_test.mean(1), lZ_hat_test.mean(1)),
                './metrics/{}-metric-tuple_S{}_B{}-loss-ess-logZhat.pt'.format(

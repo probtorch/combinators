@@ -30,7 +30,7 @@ def stl_lv(out):
     """ TODO """
     ix = out.ix
     # Need do this to compute sticking (stl) the landing gradient
-    q_stl_trace = copytraces(out.q_out.trace, exclude_node='g{}'.format(ix+1))
+    q_stl_trace = copytraces(out.q_out.trace, exclude_nodes='g{}'.format(ix+1))
     q_stl_trace.append(_eval_detached(out.q_out.trace['g{}'.format(ix+1)]), name='g{}'.format(ix+1))
     lu_1 = q_stl_trace.log_joint(nodes=out.nodes, **shape_kwargs)
 
@@ -65,16 +65,21 @@ def nvo_rkl(
 
     # Tests
     # lv = rv_target.log_prob + rv_rev.log_prob - (rv_proposal.log_prob + rv_fwd.log_prob)
-    assert(len(proposal_trace) == 2)
-    assert(len(target_trace) == 2)
-    assert valeq(proposal_trace, target_trace)
-    assert (torch.equal(target_trace.log_joint(sample_dims=sample_dims, batch_dim=1)\
-                        - proposal_trace.log_joint(sample_dims=sample_dims, batch_dim=1),
-                        lv))
-    assert (rv_fwd.log_prob.grad_fn is not None)
-    assert (rv_proposal.value.grad_fn is None)
-    assert (rv_target.log_prob.grad_fn is not None)
-    assert (rv_rev.log_prob.grad_fn is not None)
+    try:
+        assert(len(proposal_trace) == 2)
+        assert(len(target_trace) == 2)
+        assert valeq(proposal_trace, target_trace)
+
+        assert (torch.equal(target_trace.log_joint(sample_dims=sample_dims, batch_dim=1)\
+                            - proposal_trace.log_joint(sample_dims=sample_dims, batch_dim=1),
+                            lv))
+        assert (rv_fwd.log_prob.grad_fn is not None)
+        assert (rv_proposal.value.grad_fn is None)
+        assert (rv_target.log_prob.grad_fn is not None)
+        assert (rv_rev.log_prob.grad_fn is not None)
+    except:
+        breakpoint();
+
 
     ldZ = lv.detach().logsumexp(dim=sample_dims) - math.log(lv.shape[sample_dims])
     f = -(lv - ldZ)
