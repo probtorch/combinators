@@ -325,6 +325,7 @@ class Trace(MutableMapping):
         provenance = kwargs.pop('provenance', None)
         reparameterized = kwargs.pop('reparameterized', None)
         resamplable = kwargs.pop('resamplable', True)
+        sample_shape = kwargs.pop('sample_shape', None)
         dist = Dist(*args, **kwargs)
         assert reparameterized is not None, f"No reparameterized set for {name}: dist={dist}"
         if value is None:
@@ -332,7 +333,13 @@ class Trace(MutableMapping):
                 value = self._cond_trace[name].value
                 provenance = Provenance.REUSED
             else:
-                value = dist.rsample() if reparameterized else dist.sample()
+                def get_value(**kwargs):
+                    return dist.rsample(**kwargs) if reparameterized else dist.sample(**kwargs)
+
+                # FIXME: I think brances can be unified, but I also think I ran into a difference betwen these two functions in the past.
+                value = get_value(sample_shape=sample_shape) \
+                    if sample_shape is not None else get_value()
+
                 provenance = Provenance.SAMPLED
         else:
             if not provenance:
@@ -538,8 +545,8 @@ def _autogen_trace_methods():
                 args = args + ', ' + kwargs
 
             env = {'obj': obj, 'torch': _torch}
-            s = ("""def f({0}, name=None, value=None, reparameterized=None, resamplable=True):
-                    return self.variable(obj, {1}, name=name, value=value, reparameterized=reparameterized, resamplable=resamplable)""")
+            s = ("""def f({0}, name=None, value=None, reparameterized=None, resamplable=True, sample_shape=None):
+                    return self.variable(obj, {1}, name=name, value=value, reparameterized=reparameterized, resamplable=resamplable, sample_shape=sample_shape)""")
             input_args = ', '.join(asp.args[1:])
             exec(s.format(args, input_args), env)
             f = env['f']

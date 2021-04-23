@@ -9,19 +9,18 @@ let
   };
   inherit (mach-nix.nixpkgs) lib;
 in
-mach-nix.mkPython {
+mach-nix.buildPythonPackage {
 
   requirements = lib.strings.concatStringsSep "\n" [
     (builtins.readFile ./requirements.txt)
     # for development we also need:
     "jupyterlab"
-    "jedi==0.17.2"
-    "black"
   ];
 
   packagesExtra = [
     # branch starting from nvi-dev on probtorch
-    "https://github.com/probtorch/probtorch/tarball/1a9af26"
+    #"https://github.com/probtorch/probtorch/tarball/1a9af26"
+    ../probtorch
     mach-nix.nixpkgs.qt512.full # for nixos matplotlib support
   ];
 

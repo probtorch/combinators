@@ -20,6 +20,8 @@ def distprops(dist):
             if hasattr(dist, p)
     ]
 
+def distprops_to_kwargs(dist):
+    return {p: getattr(dist, p) for p in distprops(dist)}
 
 @typechecked
 def maybe_sample(trace:Optional[Trace], sample_shape:Union[Tuple[int], None, tuple], reparameterized:Optional[bool]=None) -> Callable[[D.Distribution, str], Tuple[Tensor, Provenance]]:

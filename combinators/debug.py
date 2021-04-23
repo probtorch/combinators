@@ -31,6 +31,14 @@ def seed(s=42):
     # torch.set_deterministic(True)
     torch.backends.cudnn.benchmark = True # just incase something goes wrong with set_deterministic
 
+def exit0():
+    try:
+        import pytest
+        xit = pytest.exit
+    except:
+        import sys
+        xit = sys.exit
+    xit(0)
 
 def is_smoketest()->bool:
     env_var = os.getenv('SMOKE')

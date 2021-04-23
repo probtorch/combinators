@@ -4,11 +4,18 @@ from torch import nn, Tensor
 from typing import Any, Optional
 from abc import abstractmethod, ABC
 
-from combinators.stochastic import Trace, Provenance
+from combinators.stochastic import GenericRandomVariable, Trace, Provenance
 from combinators.out import Out
+from enum import Enum, auto, unique
+
+@unique
+class WriteMode(Enum):
+    LastWriteWins = auto()
+    FirstWriteWins = auto()
+    NoOverlaps = auto()
 
 # FIXME: move to probtorch
-def copytraces(*traces, exclude_nodes=None):
+def copytraces(*traces, exclude_nodes=None, mode=WriteMode.NoOverlaps):
     """
     merge traces together. domains should be disjoint otherwise last-write-wins.
     """
@@ -20,6 +27,16 @@ def copytraces(*traces, exclude_nodes=None):
         for k, rv in tr.items():
             if k in exclude_nodes:
                 continue
+            elif k in newtrace:
+                if mode == WriteMode.LastWriteWins:
+                    newtrace._nodes[k] = tr[k]
+                elif mode == WriteMode.FirstWriteWins:
+                    continue
+                elif mode == WriteMode.NoOverlaps:
+                    raise RuntimeError("traces should not overlap")
+                else:
+                    raise TypeError("impossible specification")
+
             newtrace.append(rv, name=k)
     return newtrace
 
@@ -67,8 +84,8 @@ class Program(nn.Module, Conditionable):
         #if self._cond_trace is not None:
         # TODO: move this to inference.Condition
         rho_addrs = {k for k in trace.keys()}
-        tau_addrs = {k for k, rv in trace.items() if rv.provenance != Provenance.OBSERVED}
-        tau_prime_addrs = {k for k, rv in self._cond_trace.items() if rv.provenance != Provenance.OBSERVED} \
+        tau_addrs = {k for k, rv in trace.items() if isinstance(rv, GenericRandomVariable) and rv.provenance != Provenance.OBSERVED}
+        tau_prime_addrs = {k for k, rv in self._cond_trace.items() if isinstance(rv, GenericRandomVariable) and rv.provenance != Provenance.OBSERVED} \
             if self._cond_trace is not None else set()
 
         log_weight = trace.log_joint(nodes=rho_addrs - (tau_addrs - tau_prime_addrs), **shape_kwargs)

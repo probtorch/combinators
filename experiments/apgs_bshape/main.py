@@ -4,7 +4,6 @@ import argparse
 import torch
 from random import shuffle
 from combinators import save_models, adam
-from combinators.utils import save_models
 
 from experiments.apgs_bshape.gibbs import gibbs_sweeps
 from experiments.apgs_bshape.models import init_models

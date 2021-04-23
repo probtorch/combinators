@@ -7,8 +7,8 @@ from typing import Any, Tuple, Optional, Union, Set, Callable, NamedTuple
 import combinators.resamplers as resamplers
 
 from combinators.out import Out
-from combinators.stochastic import Trace, Provenance, RandomVariable, ImproperRandomVariable
-from combinators.program import Conditionable, Program, dispatch, check_passable_kwarg, EvalSubCtx, copytraces
+from combinators.stochastic import Trace, Provenance, RandomVariable, ImproperRandomVariable, GenericRandomVariable
+from combinators.program import Conditionable, Program, dispatch, check_passable_kwarg, EvalSubCtx, copytraces, WriteMode
 from combinators.metrics import effective_sample_size
 
 
@@ -172,12 +172,13 @@ class Extend(Inf, Conditionable):
         else:
             assert len({k for k, v in f_out.trace.items() if v.provenance == Provenance.OBSERVED}) == 0
 
-        assert len(set(f_out.trace.keys()).intersection(set(p_out.trace.keys()))) == 0
+        # FIXME: commenting out for synthesis
+        # assert len(set(f_out.trace.keys()).intersection(set(p_out.trace.keys()))) == 0, f"{type(self)}: addresses must not overlap"
 
         log_u2 = f_out.trace.log_joint(**shape_kwargs, nodes={k for k,v in f_out.trace.items() if v.provenance != Provenance.OBSERVED})
 
         out = Out(
-            trace=copytraces(p_out.trace, f_out.trace),
+            trace=copytraces(p_out.trace, f_out.trace, mode=WriteMode.FirstWriteWins),
             log_weight=p_out.log_weight + log_u2, # $w_1 \cdot u_2$
             output=f_out.output,
             extras=dict(
@@ -222,10 +223,13 @@ class Compose(Inf):
 
         q2_out = dispatch(self.q2)(q1_out.output, **inf_kwargs, **shared_kwargs)
 
-        assert len(set(q2_out.trace.keys()).intersection(set(q1_out.trace.keys()))) == 0, "addresses must not overlap"
+        out_trace=copytraces(q2_out.trace, q1_out.trace, mode=WriteMode.LastWriteWins)
+
+        # FIXME: commenting out for synthesis
+        #assert len(set(q2_out.trace.keys()).intersection(set(q1_out.trace.keys()))) == 0, f"{type(self)}: addresses must not overlap"
 
         out = Out(
-            trace=copytraces(q2_out.trace, q1_out.trace),
+            trace=out_trace,
             log_weight=q1_out.log_weight + q2_out.log_weight,
             output=q2_out.output,
             extras=dict(
@@ -282,8 +286,8 @@ class Propose(Inf):
             p_out = dispatch(self.p)(c, **inf_kwargs,  **shared_kwargs)
 
         rho_1 = set(q_out.trace.keys())
-        tau_1 = set({k for k, v in q_out.trace.items() if v.provenance != Provenance.OBSERVED})
-        tau_2 = set({k for k, v in p_out.trace.items() if v.provenance != Provenance.OBSERVED})
+        tau_1 = set({k for k, v in q_out.trace.items() if isinstance(v, GenericRandomVariable) and v.provenance != Provenance.OBSERVED})
+        tau_2 = set({k for k, v in p_out.trace.items() if isinstance(v, GenericRandomVariable) and v.provenance != Provenance.OBSERVED})
         nodes = rho_1 - (tau_1 - tau_2)
 
         lu_1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
@@ -312,9 +316,10 @@ class Propose(Inf):
         else:
             new_out = m_output
         # =============================================== #
-        proposal_trace=copytraces(q_out.trace)
-        target_trace=copytraces(p_out.trace)
-        lv_ = target_trace.log_joint(sample_dims=sample_dims, batch_dim=1) - proposal_trace.log_joint(sample_dims=sample_dims, batch_dim=1)
+        # FIXME: not accessed?
+        #proposal_trace=copytraces(q_out.trace)
+        #target_trace=copytraces(p_out.trace)
+        # lv_ = target_trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim) - proposal_trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim)
 
         out = Out(
             trace=m_trace if self._no_reruns else rerun_with_detached_values(m_trace),
