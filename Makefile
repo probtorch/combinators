@@ -4,13 +4,14 @@
 # @file
 # @version 0.1
 SHELL := bash
-EX_FLAGS :=
+RUN_FLAGS :=
 PYTHON := python
+PYTEST := pytest
 
 all: experiments test
 
 test:
-	pytest ./tests
+	$(PYTEST) ./tests
 
 experiments: ex/annealing ex/apgs_bshape
 
@@ -18,7 +19,7 @@ experiments: ex/annealing ex/apgs_bshape
 ex/%:
 	export PYTHONPATH="$$PWD:$$PYTHONPATH"
 	if [ -d ./experiments/$(@F) ]; then
-		cd ./experiments/$(@F) && $(PYTHON) ./main.py $(EX_FLAGS)
+		cd ./experiments/$(@F) && $(PYTHON) ./main.py $(RUN_FLAGS)
 	else
 		echo "========================================="
 		echo "./experiments/$(@F) is not an experiment!"
@@ -28,6 +29,6 @@ ex/%:
 	fi
 
 profile/%:
-	make PYTHON=fil-profile EX_FLAGS="--iteration 1000" ex/$(@F)
+	make PYTHON="fil-profile run" RUN_FLAGS="--iteration 500" ex/$(@F)
 
 # end
