@@ -4,6 +4,8 @@
 # @file
 # @version 0.1
 SHELL := bash
+EX_FLAGS :=
+PYTHON := python
 
 all: experiments test
 
@@ -15,13 +17,8 @@ experiments: ex/annealing ex/apgs_bshape
 .ONESHELL:
 ex/%:
 	export PYTHONPATH="$$PWD:$$PYTHONPATH"
-	cd ./experiments/$(@F) && python ./main.py
-
-.ONESHELL:
-profile/%:
-	export PYTHONPATH="$$PWD:$$PYTHONPATH"
 	if [ -d ./experiments/$(@F) ]; then
-		cd ./experiments/$(@F) && fil-profile ./main.py --iteration 1000
+		cd ./experiments/$(@F) && $(PYTHON) ./main.py $(EX_FLAGS)
 	else
 		echo "========================================="
 		echo "./experiments/$(@F) is not an experiment!"
@@ -30,6 +27,7 @@ profile/%:
 		echo "    " annealing apgs_bshape
 	fi
 
-
+profile/%:
+	make PYTHON=fil-profile EX_FLAGS="--iteration 1000" ex/$(@F)
 
 # end
