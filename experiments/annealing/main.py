@@ -134,16 +134,12 @@ def nvi_train(q, targets, forwards, reverses,
           sample_shape=(11,),
           batch_dim=1,
           sample_dims=0,
-          iterations=100,
-          full_metrics=True):
+          iterations=100,):
 
-    if full_metrics:
-        logger.warning("Full resolution metrics will be collected, this memory-intensive!")
-
-        # get shapes
-        stats_nvi_run = get_stats(q(None, sample_shape=sample_shape, batch_dim=batch_dim, sample_dims=sample_dims, _debug=True))
-        mk_metric = lambda kw: torch.zeros(iterations,  len(stats_nvi_run[kw]), *stats_nvi_run[kw][0].shape)
-        full_losses, full_lws = mk_metric('loss'), mk_metric('lw')
+    # get shapes for metrics aggregation
+    stats_nvi_run = get_stats(q(None, sample_shape=sample_shape, batch_dim=batch_dim, sample_dims=sample_dims, _debug=True))
+    mk_metric = lambda kw: torch.zeros(iterations,  len(stats_nvi_run[kw]), *stats_nvi_run[kw][0].shape)
+    full_losses, full_lws = mk_metric('loss'), mk_metric('lw')
 
     # Check inizialization
     optimizer = adam([*targets, *forwards, *reverses])
@@ -168,19 +164,14 @@ def nvi_train(q, targets, forwards, reverses,
                                     ess="{:09.4f}".format(ess.item()),
                                     log_Z_hat="{:09.4f}".format(lZ_hat.item()))
         # =================================================== #
+        stats_nvi_run = get_stats(out)
+        lw, loss, _, _ = stats_nvi_run['lw'], stats_nvi_run['loss'], stats_nvi_run['proposal_trace'], stats_nvi_run['target_trace']
+        torch.stack(loss, dim=0, out=full_losses[i])
+        torch.stack(lw, dim=0, out=full_lws[i])
 
-        if full_metrics:
-            stats_nvi_run = get_stats(out)
-            lw, loss, _, _ = stats_nvi_run['lw'], stats_nvi_run['loss'], stats_nvi_run['proposal_trace'], stats_nvi_run['target_trace']
-            torch.stack(loss, dim=0, out=full_losses[i])
-            torch.stack(lw, dim=0, out=full_lws[i])
-
-    if full_metrics:
-        ess = effective_sample_size(full_lws, sample_dims=2)
-        lZ_hat = log_Z_hat(full_lws, sample_dims=2)
-        return q, full_losses, ess, lZ_hat
-    else:
-        return q, None, None, None
+    ess = effective_sample_size(full_lws, sample_dims=2)
+    lZ_hat = log_Z_hat(full_lws, sample_dims=2)
+    return q, full_losses, ess, lZ_hat
 
 def save_nvi_model(targets, forwards, reverses, filename=None):
     assert filename is not None
@@ -260,9 +251,7 @@ if __name__ == '__main__':
                                     sample_shape=(S//K,1),
                                     iterations=iterations,
                                     batch_dim=1,
-                                    sample_dims=0,
-                                    full_metrics=True
-                                    )
+                                    sample_dims=0,)
         save_nvi_model(*model, filename=filename)
     else:
         load_nvi_model(*model, filename=filename)
