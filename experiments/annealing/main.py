@@ -4,6 +4,7 @@ from torch import Tensor
 from tqdm import trange
 from typing import List
 from matplotlib import pyplot as plt
+from logging import getLogger
 
 from combinators import adam, autodevice
 from combinators import Propose, Extend, Compose, Resample
@@ -12,6 +13,8 @@ from combinators.utils import save_models, load_models, models_as_dict
 
 from experiments.annealing.models import paper_model
 from experiments.annealing.objectives import nvo_rkl, nvo_avo
+
+logger = getLogger(__file__)
 
 def traverse_proposals(fn, out, memo=[])->List[Tensor]:
     if out.type == Propose:
@@ -33,8 +36,8 @@ def traverse_proposals(fn, out, memo=[])->List[Tensor]:
     else:
         return memo
 
-def get_stats(out):
-    fn = lambda out: (out.log_weight, out.loss, out.proposal_trace, out.target_trace, out)
+def get_stats(out, detach=True):
+    fn = lambda out: (out.log_weight.detach(), out.loss.detach(), out.proposal_trace, out.target_trace, out)
     ret = traverse_proposals(fn, out)
     lws, losses, proposal_trace, target_trace, outs = zip(*ret)
     return dict(lw=lws, loss=losses, proposal_trace=proposal_trace, target_trace=target_trace, out=outs)
@@ -131,13 +134,21 @@ def nvi_train(q, targets, forwards, reverses,
           sample_shape=(11,),
           batch_dim=1,
           sample_dims=0,
-          iterations=100):
+          iterations=100,
+          full_metrics=True):
+
+    if full_metrics:
+        logger.warning("Full resolution metrics will be collected, this memory-intensive!")
+
+        # get shapes
+        stats_nvi_run = get_stats(q(None, sample_shape=sample_shape, batch_dim=batch_dim, sample_dims=sample_dims, _debug=True))
+        mk_metric = lambda kw: torch.zeros(iterations,  len(stats_nvi_run[kw]), *stats_nvi_run[kw][0].shape)
+        full_losses, full_lws = mk_metric('loss'), mk_metric('lw')
+
     # Check inizialization
     optimizer = adam([*targets, *forwards, *reverses])
     check_weights_zero(forwards[:1], reverses[:1])
 
-    losses = []
-    lws = []
     tqdm_iterations = trange(iterations)
     for i in tqdm_iterations:
         out = q(None, sample_shape=sample_shape, batch_dim=batch_dim, sample_dims=sample_dims, _debug=True)
@@ -158,17 +169,18 @@ def nvi_train(q, targets, forwards, reverses,
                                     log_Z_hat="{:09.4f}".format(lZ_hat.item()))
         # =================================================== #
 
-        stats_nvi_run = get_stats(out)
-        lw, loss, _, _ = stats_nvi_run['lw'], stats_nvi_run['loss'], stats_nvi_run['proposal_trace'], stats_nvi_run['target_trace']
-        losses.append(torch.stack(loss, dim=0))
-        lws.append(torch.stack(lw, dim=0))
+        if full_metrics:
+            stats_nvi_run = get_stats(out)
+            lw, loss, _, _ = stats_nvi_run['lw'], stats_nvi_run['loss'], stats_nvi_run['proposal_trace'], stats_nvi_run['target_trace']
+            torch.stack(loss, dim=0, out=full_losses[i])
+            torch.stack(lw, dim=0, out=full_lws[i])
 
-    lws = torch.stack(lws, dim=0)
-    losses = torch.stack(losses, dim=0)
-    ess = effective_sample_size(lws, sample_dims=2)
-    lZ_hat = log_Z_hat(lws, sample_dims=2)
-
-    return q, losses, ess, lZ_hat
+    if full_metrics:
+        ess = effective_sample_size(full_lws, sample_dims=2)
+        lZ_hat = log_Z_hat(full_lws, sample_dims=2)
+        return q, full_losses, ess, lZ_hat
+    else:
+        return q, None, None, None
 
 def save_nvi_model(targets, forwards, reverses, filename=None):
     assert filename is not None
@@ -248,7 +260,9 @@ if __name__ == '__main__':
                                     sample_shape=(S//K,1),
                                     iterations=iterations,
                                     batch_dim=1,
-                                    sample_dims=0,)
+                                    sample_dims=0,
+                                    full_metrics=True
+                                    )
         save_nvi_model(*model, filename=filename)
     else:
         load_nvi_model(*model, filename=filename)
