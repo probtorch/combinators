@@ -8,6 +8,7 @@ RUN_FLAGS :=
 PYTHON := python
 PYTEST := pytest
 GIT := git
+ITERATIONS :=
 
 all: experiments test
 
@@ -20,7 +21,12 @@ experiments: ex/annealing ex/apgs_bshape
 ex/%:
 	export PYTHONPATH="$$($(GIT) rev-parse --show-toplevel):$$PYTHONPATH"
 	if [ -d ./experiments/$(@F) ]; then
-		cd ./experiments/$(@F) && $(PYTHON) ./main.py $(RUN_FLAGS)
+		cd ./experiments/$(@F)
+ifdef ITERATIONS
+		$(PYTHON) ./main.py --iteration $(ITERATIONS) $(RUN_FLAGS)
+else
+		$(PYTHON) ./main.py $(RUN_FLAGS)
+endif
 	else
 		echo "========================================="
 		echo "./experiments/$(@F) is not an experiment!"
@@ -30,6 +36,10 @@ ex/%:
 	fi
 
 profile/%:
-	make PYTHON="fil-profile run" RUN_FLAGS="--iteration 500" ex/$(@F)
+ifdef ITERATIONS
+	make PYTHON="fil-profile run" ITERATIONS=$(ITERATIONS) ex/$(@F)
+else
+	make PYTHON="fil-profile run" ITERATIONS=2000 ex/$(@F)
+endif
 
 # end
