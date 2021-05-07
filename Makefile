@@ -7,6 +7,7 @@ SHELL := bash
 RUN_FLAGS :=
 PYTHON := python
 PYTEST := pytest
+GIT := git
 
 all: experiments test
 
@@ -17,7 +18,7 @@ experiments: ex/annealing ex/apgs_bshape
 
 .ONESHELL:
 ex/%:
-	export PYTHONPATH="$$PWD:$$PYTHONPATH"
+	export PYTHONPATH="$$($(GIT) rev-parse --show-toplevel):$$PYTHONPATH"
 	if [ -d ./experiments/$(@F) ]; then
 		cd ./experiments/$(@F) && $(PYTHON) ./main.py $(RUN_FLAGS)
 	else
