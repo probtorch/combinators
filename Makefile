@@ -23,7 +23,7 @@ ex/%:
 	if [ -d ./experiments/$(@F) ]; then
 		cd ./experiments/$(@F)
 ifdef ITERATIONS
-		$(PYTHON) ./main.py --iteration $(ITERATIONS) $(RUN_FLAGS)
+		$(PYTHON) ./main.py --iterations $(ITERATIONS) $(RUN_FLAGS)
 else
 		$(PYTHON) ./main.py $(RUN_FLAGS)
 endif

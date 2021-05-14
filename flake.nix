@@ -20,8 +20,10 @@
         # FIXME: make this buildPythonApplication and move this to devShell only
         packages.combinatorsPy = mkPython { # Package {
           #src = ./.;
-          requirements = lib.strings.concatStringsSep "\n" ([
-            (builtins.readFile ./requirements.txt)
+          requirements = (builtins.readFile ./requirements.txt) + lib.strings.concatStringsSep "\n" ([
+            "# simulator dependencies"
+            "imageio"
+            "scikit-image"
           ] ++ (lib.optionals with-jupyter ["jupyterlab"])
             ++ (lib.optionals dev-profile ["filprofiler"]))
             ;

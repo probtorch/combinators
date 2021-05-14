@@ -8,12 +8,16 @@ from combinators import save_models, adam
 from experiments.apgs_bshape.gibbs import gibbs_sweeps
 from experiments.apgs_bshape.models import init_models
 
-def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_dir, **kwargs):
+def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_dir, smoketest, **kwargs):
 #     torch.autograd.set_detect_anomaly(True)
     device = torch.device(kwargs['device'])
     sample_size = budget // (num_sweeps + 1)
     assert sample_size > 0, 'non-positive sample size =%d' % sample_size
-    mean_shape = torch.load(data_dir + 'mean_shape.pt').to(device)
+    try:
+        mean_shape = torch.load(data_dir + 'mean_shape.pt').to(device)
+    except:
+        print("in", os.getcwd())
+        raise
     data_paths = []
     for file in os.listdir(data_dir+'/video/'):
         if file.endswith('.pt') and \
@@ -28,7 +32,12 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
     print('Training for ' + model_version)
     if not os.path.exists('./results/'):
         os.makedirs('./results/')
-    log_file = open('./results/log-' + model_version + '.txt', 'a+')
+
+    if smoketest[0]:
+        counter = 0
+    else:
+        log_file = open('./results/log-' + model_version + '.txt', 'a+')
+
     for epoch in range(num_epochs):
         shuffle(data_paths)
         start = time.time()
@@ -52,13 +61,20 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
                                                         batch_dim=1,
                                                         reparameterized=False).detach().cpu().mean().item()
                 metrics['loss'] += out.loss.detach().cpu().item()
+
+                if smoketest[0]:
+                    counter+=1
+                    if counter >= smoketest[1]:
+                        return
             save_models(models, 'cp-' + model_version)
             metrics_print = ",  ".join(['%s: %.4f' % (k, v/num_batches) for k, v in metrics.items()])
             end = time.time()
-            print("(%ds) Epoch=%d, Group=%d, " % (end - start, epoch+1, group+1) + metrics_print, file=log_file, flush=True)
-            print("(%ds) Epoch=%d, Group=%d, " % (end - start, epoch+1, group+1) + metrics_print)
-    log_file.close()
-#     return out, frames
+            if not smoketest[0]:
+                print("(%ds) Epoch=%d, Group=%d, " % (end - start, epoch+1, group+1) + metrics_print, file=log_file, flush=True)
+                print("(%ds) Epoch=%d, Group=%d, " % (end - start, epoch+1, group+1) + metrics_print)
+    if not smoketest[0]:
+        log_file.close()
+        # return out, frames
 
 def test_gibbs_sweep(budget, num_sweeps, timesteps, data_dir, **kwargs):
     device = torch.device(kwargs['device'])
@@ -97,6 +113,9 @@ if __name__ == '__main__':
     parser.add_argument('--z_what_dim', default=10, type=int)
     # test config
     parser.add_argument('--test', default=False, type=bool)
+    # CI config
+    parser.add_argument('--smoketest', default=False, type=bool)
+    parser.add_argument('--iterations', default=10, type=int)
 
     args = parser.parse_args()
 
@@ -129,5 +148,7 @@ if __name__ == '__main__':
                   z_where_dim=args.z_where_dim,
                   z_what_dim=args.z_what_dim,
                   num_objects=args.num_objects,
-                  device=args.device)
+                  device=args.device,
+                  smoketest=(args.smoketest, args.iterations),
+                  )
     print("done!")

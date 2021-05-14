@@ -205,6 +205,9 @@ if __name__ == '__main__':
     parser.add_argument('--sample_budget', default=288, type=int)
     parser.add_argument('--optimize_path', default=False, type=bool)
 
+    # CI config
+    parser.add_argument('--smoketest', default=False, type=bool)
+
     args = parser.parse_args()
 
     S = args.sample_budget
@@ -259,21 +262,23 @@ if __name__ == '__main__':
     q = nvi_declarative(*model,
                         objective,
                         resample=False)
-    losses_test, ess_test, lZ_hat_test, samples_test, _ = \
-        nvi_test(q, (1000, 100), batch_dim=1, sample_dims=0)
 
-    torch.save((losses_test.mean(1), ess_test.mean(1), lZ_hat_test.mean(1)),
-               './metrics/{}-metric-tuple_S{}_B{}-loss-ess-logZhat.pt'.format(
-                   filename, 1000, 100))
+    if not args.smoketest:
+        losses_test, ess_test, lZ_hat_test, samples_test, _ = \
+            nvi_test(q, (1000, 100), batch_dim=1, sample_dims=0)
 
-    print("losses:", losses_test.mean(1))
-    print("ess:", ess_test.mean(1))
-    print("log_Z_hat", lZ_hat_test.mean(1))
+        torch.save((losses_test.mean(1), ess_test.mean(1), lZ_hat_test.mean(1)),
+                   './metrics/{}-metric-tuple_S{}_B{}-loss-ess-logZhat.pt'.format(
+                       filename, 1000, 100))
 
-    if save_plots:
-        if not os.path.exists("./figures/"):
-            os.makedirs("./figures/")
+        print("losses:", losses_test.mean(1))
+        print("ess:", ess_test.mean(1))
+        print("log_Z_hat", lZ_hat_test.mean(1))
 
-        plot(losses, ess, lZ_hat, samples_test, filename=filename)
+        if save_plots:
+            if not os.path.exists("./figures/"):
+                os.makedirs("./figures/")
+
+            plot(losses, ess, lZ_hat, samples_test, filename=filename)
 
     print("done!")
