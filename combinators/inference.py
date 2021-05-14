@@ -198,8 +198,8 @@ class Extend(Inf, Conditionable):
 class Compose(Inf):
     def __init__(
             self,
-            q1: Union[Program, Resample, Inf],
             q2: Program,
+            q1: Union[Program, Resample, Inf],
             loss_fn=(lambda x, fin: fin),
             loss0=None,
             ix=None,
@@ -223,8 +223,7 @@ class Compose(Inf):
 
         out_trace=copytraces(q2_out.trace, q1_out.trace, mode=WriteMode.LastWriteWins)
 
-        # FIXME: commenting out for synthesis
-        #assert len(set(q2_out.trace.keys()).intersection(set(q1_out.trace.keys()))) == 0, f"{type(self)}: addresses must not overlap"
+        assert len(set(q2_out.trace.keys()).intersection(set(q1_out.trace.keys()))) == 0, f"{type(self)}: addresses must not overlap"
 
         out = Out(
             trace=out_trace,

@@ -57,7 +57,7 @@ def nvi_declarative(targets, forwards, reverses, loss_fn, resample=False):
     q = targets[0]
     for k, (fwd, rev, p) in enumerate(zip(forwards, reverses, targets[1:])):
         q = Propose(p=Extend(p, rev),
-                    q=Compose(q, fwd, _debug=True),
+                    q=Compose(fwd, q, _debug=True),
                     loss_fn=LossFn(loss_fn),
                     ix=k,
                     _no_reruns=False,

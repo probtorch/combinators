@@ -50,8 +50,8 @@ def gibbs_sweeps(models, num_sweeps, T):
     # We need this because Enc_coor to swallow first index
     q_os = Noop()
     for t in range(0, T):
-        q_os = Compose(q_os, q_enc_coor, ix=apg_ix(t, 0, "forward"))
-    q_os = Compose(q_os, q_enc_digit, ix=apg_ix(T, 0, "forward"))
+        q_os = Compose(q_enc_coor, q_os, ix=apg_ix(t, 0, "forward"))
+    q_os = Compose(q_enc_digit, q_os, ix=apg_ix(T, 0, "forward"))
 
     q_is = Propose(p=p_dec_os, q=q_os, ix=apg_ix(T, 0, "forward"),
                    _no_reruns=True,
@@ -64,12 +64,12 @@ def gibbs_sweeps(models, num_sweeps, T):
     for sweep in range(1, num_sweeps+1): # Sweeps
         for t in range(T):               # Time step
             q_t = Propose(p=Extend(p_dec_os, q_enc_coor, ix=apg_ix(t, sweep, "reverse")),
-                          q=Compose(q_t, q_enc_coor, _debug=True, ix=apg_ix(t, sweep, "forward")),
+                          q=Compose(q_enc_coor, q_t, _debug=True, ix=apg_ix(t, sweep, "forward")),
                           _no_reruns=True,
                           loss_fn=loss_apg, ix=apg_ix(t, sweep, "propose"))
             q_t = Resample(q_t, normalize_weights=True)
         q_t = Propose(p=Extend(p_dec_os, q_enc_digit, ix=apg_ix(T, sweep, "reverse")),
-                      q=Compose(q_t, q_enc_digit, _debug=True, ix=apg_ix(T, sweep, "forward")),
+                      q=Compose(q_enc_digit, q_t, _debug=True, ix=apg_ix(T, sweep, "forward")),
                       _no_reruns=True,
                       loss_fn=loss_apg, ix=apg_ix(T, sweep, "propose"))
         if sweep != num_sweeps:
