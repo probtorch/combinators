@@ -12,8 +12,6 @@ from combinators.program import Conditionable, Program, dispatch, check_passable
 from combinators.metrics import effective_sample_size
 
 
-
-
 # FIXME: move to probtorch
 def rerun_with_detached_values(trace:Trace):
     """
