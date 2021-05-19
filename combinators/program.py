@@ -72,23 +72,20 @@ def check_passable_kwarg(name, fn):
     return fullspec.varkw is not None or name in fullspec.kwonlyargs or name in fullspec.args
 
 
-def dispatch(fn):
+def dispatch(fn, *args:Any, **kwargs:Any):
     ''' given a function, pass all *args and any **kwargs that type-check '''
 
-    def runit(*args:Any, **kwargs:Any):
-        # TODO: We can reduce this to only one branch
-        _dispatch_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn)}
-        _dispatch_args   = args
+    # TODO: We can reduce this to only one branch
+    _dispatch_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn)}
 
-        if isinstance(fn, nn.Module):
-            ''' additionally, if the function is an nn.Module, we need to check forward '''
-            _extra_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn.forward) and k not in _dispatch_kwargs}
-            _dispatch_kwargs = {**_extra_kwargs, **_dispatch_kwargs}
+    if isinstance(fn, nn.Module):
+        ''' additionally, if the function is an nn.Module, we need to check forward '''
+        _extra_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn.forward) and k not in _dispatch_kwargs}
+        _dispatch_kwargs = {**_extra_kwargs, **_dispatch_kwargs}
 
-        if isinstance(fn, Program):
-            ''' additionally, if the function is a Program, we need to check model '''
-            _extra_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn.model) and k not in _dispatch_kwargs}
-            _dispatch_kwargs = {**_extra_kwargs, **_dispatch_kwargs}
+    if isinstance(fn, Program):
+        ''' additionally, if the function is a Program, we need to check model '''
+        _extra_kwargs = {k: v for k,v in kwargs.items() if check_passable_kwarg(k, fn.model) and k not in _dispatch_kwargs}
+        _dispatch_kwargs = {**_extra_kwargs, **_dispatch_kwargs}
 
-        return fn(*_dispatch_args, **_dispatch_kwargs)
-    return runit
+    return fn(*args, **_dispatch_kwargs)

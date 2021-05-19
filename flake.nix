@@ -106,6 +106,13 @@
               name = "watch-annealing-dev";
               command = "${watchexec} -e py '(cd ./experiments/annealing/ && echo \"=========================\" && python ./main.py --pdb)'";
             }
+            {
+              category = "watchers";
+              name = "watch-short";
+              command = ''
+                ${watchexec} -e py "make RUN_FLAGS='--iterations 10' ex/$1"
+              '';
+            }
           ];
         };
       });

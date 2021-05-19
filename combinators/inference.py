@@ -137,8 +137,8 @@ class Extend(Inf, Conditionable):
         inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
         with EvalSubCtx(self.p, self._cond_trace), EvalSubCtx(self.f, self._cond_trace):
-            p_out = dispatch(self.p)(c, **inf_kwargs, **shared_kwargs)
-            f_out = dispatch(self.f)(p_out.output, **inf_kwargs, **shared_kwargs)
+            p_out = dispatch(self.p, c, **inf_kwargs, **shared_kwargs)
+            f_out = dispatch(self.f, p_out.output, **inf_kwargs, **shared_kwargs)
 
         if self._cond_trace is None:
             assert (f_out.log_weight == 0.0)
@@ -192,9 +192,9 @@ class Compose(Inf):
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
         inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
-        q1_out = dispatch(self.q1)(c, **inf_kwargs, **shared_kwargs)
+        q1_out = dispatch(self.q1, c, **inf_kwargs, **shared_kwargs)
 
-        q2_out = dispatch(self.q2)(q1_out.output, **inf_kwargs, **shared_kwargs)
+        q2_out = dispatch(self.q2, q1_out.output, **inf_kwargs, **shared_kwargs)
 
         out_trace=copytraces(q2_out.trace, q1_out.trace, mode=WriteMode.LastWriteWins)
 
@@ -245,7 +245,6 @@ class Propose(Inf):
             return p_out.output, p_out.trace
 
     def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
-      try:
         """ Propose """
         debugging = _debug or self._debug
         ix = self.ix if self.ix is not None else ix
@@ -253,10 +252,10 @@ class Propose(Inf):
         shape_kwargs = dict(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=reparameterized)
         inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
-        q_out = dispatch(self.q)(c, **inf_kwargs, **shared_kwargs)
+        q_out = dispatch(self.q, c, **inf_kwargs, **shared_kwargs)
 
         with EvalSubCtx(self.p, q_out.trace):
-            p_out = dispatch(self.p)(c, **inf_kwargs,  **shared_kwargs)
+            p_out = dispatch(self.p, c, **inf_kwargs,  **shared_kwargs)
 
         rho_1 = set(q_out.trace.keys())
         tau_1 = set({k for k, v in q_out.trace.items() if isinstance(v, _RandomVariable) and v.provenance != Provenance.OBSERVED})
@@ -321,6 +320,3 @@ class Propose(Inf):
             out['p_out'] = p_out
 
         return out
-      except Exception as e:
-          breakpoint();
-          raise e
