@@ -50,8 +50,8 @@ def gibbs_sweeps(models, num_sweeps, T):
     # We need this because Enc_coor to swallow first index
     q_os = Noop()
     for t in range(0, T):
-        q_os = Compose(q_enc_coor, q_os, ix=apg_ix(t, 0, "forward"))
-    q_os = Compose(q_enc_digit, q_os, ix=apg_ix(T, 0, "forward"))
+        q_os = Compose(q_enc_coor, q_os, _debug=True, ix=apg_ix(t, 0, "forward"))
+    q_os = Compose(q_enc_digit, q_os, _debug=True, ix=apg_ix(T, 0, "forward"))
 
     q_is = Propose(p=p_dec_os, q=q_os, ix=apg_ix(T, 0, "forward"),
                    _no_reruns=True,

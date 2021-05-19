@@ -91,8 +91,10 @@ class Enc_coor(Program):
 
         _, _, K, DP, _ = conv_kernel.shape
         frame_left = frames[:,:,ix.t,:,:]
-        q_mean, q_std = [], []
-        z_where_t = []
+
+        q_mean, q_std = torch.zeros(S, B, self.K, 2), torch.zeros(S, B, self.K, 2)
+        z_where_t = torch.zeros(S, B, self.K, 2)
+
         # K objects in frame
         for k in range(self.K):
             conved_k = F.conv2d(frame_left.view(S*B, FP, FP).unsqueeze(0), conv_kernel[:,:,k,:,:].view(S*B, DP, DP).unsqueeze(1), groups=int(S*B))
@@ -101,23 +103,25 @@ class Enc_coor(Program):
             hidden = self.enc_coor_hidden(conved_k)
             q_mean_k = self.where_mean(hidden)
             q_std_k = self.where_log_std(hidden).exp()
-            q_mean.append(q_mean_k.unsqueeze(2))
+            q_mean[:,:,k,:] = q_mean_k
+            q_std[:,:,k,:] = q_std_k
 
-            q_std.append(q_std_k.unsqueeze(2))
             if ix.dir == 'forward':
+                # bulid up z_where
                 z_where_val_k = Normal(q_mean_k, q_std_k).sample()
-                z_where_t.append(z_where_val_k.unsqueeze(2))
+                z_where_t[:,:,k,:] = z_where_val_k
             elif ix.dir == 'reverse':
+                # retreive z_where
                 z_where_val_k = trace._cond_trace['z_where_%d_%d' % (ix.t, ix.sweep-1)].value[:,:,k,:]
+
             recon_k = self.AT.digit_to_frame(conv_kernel[:,:,k,:,:].unsqueeze(2), z_where_val_k.unsqueeze(2).unsqueeze(2)).squeeze(2).squeeze(2)
-            assert recon_k.shape ==(S,B,FP,FP), 'shape = %s' % recon_k.shape
+            assert recon_k.shape == (S,B,FP,FP), 'shape = %s' % recon_k.shape
             frame_left = frame_left - recon_k
-        q_mean = torch.cat(q_mean, 2)
-        q_std = torch.cat(q_std, 2)
+
 
         # Stuff happens in a Compose
         if ix.dir == 'forward':
-            z_where_t = torch.cat(z_where_t, 2)
+            # z_where_t = torch.cat(z_where_t, 2)
             # For performace reasons we want to add all K objects as one RV, hence we need to cheat here:
             # We sampled all K RVs manually in for-loop above, and "simulate" a combinators sampling operation here.
             # if ix.t <= 1 and ix.sweep > 0:
