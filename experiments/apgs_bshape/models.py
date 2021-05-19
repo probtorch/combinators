@@ -61,6 +61,8 @@ def init_models(
     ).to(device)
 
     return models
+
+
 class Enc_coor(Program):
     """
     encoder of the digit positions
@@ -173,15 +175,18 @@ class Enc_digit(Program):
                         nn.Linear(int(0.5*num_hidden), z_what_dim))
         self.AT = AT
         self.reparameterized = reparameterized
+
     def model(self, trace, c, ix):
         frames = c["frames"]
         # z_where are fetched from the input in the for loop below
 
-        z_where = []
-        for t in range(frames.shape[2]):
-            z_where.append(c["z_where_%d_%d"%(t, ix.sweep)].unsqueeze(2))
+        sample_shape = frames.shape[:3]
+        data_shape = c["z_where_%d_%d"%(0, ix.sweep)].shape[-2:]
+        z_where = torch.zeros(*sample_shape, *data_shape)
 
-        z_where = torch.cat(z_where, 2)
+        for t in range(frames.shape[2]):
+            z_where[:,:,t,:,:] = c["z_where_%d_%d"%(t, ix.sweep)]
+
         cropped = self.AT.frame_to_digit(frames=frames, z_where=z_where)
         cropped = torch.flatten(cropped, -2, -1)
         hidden = self.enc_digit_hidden(cropped).mean(2)
