@@ -5,9 +5,8 @@ from typing import Any, Optional
 from abc import abstractmethod, ABC
 
 from probtorch.stochastic import _RandomVariable, Trace, Provenance
-from probtorch.stochastic.util import copytraces, WriteMode
+from combinators.trace.utils import copytraces
 from combinators.out import Out
-from enum import Enum, auto, unique
 
 class Conditionable(ABC):
     def __init__(self) -> None:

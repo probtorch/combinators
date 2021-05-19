@@ -5,9 +5,9 @@ from abc import ABC
 from torch import Tensor
 from typing import Any, Tuple, Union, Callable, NamedTuple
 from probtorch.stochastic import Provenance, _RandomVariable
-from probtorch.stochastic.util import copytraces, WriteMode, rerun_with_detached_values
 
 from combinators.out import Out
+from combinators.trace.utils import copytraces, WriteMode, rerun_with_detached_values
 from combinators.program import Conditionable, Program, dispatch, check_passable_kwarg, EvalSubCtx
 
 

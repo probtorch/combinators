@@ -6,8 +6,7 @@ import probtorch
 from torch import Tensor
 from typing import Tuple
 from probtorch.stochastic import RandomVariable, ImproperRandomVariable
-from probtorch.stochastic.util import copytraces
-from combinators.trace.utils import valeq
+from combinators.trace.utils import copytraces, valeq
 
 
 def _estimate_mc(values: Tensor, log_weights: Tensor, sample_dims: Tuple[int], reducedims: Tuple[int], keepdims: bool) -> Tensor:

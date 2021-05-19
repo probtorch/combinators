@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import torch
+import inspect
 from torch import Tensor
 from enum import Enum, auto, unique
 from torch import distributions as D
@@ -7,10 +8,8 @@ from typing import Callable, Any, Tuple, Optional, Set, Union, Dict, List
 from typeguard import typechecked
 
 from probtorch.stochastic import Trace, Provenance, _RandomVariable, RandomVariable, ImproperRandomVariable
-import inspect
 
 import combinators.tensor.utils as tensor_utils
-from combinators.program import check_passable_kwarg
 
 TraceLike = Union[Trace, Dict[str, Union[Tensor, _RandomVariable]]]
 
