@@ -1,5 +1,20 @@
 {
   "nodes": {
+    "devshell": {
+      "locked": {
+        "lastModified": 1620641550,
+        "narHash": "sha256-o359KdI/LNiPL6EbirONff2MOvZHtZr9MgYx3R9oVFk=",
+        "owner": "numtide",
+        "repo": "devshell",
+        "rev": "a47493423092f6c4c0a7eb605a7cd515a77db4a8",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "devshell",
+        "type": "github"
+      }
+    },
     "flake-utils": {
       "locked": {
         "lastModified": 1620759905,
@@ -15,25 +30,14 @@
         "type": "github"
       }
     },
-    "flake-utils_2": {
-      "locked": {
-        "lastModified": 1601282935,
-        "narHash": "sha256-WQAFV6sGGQxrRs3a+/Yj9xUYvhTpukQJIcMbIi7LCJ4=",
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "rev": "588973065fce51f4763287f0fda87a174d78bf48",
-        "type": "github"
-      },
-      "original": {
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "type": "github"
-      }
-    },
     "mach-nix": {
       "inputs": {
-        "flake-utils": "flake-utils_2",
-        "nixpkgs": "nixpkgs",
+        "flake-utils": [
+          "flake-utils"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ],
         "pypi-deps-db": "pypi-deps-db"
       },
       "locked": {
@@ -61,37 +65,23 @@
       },
       "original": {
         "owner": "NixOS",
-        "ref": "nixos-unstable",
         "repo": "nixpkgs",
+        "rev": "29b0d4d0b600f8f5dd0b86e3362a33d4181938f9",
         "type": "github"
-      }
-    },
-    "nixpkgs_2": {
-      "locked": {
-        "lastModified": 1620942010,
-        "narHash": "sha256-3uUZaSVaSRBa9ZAeoA7oDME76MlKAE7y5IcIlfgMOMI=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "22e797947b8ffa4f20688652e49d46cf58a05516",
-        "type": "github"
-      },
-      "original": {
-        "id": "nixpkgs",
-        "type": "indirect"
       }
     },
     "probtorch": {
       "flake": false,
       "locked": {
-        "lastModified": 1621022011,
-        "narHash": "sha256-gTMxzdeL+Oqz/JEtBTFGi/6KFPvRibhWiZojuYTj9NM=",
-        "owner": "probtorch",
+        "lastModified": 1621444347,
+        "narHash": "sha256-fsmoTOm7O0p5pmLv8hPZsYtYw8old3IPm3+5mr0Dkvg=",
+        "owner": "stites",
         "repo": "probtorch",
-        "rev": "bce87536d59011d773f648cb256e069722e145f9",
+        "rev": "671332656cedc3a0bc9f19d4c12d4805d83243bc",
         "type": "github"
       },
       "original": {
-        "owner": "probtorch",
+        "owner": "stites",
         "ref": "combinators-dev",
         "repo": "probtorch",
         "type": "github"
@@ -115,9 +105,10 @@
     },
     "root": {
       "inputs": {
+        "devshell": "devshell",
         "flake-utils": "flake-utils",
         "mach-nix": "mach-nix",
-        "nixpkgs": "nixpkgs_2",
+        "nixpkgs": "nixpkgs",
         "probtorch": "probtorch"
       }
     }

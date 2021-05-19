@@ -3,28 +3,36 @@
 
   inputs = rec {
     flake-utils.url = "github:numtide/flake-utils";
+    devshell.url = "github:numtide/devshell";
+    nixpkgs.url = "github:NixOS/nixpkgs/29b0d4d0b600f8f5dd0b86e3362a33d4181938f9";
+
     mach-nix.url = "github:DavHau/mach-nix";
-    probtorch.url = "github:probtorch/probtorch/combinators-dev";
+    mach-nix.inputs.flake-utils.follows = "flake-utils";
+    mach-nix.inputs.nixpkgs.follows = "nixpkgs";
+
+    probtorch.url = "github:stites/probtorch/combinators-dev";
     probtorch.flake = false;
   };
 
-  outputs = { self, nixpkgs, flake-utils, mach-nix, probtorch}:
+  outputs = { self, nixpkgs, flake-utils, mach-nix, probtorch, devshell }:
     flake-utils.lib.eachSystem ["x86_64-linux"] (system:
       let
         inherit (mach-nix.lib.${system}) mkPython;
         with-jupyter = false;
         dev-profile = false;
-        pkgs = nixpkgs.legacyPackages.${system};
+        with-simulator = false;
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ devshell.overlay ];
+        };
         inherit (pkgs) lib mkShell;
       in rec {
         # FIXME: make this buildPythonApplication and move this to devShell only
         packages.combinatorsPy = mkPython { # Package {
           #src = ./.;
           requirements = (builtins.readFile ./requirements.txt) + lib.strings.concatStringsSep "\n" ([
-            "# simulator dependencies"
-            "imageio"
-            "scikit-image"
-          ] ++ (lib.optionals with-jupyter ["jupyterlab"])
+          ] ++ (lib.optionals with-simulator ["imageio" "scikit-image"])
+            ++ (lib.optionals with-jupyter ["jupyterlab"])
             ++ (lib.optionals dev-profile ["filprofiler"]))
             ;
           packagesExtra = [
@@ -40,14 +48,15 @@
           };
         };
         defaultPackage = packages.combinatorsPy;
-        devShell = mkShell {
-          buildInputs = [
+        devShell = pkgs.devshell.mkShell {
+          packages = with pkgs; [
             packages.combinatorsPy
-            pkgs.gnused
+            gnused
+            watchexec
           ];
           # applying patch: https://github.com/microsoft/pyright/issues/565
-          shellHook = ''
-            export PYTHONPATH="$(git rev-parse --show-toplevel):$PYTHONPATH"
+          bash.extra = ''export PYTHONPATH="$(git rev-parse --show-toplevel):$PYTHONPATH"'';
+          bash.interactive = ''
             VENV_NAME="$(echo ${packages.combinatorsPy} | sed -E 's/\/nix\/store\/(.*)-env/\1/')-env"
 
             if [ -f pyrightconfig.json ]; then
@@ -70,7 +79,34 @@
             }
             EOF
             fi
-          '';
+          '' + (lib.optionalString true ''
+            temp_dir=$(mktemp -d)
+            cat <<'EOF' >"$temp_dir/.zshrc"
+            if [ -e ~/.zshrc ]; then . ~/.zshrc; fi
+            if [ -e ~/.config/zsh/.zshrc ]; then . ~/.config/zsh/.zshrc; fi
+            menu
+            EOF
+            ZDOTDIR=$temp_dir zsh -i
+          '');
+          commands = let
+            watchexec = "${pkgs.watchexec}/bin/watchexec";
+          in [
+            {
+              category = "smoke tests";
+              name = "smoke-annealing";
+              command = "make RUN_FLAGS=\"--iterations 10\" ex/annealing";
+            }
+            {
+              category = "watchers";
+              name = "watch-annealing-short";
+              command = "${watchexec} -e py 'make RUN_FLAGS=\"--iterations 10\" ex/annealing'";
+            }
+            {
+              category = "watchers";
+              name = "watch-annealing-dev";
+              command = "${watchexec} -e py '(cd ./experiments/annealing/ && echo \"=========================\" && python ./main.py --pdb)'";
+            }
+          ];
         };
       });
 }
