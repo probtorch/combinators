@@ -7,8 +7,7 @@ import torch.distributions as D
 from torch.distributions.categorical import Categorical
 from torch.distributions.uniform import Uniform
 from combinators.tensor.utils import kw_autodevice
-from combinators.stochastic import Trace, RandomVariable, ImproperRandomVariable, Provenance
-import combinators.stochastic as probtorch
+from probtorch.stochastic import Trace, RandomVariable, ImproperRandomVariable, Provenance
 
 class Strategy:
     def __call__(self, trace:Trace, log_weight:Tensor, sample_dims:int, batch_dim:int)->Tuple[Trace, Tensor]:
@@ -64,7 +63,7 @@ class Systematic(Strategy):
         for key, rv in trace._nodes.items():
             # WARNING: Semantics only support resampling on traces (taus not rhos) which do not include OBSERVED RVs
             if not rv.can_resample or rv.provenance == Provenance.OBSERVED:
-                new_trace.append(rv, name=key)
+                new_trace._inject(rv, name=key, silent=True)
                 continue
 
             # FIXME: Do not detach all
@@ -80,7 +79,7 @@ class Systematic(Strategy):
             else:
                 raise NotImplementedError()
 
-            new_trace.append(var, name=key)
+            new_trace._inject(var, name=key)
 
         log_weight = torch.logsumexp(log_weight - math.log(log_weight.shape[sample_dims]), dim=sample_dims, keepdim=True).expand_as(log_weight)
         if self.normalize_weights:
@@ -107,7 +106,7 @@ def stubtest_resample_with_batch(B=100, N=5):
     tr = Trace()
 
     for n in range(N):
-        tr.append(RandomVariable(dist=D.Normal(0, 1), value=value, log_prob=lw), name=f'z_{n}')
+        tr._inject(RandomVariable(dist=D.Normal(0, 1), value=value, log_prob=lw), name=f'z_{n}')
 
     resampled, _lw = Systematic()(tr, lw, sample_dims=0, batch_dim=1)
     assert (_lw.exp() == 0.25).all()
@@ -131,7 +130,7 @@ def stubtest_resample_without_batch():
     memo = torch.zeros(S)
     for _ in range(B):
         for n in range(N):
-            tr.append(RandomVariable(dist=D.Normal(0, 1), value=value, log_prob=lw), name=f'z_{n}')
+            tr._inject(RandomVariable(dist=D.Normal(0, 1), value=value, log_prob=lw), name=f'z_{n}')
 
         resampled, _lw = Systematic()(tr, lw, sample_dims=0, batch_dim=None)
 

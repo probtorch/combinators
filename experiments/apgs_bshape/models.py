@@ -2,7 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from combinators.stochastic import Provenance, RandomVariable
+from probtorch.stochastic import Provenance, RandomVariable
 from combinators.program import Program
 from torch.distributions.normal import Normal
 from torch.distributions.bernoulli import Bernoulli
@@ -122,7 +122,7 @@ class Enc_coor(Program):
             # We sampled all K RVs manually in for-loop above, and "simulate" a combinators sampling operation here.
             # if ix.t <= 1 and ix.sweep > 0:
             #     breakpoint()
-            trace.append(RandomVariable(Normal(loc=q_mean, scale=q_std),
+            trace._inject(RandomVariable(Normal(loc=q_mean, scale=q_std),
                                         value=z_where_t,
                                         provenance=Provenance.SAMPLED,
                                         reparameterized=self.reparameterized),
@@ -267,7 +267,7 @@ class DecoderMarkovBlanket(Program):
                 old_recon_name = "recon_%d_%d"%(ix.t-1, ix.sweep)
             old_recon = trace._cond_trace[old_recon_name]
             dummy_zeros = torch.zeros_like(old_recon.log_prob)
-            trace.append(
+            trace._inject(
                 RandomVariable(
                     dist=Bernoulli(probs=dummy_zeros),
                     value=old_recon.value,
@@ -294,7 +294,7 @@ class DecoderMarkovBlanket(Program):
             recon_optimizing_denominator = trace._cond_trace['recon_%d_%d' % (T, ix.sweep-1)].log_prob[:,:,1:,:,:]
             opt_fake_likelihood = (-1) * recon_optimizing_denominator
 
-            trace.append(
+            trace._inject(
                 RandomVariable(
                     dist=Bernoulli(probs=recon_frames),
                     value=frames[:,:,ix.t,:,:],
@@ -335,7 +335,7 @@ class DecoderMarkovBlanket(Program):
 
             opt_fake_likelihood = recon_optimizing_numerator - recon_optimizing_denominator
 
-            trace.append(
+            trace._inject(
                 RandomVariable(
                     dist=Bernoulli(probs=recon_frames),
                     value=frames[:,:,ix.t,:,:],
@@ -357,7 +357,7 @@ class DecoderMarkovBlanket(Program):
                 recon_optimizing_denominator = Bernoulli(probs=recon_frames).log_prob(frames[:,:,:T-1])
                 opt_fake_likelihood = (-1) * recon_optimizing_denominator
 
-                trace.append(
+                trace._inject(
                     RandomVariable(
                         dist=Bernoulli(probs=recon_frames),
                         value=frames[:,:,:T-1,:,:],

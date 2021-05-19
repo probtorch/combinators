@@ -1,38 +1,14 @@
 import torch
+import combinators.resamplers as resamplers
 
 from abc import ABC
 from torch import Tensor
-from typing import Any, Tuple, Optional, Union, Set, Callable, NamedTuple
-
-import combinators.resamplers as resamplers
+from typing import Any, Tuple, Union, Callable, NamedTuple
+from probtorch.stochastic import Provenance, _RandomVariable
+from probtorch.stochastic.util import copytraces, WriteMode, rerun_with_detached_values
 
 from combinators.out import Out
-from combinators.stochastic import Trace, Provenance, RandomVariable, ImproperRandomVariable, GenericRandomVariable
-from combinators.program import Conditionable, Program, dispatch, check_passable_kwarg, EvalSubCtx, copytraces, WriteMode
-from combinators.metrics import effective_sample_size
-
-
-# FIXME: move to probtorch
-def rerun_with_detached_values(trace:Trace):
-    """
-    Rerun a trace with detached values, recomputing the computation graph so that
-    value do not cause a gradient leak.
-    """
-    newtrace = Trace()
-
-    def rerun_rv(rv):
-        value = rv.value.detach()
-        if isinstance(rv, RandomVariable):
-            return RandomVariable(value=value, dist=rv.dist, provenance=rv.provenance, reparameterized=rv.reparameterized)
-        elif isinstance(rv, ImproperRandomVariable):
-            return ImproperRandomVariable(value=value, log_density_fn=rv.log_density_fn, provenance=rv.provenance)
-        else:
-            raise NotImplementedError("Only supports RandomVariable and ImproperRandomVariable")
-
-    for k, v in trace.items():
-        newtrace.append(rerun_rv(v), name=k)
-
-    return newtrace
+from combinators.program import Conditionable, Program, dispatch, check_passable_kwarg, EvalSubCtx
 
 
 class Inf(ABC):
@@ -170,8 +146,7 @@ class Extend(Inf, Conditionable):
         else:
             assert len({k for k, v in f_out.trace.items() if v.provenance == Provenance.OBSERVED}) == 0
 
-        # FIXME: commenting out for synthesis
-        # assert len(set(f_out.trace.keys()).intersection(set(p_out.trace.keys()))) == 0, f"{type(self)}: addresses must not overlap"
+        assert len(set(f_out.trace.keys()).intersection(set(p_out.trace.keys()))) == 0, f"{type(self)}: addresses must not overlap"
 
         log_u2 = f_out.trace.log_joint(**shape_kwargs, nodes={k for k,v in f_out.trace.items() if v.provenance != Provenance.OBSERVED})
 
@@ -270,6 +245,7 @@ class Propose(Inf):
             return p_out.output, p_out.trace
 
     def __call__(self, c, sample_dims=None, batch_dim=None, _debug=False, reparameterized=True, ix=None, **shared_kwargs) -> Out:
+      try:
         """ Propose """
         debugging = _debug or self._debug
         ix = self.ix if self.ix is not None else ix
@@ -283,8 +259,8 @@ class Propose(Inf):
             p_out = dispatch(self.p)(c, **inf_kwargs,  **shared_kwargs)
 
         rho_1 = set(q_out.trace.keys())
-        tau_1 = set({k for k, v in q_out.trace.items() if isinstance(v, GenericRandomVariable) and v.provenance != Provenance.OBSERVED})
-        tau_2 = set({k for k, v in p_out.trace.items() if isinstance(v, GenericRandomVariable) and v.provenance != Provenance.OBSERVED})
+        tau_1 = set({k for k, v in q_out.trace.items() if isinstance(v, _RandomVariable) and v.provenance != Provenance.OBSERVED})
+        tau_2 = set({k for k, v in p_out.trace.items() if isinstance(v, _RandomVariable) and v.provenance != Provenance.OBSERVED})
         nodes = rho_1 - (tau_1 - tau_2)
 
         lu_1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
@@ -345,3 +321,6 @@ class Propose(Inf):
             out['p_out'] = p_out
 
         return out
+      except Exception as e:
+          breakpoint();
+          raise e

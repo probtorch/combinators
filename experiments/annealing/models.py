@@ -24,7 +24,7 @@ class Density(Program):
     def model(self, trace, c):
         assert trace._cond_trace is not None and self.name in trace._cond_trace, "an improper RV can only condition on values in an existing trace"
         rv = ImproperRandomVariable(log_density_fn=self.log_density_fn, value=trace._cond_trace[self.name].value, provenance=Provenance.REUSED)
-        trace.append(rv, name=self.name)
+        trace._inject(rv, name=self.name, silent=True)
         return {self.name: rv.value}
 
     def __repr__(self):
@@ -46,7 +46,7 @@ class Distribution(Program):
         value, provenance, _ = trace_utils.maybe_sample(self._cond_trace, sample_shape, reparameterized=self.reparameterized)(dist, self.name)
 
         rv = self.RandomVariable(dist=dist, value=value, provenance=provenance, reparameterized=self.reparameterized) # <<< rv.log_prob = dist.log_prob(value)
-        trace.append(rv, name=self.name)
+        trace._inject(rv, name=self.name, silent=True)
         return {self.name: rv.value}
 
     def __repr__(self):

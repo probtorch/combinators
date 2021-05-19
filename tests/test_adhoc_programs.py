@@ -2,7 +2,7 @@
 
 import torch
 from pytest import mark
-from combinators.stochastic import Trace
+from probtorch.stochastic import Trace
 from torch import Tensor
 import hypothesis.strategies as st
 from hypothesis import given

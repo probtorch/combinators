@@ -1,12 +1,12 @@
 import torch
 import math
 import torch.nn.functional as F
+import probtorch
 
 from torch import Tensor
 from typing import Tuple
-import combinators.stochastic as probtorch
-from combinators.stochastic import RandomVariable, ImproperRandomVariable
-from combinators.inference import copytraces
+from probtorch.stochastic import RandomVariable, ImproperRandomVariable
+from probtorch.stochastic.util import copytraces
 from combinators.trace.utils import valeq
 
 
@@ -31,7 +31,7 @@ def stl_lv(out):
     ix = out.ix
     # Need do this to compute sticking (stl) the landing gradient
     q_stl_trace = copytraces(out.q_out.trace, exclude_nodes='g{}'.format(ix+1))
-    q_stl_trace.append(_eval_detached(out.q_out.trace['g{}'.format(ix+1)]), name='g{}'.format(ix+1))
+    q_stl_trace._inject(_eval_detached(out.q_out.trace['g{}'.format(ix+1)]), name='g{}'.format(ix+1))
     lu_1 = q_stl_trace.log_joint(nodes=out.nodes, **shape_kwargs)
 
 

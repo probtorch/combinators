@@ -2,18 +2,13 @@
 import os
 import subprocess
 import torch
-import torch.nn as nn
 from torch import Tensor, optim
 import torch.distributions as D
-from combinators.stochastic import Trace, RandomVariable
-from typing import Callable, Any, Tuple, Optional, Set
-from copy import deepcopy
-from typeguard import typechecked
+from probtorch.stochastic import Trace, RandomVariable
+from typing import Any
 from combinators.out import Out
-from combinators.program import check_passable_kwarg, Out
 import combinators.tensor.utils as tensor_utils
 import combinators.trace.utils as trace_utils
-import inspect
 
 
 def save_models(models, filename, weights_dir="./weights")->None:

@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 import torch
 from torch import Tensor
-from combinators.stochastic import Trace, Provenance, GenericRandomVariable
+from enum import Enum, auto, unique
 from torch import distributions as D
 from typing import Callable, Any, Tuple, Optional, Set, Union, Dict, List
 from typeguard import typechecked
-import combinators.tensor.utils as tensor_utils
-from combinators.program import check_passable_kwarg
+
+from probtorch.stochastic import Trace, Provenance, _RandomVariable, RandomVariable, ImproperRandomVariable
 import inspect
 
+import combinators.tensor.utils as tensor_utils
+from combinators.program import check_passable_kwarg
 
-TraceLike = Union[Trace, Dict[str, Union[Tensor, GenericRandomVariable]]]
+TraceLike = Union[Trace, Dict[str, Union[Tensor, _RandomVariable]]]
 
 
 def distprops(dist):
@@ -24,9 +26,9 @@ def distprops_to_kwargs(dist):
     return {p: getattr(dist, p) for p in distprops(dist)}
 
 @typechecked
-def maybe_sample(trace:Optional[Trace], sample_shape:Union[Tuple[int], None, tuple], reparameterized:Optional[bool]=None) -> Callable[[D.Distribution, str], Tuple[Tensor, Provenance]]:
+def maybe_sample(trace:Optional[Trace], sample_shape:Union[Tuple[int], None, tuple], reparameterized:Optional[bool]=None) -> Callable[[D.Distribution, str], Tuple[Tensor, Provenance, bool]]:
 
-    def curried(dist:D.Distribution, name:str) -> Tuple[Tensor, Provenance]:
+    def curried(dist:D.Distribution, name:str) -> Tuple[Tensor, Provenance, bool]:
         _reparameterized = reparameterized if reparameterized is not None else dist.has_rsample
         if trace is not None and name in trace:
             return trace[name].value, Provenance.REUSED, _reparameterized
@@ -134,3 +136,67 @@ def showdists(tr:Trace, delim="; ", pretty=True, mlen=0, sort=True):
 def trace_eq(t0:Trace, t1:Trace, name:str):
     return name in t0 and name in t1 and torch.equal(t0[name].value, t1[name].value)
 
+
+
+@unique
+class WriteMode(Enum):
+    LastWriteWins = auto()
+    FirstWriteWins = auto()
+    NoOverlaps = auto()
+
+
+def copytraces(*traces, exclude_nodes=None, mode=WriteMode.NoOverlaps):
+    """
+    merge traces together. domains should be disjoint otherwise last-write-wins.
+    """
+    newtrace = Trace()
+    if exclude_nodes is None:
+        exclude_nodes = {}
+
+    for tr in traces:
+        for k, rv in tr.items():
+            if k in exclude_nodes:
+                continue
+            elif k in newtrace:
+                if mode == WriteMode.LastWriteWins:
+                    newtrace._nodes[k] = tr[k]
+                elif mode == WriteMode.FirstWriteWins:
+                    continue
+                elif mode == WriteMode.NoOverlaps:
+                    raise RuntimeError("traces should not overlap")
+                else:
+                    raise TypeError("impossible specification")
+
+            newtrace._inject(rv, name=k, silent=True)
+    return newtrace
+
+
+def rerun_with_detached_values(trace: Trace):
+    """
+    Rerun a trace with detached values, recomputing the computation graph so that
+    value do not cause a gradient leak.
+    """
+    newtrace = Trace()
+
+    def rerun_rv(rv):
+        value = rv.value.detach()
+        if isinstance(rv, RandomVariable):
+            return RandomVariable(
+                value=value,
+                dist=rv.dist,
+                provenance=rv.provenance,
+                reparameterized=rv.reparameterized,
+            )
+        elif isinstance(rv, ImproperRandomVariable):
+            return ImproperRandomVariable(
+                value=value, log_density_fn=rv.log_density_fn, provenance=rv.provenance
+            )
+        else:
+            raise NotImplementedError(
+                "Only supports RandomVariable and ImproperRandomVariable"
+            )
+
+    for k, v in trace.items():
+        newtrace._inject(rerun_rv(v), name=k)
+
+    return newtrace

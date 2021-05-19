@@ -2,7 +2,7 @@
 import torch
 import torch.distributions as D
 from combinators.resamplers import Systematic
-from combinators.stochastic import Trace, RandomVariable
+from probtorch.stochastic import Trace, RandomVariable
 
 def test_ancestor_indices_systematic():
     S = 4
@@ -24,7 +24,7 @@ def test_resample_with_batch(B=100, N=5):
     tr = Trace()
 
     for n in range(N):
-        tr.append(RandomVariable(dist=D.Normal(0, 1), value=value, log_prob=lw, reparameterized=False), name=f'z_{n}')
+        tr._inject(RandomVariable(dist=D.Normal(0, 1), value=value, log_prob=lw, reparameterized=False), name=f'z_{n}', silent=True)
 
     resampled, _lw = Systematic()(tr, lw, sample_dims=0, batch_dim=1)
     assert (_lw.exp() == 0.25).all()
@@ -48,7 +48,7 @@ def test_resample_without_batch():
     memo = torch.zeros(S)
     for _ in range(B):
         for n in range(N):
-            tr.append(RandomVariable(dist=D.Normal(0, 1), value=value, log_prob=lw, reparameterized=False), name=f'z_{n}')
+            tr._inject(RandomVariable(dist=D.Normal(0, 1), value=value, log_prob=lw, reparameterized=False), name=f'z_{n}')
 
         resampled, _lw = Systematic()(tr, lw, sample_dims=0, batch_dim=None)
 

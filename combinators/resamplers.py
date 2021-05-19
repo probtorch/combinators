@@ -4,7 +4,7 @@ from torch import Tensor
 from typing import Optional, Tuple
 import math
 import torch.distributions as D
-from combinators.stochastic import Trace, RandomVariable, ImproperRandomVariable, Provenance
+from probtorch.stochastic import Trace, RandomVariable, ImproperRandomVariable, Provenance
 
 
 class Resampler:
@@ -49,7 +49,7 @@ class Systematic(Resampler):
         for key, rv in trace._nodes.items():
             # WARNING: Semantics only support resampling on traces (taus not rhos) which do not include OBSERVED RVs
             if not rv.resamplable or rv.provenance == Provenance.OBSERVED:
-                new_trace.append(rv, name=key)
+                new_trace._inject(rv, name=key, silent=True)
                 continue
 
             # FIXME: Do not detach all
@@ -65,7 +65,7 @@ class Systematic(Resampler):
             else:
                 raise NotImplementedError()
 
-            new_trace.append(var, name=key)
+            new_trace._inject(var, name=key, silent=True)
 
         log_weight = torch.logsumexp(log_weight - math.log(log_weight.shape[sample_dims]), dim=sample_dims, keepdim=True).expand_as(log_weight)
         if self.normalize_weights:

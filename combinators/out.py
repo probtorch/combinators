@@ -1,6 +1,6 @@
 from torch import Tensor
 from typing import Any, Optional
-from combinators.stochastic import Trace
+from probtorch.stochastic import Trace
 import combinators.tensor.utils as tensor_utils
 
 
