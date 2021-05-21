@@ -202,7 +202,7 @@ class Enc_digit(Program):
 
 
 class DecoderFull(Program):
-    def __init__(self, num_pixels, num_hidden, z_where_dim, z_what_dim, AT, device, reparameterized=False):
+    def __init__(self, num_pixels, num_objects, num_hidden, z_where_dim, z_what_dim, AT, device, reparameterized=False):
         super().__init__()
         self.dec_digit_mean = nn.Sequential(nn.Linear(z_what_dim, int(0.5*num_hidden)),
                                     nn.ReLU(),
@@ -217,7 +217,9 @@ class DecoderFull(Program):
         self.prior_what_mu = torch.zeros(z_what_dim, device=device)
         self.prior_what_std = torch.ones(z_what_dim, device=device)
         self.AT = AT
+        self.K = num_objects
         self.reparameterized = reparameterized
+
     # In q_\phi case
     def get_conv_kernel(self, z_what_value, detach=True):
         digit_mean = self.dec_digit_mean(z_what_value)  # S * B * K * (28*28)
@@ -237,7 +239,10 @@ class DecoderFull(Program):
         # 1. from sweep for preceding and current timesteps i.e. t <= ix.t
         # 2. from sweep-1 for future timesteps, i.e. t > ix.t
         ##################################################################
-        z_where_vals = []
+
+        sample_shape = frames.shape[:3]
+        data_shape = (self.K, *self.prior_where0_mu.shape)
+        z_where_vals = torch.zeros(*sample_shape, *data_shape)
         for t in range(T):
             if t <= ix.t:
                 if t == 0:
@@ -250,21 +255,20 @@ class DecoderFull(Program):
                                  scale=self.prior_wheret_Sigma,
                                  name='z_where_%d_%d' % (t, ix.sweep),
                                  reparameterized=self.reparameterized)
-                z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep)].value.unsqueeze(2))
+                z_where_vals[:,:,t,:,:] = trace['z_where_%d_%d' % (t, ix.sweep)].value
 
             elif t == (ix.t+1):
                 trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (ix.t, ix.sweep)].value,
                              scale=self.prior_wheret_Sigma,
                              name='z_where_%d_%d' % (t, ix.sweep-1),
                              reparameterized=self.reparameterized)
-                z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep-1)].value.unsqueeze(2))
+                z_where_vals[:,:,t,:,:] = trace['z_where_%d_%d' % (t, ix.sweep-1)].value
             else:
                 trace.normal(loc=trace._cond_trace['z_where_%d_%d' % (t-1, ix.sweep-1)].value,
                              scale=self.prior_wheret_Sigma,
                              name='z_where_%d_%d' % (t, ix.sweep-1),
                              reparameterized=self.reparameterized)
-                z_where_vals.append(trace['z_where_%d_%d' % (t, ix.sweep-1)].value.unsqueeze(2))
-        z_where_vals = torch.cat(z_where_vals, 2)
+                z_where_vals[:,:,t,:,:] = trace['z_where_%d_%d' % (t, ix.sweep-1)].value
 
         # index for z_what given ix
         if ix.t == T:
@@ -273,6 +277,7 @@ class DecoderFull(Program):
             z_what_index = ix.sweep - 1
         else:
             raise ValueError('You should not call the decoder when t=%d and sweep=%d' % (ix.t, ix.sweep))
+
         trace.normal(loc=self.prior_what_mu,
                      scale=self.prior_what_std,
                      name='z_what_%d'%(z_what_index),
