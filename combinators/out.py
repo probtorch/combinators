@@ -24,6 +24,8 @@ class PropertyDict(dict):
     def __repr__(self):
         return "<PropertyDict>:\n" + show_nest(self, pd_header="<PropertyDict>")
 
+# without model combinators, this makes things less painful
+GlobalStore = PropertyDict()
 
 def show_nest(p:PropertyDict, nest_level=0, indent_len:Optional[int]=None, pd_header="<PropertyDict>"):
     """ show the nesting level of a PropertyDict with indentation """
