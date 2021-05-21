@@ -263,8 +263,6 @@ class Propose(Inf):
         nodes = rho_1 - (tau_1 - tau_2)
 
         lu_1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
-
-
         lw_1 = q_out.log_weight
         # We call that lv because its the incremental weight in the IS sense
         lv = p_out.log_weight - lu_1
@@ -289,8 +287,6 @@ class Propose(Inf):
             new_out = m_output
         # =============================================== #
         # FIXME: not accessed?
-        #proposal_trace=copytraces(q_out.trace)
-        #target_trace=copytraces(p_out.trace)
         # lv_ = target_trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim) - proposal_trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim)
 
         out = Out(
@@ -306,7 +302,7 @@ class Propose(Inf):
                 proposal_trace=copytraces(q_out.trace),
                 target_trace=copytraces(p_out.trace),
                 ## apg ##
-                forward_trace = q_out.q2_out.trace if q_out.type == Compose and debugging else None,
+                forward_trace = q_out.q2_out.trace if self.q._debug and q_out.type == Compose else None,
                 #########
                 type=type(self),
                 ix=ix,

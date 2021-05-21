@@ -26,7 +26,7 @@ class PropertyDict(dict):
 
 
 def show_nest(p:PropertyDict, nest_level=0, indent_len:Optional[int]=None, pd_header="<PropertyDict>"):
-    """ show the nesting level of a PropertyDict via indentation """
+    """ show the nesting level of a PropertyDict with indentation """
     _max_len = max(map(len, p.keys()))
     max_len = _max_len + nest_level * (_max_len if indent_len is None else indent_len)
     delimiter = "\n  "
@@ -51,7 +51,6 @@ def show_nest(p:PropertyDict, nest_level=0, indent_len:Optional[int]=None, pd_he
     ])
 
     return unnested_str + delimiter + nested_str
-
 
 class Out(PropertyDict):
     '''

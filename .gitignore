@@ -147,3 +147,4 @@ weights/
 icml/
 pyrightconfig.json
 fil-result
+/.direnv/

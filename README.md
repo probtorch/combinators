@@ -16,6 +16,12 @@ To cite, use:
 }
 ```
 
-### Nix and python
+### Development
 
-Use `cachix use combinators && nix-shell`
+#### Nix and python
+To get access to the binary cache, use: `cachix use combinators`.
+
+To access the development shell, a flake is provided which can be accessed via
+`nix develop`. Experimentally [https://github.com/numtide/devshell](`devshell`)
+is used, but this is used from within the flake and the devshell pip package is
+untested.

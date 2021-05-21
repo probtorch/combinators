@@ -39,6 +39,7 @@ def init_models(
         AT=AT,
         device=device,
         reparameterized=reparameterized,
+        **({} if use_markov_blanket else dict(num_objects=num_objects))
     ).to(device)
 
     models["enc_coor"] = Enc_coor(
