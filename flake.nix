@@ -53,6 +53,7 @@
             packages.combinatorsPy
             gnused
             watchexec
+            rsync
           ];
           # applying patch: https://github.com/microsoft/pyright/issues/565
           bash.extra = ''export PYTHONPATH="$(git rev-parse --show-toplevel):$PYTHONPATH"'';
@@ -90,29 +91,37 @@
           '');
           commands = let
             watchexec = "${pkgs.watchexec}/bin/watchexec";
+            mk = category: {name, command}:
+              { inherit category name;
+                command = command + "\n";
+              };
+            smoke-test = mk "smoke tests";
+            watcher = mk "watchers";
+
           in [
-            {
-              category = "smoke tests";
+            (smoke-test {
               name = "smoke-annealing";
               command = "make RUN_FLAGS=\"--iterations 10\" ex/annealing";
-            }
-            {
-              category = "watchers";
-              name = "watch-annealing-short";
-              command = "${watchexec} -e py 'make RUN_FLAGS=\"--iterations 10\" ex/annealing'";
-            }
-            {
-              category = "watchers";
+            })
+            (watcher {
               name = "watch-annealing-dev";
               command = "${watchexec} -e py '(cd ./experiments/annealing/ && echo \"=========================\" && python ./main.py --pdb)'";
-            }
-            {
-              category = "watchers";
+            })
+            (watcher {
               name = "watch-short";
+              command = ''${watchexec} -e py "make RUN_FLAGS='--iterations 10' ex/$1"'';
+            })
+            {
+              category = "deployment";
+              name = "rsync-dev";
               command = ''
-                ${watchexec} -e py "make RUN_FLAGS='--iterations 10' ex/$1"
+                ${pkgs.rsync}/bin/rsync -Paurzvh . $1""
               '';
             }
+            (watcher {
+              name = "watch-rsync";
+              command = ''${watchexec} -e py "rsync-dev $1"'';
+            })
           ];
         };
       });
