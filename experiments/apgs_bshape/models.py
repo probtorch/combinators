@@ -12,6 +12,14 @@ from experiments.apgs_bshape.models_opt import DecoderMarkovBlanket
 
 apg_ix = namedtuple("apg_ix", ["t", "sweep", "dir"])
 
+def check_dir(ix):
+    if ix.dir not in ["forward", "reverse"]:
+        raise ValueError("Kernel must be run either forward or reverse")
+
+def is_forward(ix):
+    check_dir(ix)
+    return ix.dir == "forward"
+
 
 def init_models(
     frame_pixels,
@@ -110,12 +118,10 @@ class Enc_coor(Program):
             # FIXME: Figure out if we can use cheaper expand here
             conv_kernel = self.mean_shape.repeat(S, B, self.K, 1, 1)
         else:
-            if ix.dir == "forward":
+            if is_forward(ix):
                 z_what_val = c["z_what_%d" % (ix.sweep - 1)]
-            elif ix.dir == "reverse":
-                z_what_val = trace._cond_trace["z_what_%d" % (ix.sweep - 1)].value
             else:
-                raise ValueError("Kernel can only be run forward or in reverse")
+                z_what_val = trace._cond_trace["z_what_%d" % (ix.sweep - 1)].value
             conv_kernel = self.get_dec().get_conv_kernel(z_what_val)
 
         _, _, K, DP, _ = conv_kernel.shape
@@ -141,11 +147,11 @@ class Enc_coor(Program):
             q_mean[:, :, k, :] = q_mean_k
             q_std[:, :, k, :] = q_std_k
 
-            if ix.dir == "forward":
+            if is_forward(ix):
                 # bulid up z_where
                 z_where_val_k = Normal(q_mean_k, q_std_k).sample()
                 z_where_t[:, :, k, :] = z_where_val_k
-            elif ix.dir == "reverse":
+            else:
                 # retreive z_where
                 z_where_val_k = trace._cond_trace[
                     "z_where_%d_%d" % (ix.t, ix.sweep - 1)
@@ -163,8 +169,7 @@ class Enc_coor(Program):
             frame_left = frame_left - recon_k
 
         # Stuff happens in a Compose
-        if ix.dir == "forward":
-            # z_where_t = torch.cat(z_where_t, 2)
+        if is_forward(ix):
             # For performace reasons we want to add all K objects as one RV, hence we need to cheat here:
             # We sampled all K RVs manually in for-loop above, and "simulate" a combinators sampling operation here.
             # if ix.t <= 1 and ix.sweep > 0:
@@ -182,15 +187,14 @@ class Enc_coor(Program):
             if ix.sweep == 0:
                 return {**c, "z_where_%d_%d" % (ix.t, ix.sweep): z_where_t}
             return c
-        elif ix.dir == "reverse":
+        else:
             trace.normal(
                 loc=q_mean,
                 scale=q_std,
                 name="z_where_%d_%d" % (ix.t, ix.sweep - 1),
                 reparameterized=self.reparameterized,
             )
-        else:
-            raise ValueError("Kernel must be run either forward or reverse")
+            return None
 
 
 class Enc_digit(Program):
@@ -231,22 +235,16 @@ class Enc_digit(Program):
         hidden = self.enc_digit_hidden(cropped).mean(2)
         q_mu = self.enc_digit_mean(hidden)
         q_std = self.enc_digit_log_std(hidden).exp()
-        if ix.dir == "forward":
-            trace.normal(
+
+
+        sweep_ix = ix.sweep if is_forward(ix) else (ix.sweep - 1)
+        trace.normal(
                 loc=q_mu,
                 scale=q_std,
-                name="z_what_%d" % (ix.sweep),
+                name=f"z_what_{sweep_ix}",
                 reparameterized=self.reparameterized,
             )
-        elif ix.dir == "reverse":
-            trace.normal(
-                loc=q_mu,
-                scale=q_std,
-                name="z_what_%d" % (ix.sweep - 1),
-                reparameterized=self.reparameterized,
-            )
-        else:
-            raise ValueError("Kernel must be run either forward or reverse")
+        return None
 
 
 class DecoderFull(Program):
