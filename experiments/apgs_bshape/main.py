@@ -2,8 +2,10 @@ import os
 import time
 import argparse
 import torch
+from tqdm import tqdm, trange
 from random import shuffle
 from combinators import save_models, adam
+from combinators.metrics import effective_sample_size
 
 from experiments.apgs_bshape.gibbs import gibbs_sweeps
 from experiments.apgs_bshape.models import init_models
@@ -38,28 +40,32 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
     else:
         log_file = open('./results/log-' + model_version + '.txt', 'a+')
 
-    for epoch in range(num_epochs):
+    sample_dims, batch_dim = 0, 1
+    detached_mean = lambda t: t.detach().mean().cpu().item()
+    ebar = trange(num_epochs)
+    for epoch in ebar:
         shuffle(data_paths)
         start = time.time()
-        for group, data_path in enumerate(data_paths):
+        for group, data_path in tqdm(enumerate(data_paths), total=len(data_paths)):
             metrics = {'ess' : 0.0, 'log_p' : 0.0, 'loss' : 0.0}
             data = torch.load(data_path)
             N, T, _, _ = data.shape
             assert T == timesteps, 'Data contain %d timesteps while the corresponding arugment in APG is %d.' % (T, timesteps)
             num_batches = 1 if N <= batch_size else data.shape[0] // batch_size
             seq_indices = torch.randperm(N)
-            for b in range(num_batches):
+            for b in trange(num_batches):
                 optimizer.zero_grad()
                 frames = data[seq_indices[b*batch_size : (b+1)*batch_size]]
                 frames_expand = frames.to(device).repeat(sample_size, 1, 1, 1, 1)
-                out = apg(c={"frames": frames_expand}, sample_dims=0, batch_dim=1, reparameterized=False)
+                out = apg(c={"frames": frames_expand}, sample_dims=sample_dims, batch_dim=1, reparameterized=False)
                 out.loss.backward()
                 optimizer.step()
 
-                metrics['ess'] += out.ess.mean().detach().cpu().item() if num_sweeps > 0 else 0
-                metrics['log_p'] += out.trace.log_joint(sample_dims=0,
-                                                        batch_dim=1,
-                                                        reparameterized=False).detach().cpu().mean().item()
+                metrics['ess'] += detached_mean(effective_sample_size(
+                        out.lw.detach(), sample_dims=sample_dims
+                    )) if num_sweeps > 0 else 0
+
+                metrics['log_p'] += detached_mean(out.trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=False))
                 metrics['loss'] += out.loss.detach().cpu().item()
 
                 if smoketest[0]:
@@ -70,6 +76,7 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
             metrics_print = ",  ".join(['%s: %.4f' % (k, v/num_batches) for k, v in metrics.items()])
             end = time.time()
             if not smoketest[0]:
+                ebar.set_postfix_str(metrics_print)
                 print("(%ds) Epoch=%d, Group=%d, " % (end - start, epoch+1, group+1) + metrics_print, file=log_file, flush=True)
                 print("(%ds) Epoch=%d, Group=%d, " % (end - start, epoch+1, group+1) + metrics_print)
     if not smoketest[0]:

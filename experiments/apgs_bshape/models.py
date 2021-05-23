@@ -31,7 +31,7 @@ def init_models(
     mean_shape,
     device,
     reparameterized=False,
-    use_markov_blanket=False,
+    use_markov_blanket=True,
 ):
     AT = Affine_Transformer(frame_pixels, shape_pixels, device)
 
@@ -113,6 +113,7 @@ class Enc_coor(Program):
     def model(self, trace, c, ix):
         frames = c["frames"]
         S, B, T, FP, _ = frames.shape
+
         if ix.sweep == 0:
             # FIXME: Figure out if we can use cheaper expand here
             conv_kernel = self.mean_shape.repeat(S, B, self.K, 1, 1)
@@ -126,8 +127,8 @@ class Enc_coor(Program):
         _, _, K, DP, _ = conv_kernel.shape
         frame_left = frames[:, :, ix.t, :, :]
 
-        q_mean, q_std = torch.zeros(S, B, self.K, 2), torch.zeros(S, B, self.K, 2)
-        z_where_t = torch.zeros(S, B, self.K, 2)
+        q_mean, q_std = torch.zeros(S, B, self.K, 2).to(frames.device), torch.zeros(S, B, self.K, 2).to(frames.device)
+        z_where_t = torch.zeros(S, B, self.K, 2).to(frames.device)
 
         # K objects in frame
         for k in range(self.K):
@@ -172,7 +173,6 @@ class Enc_coor(Program):
             # For performace reasons we want to add all K objects as one RV, hence we need to cheat here:
             # We sampled all K RVs manually in for-loop above, and "simulate" a combinators sampling operation here.
             # if ix.t <= 1 and ix.sweep > 0:
-            #     breakpoint()
             trace._inject(
                 RandomVariable(
                     Normal(loc=q_mean, scale=q_std),
@@ -224,7 +224,7 @@ class Enc_digit(Program):
 
         sample_shape = frames.shape[:3]
         data_shape = c["z_where_%d_%d" % (0, ix.sweep)].shape[-2:]
-        z_where = torch.zeros(*sample_shape, *data_shape)
+        z_where = torch.zeros(*sample_shape, *data_shape, device=frames.device)
 
         for t in range(frames.shape[2]):
             z_where[:, :, t, :, :] = c["z_where_%d_%d" % (t, ix.sweep)]
@@ -299,7 +299,7 @@ class DecoderFull(Program):
 
         sample_shape = frames.shape[:3]
         data_shape = (self.K, *self.prior_where0_mu.shape)
-        z_where_vals = torch.zeros(*sample_shape, *data_shape)
+        z_where_vals = torch.zeros(*sample_shape, *data_shape, device=frames.device)
         for t in range(T):
             if t <= ix.t:
                 if t == 0:
