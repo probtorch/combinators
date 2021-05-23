@@ -6,7 +6,7 @@ from typeguard import typechecked
 import base64
 import hashlib
 import os
-
+import numpy as np
 
 @typechecked
 def autodevice(preference: Union[int, str, None, torch.device] = None) -> torch.device:
@@ -31,14 +31,14 @@ def kw_autodevice(preference: Union[int, str, None] = None) -> Dict[str, torch.d
 
 
 @typechecked
-def _hash(t: Tensor, length: int) -> str:
+def _hash(t: Union[Tensor, np.ndarray], length: int) -> str:
     hasher = hashlib.sha1(pickle.dumps(t))
     return base64.urlsafe_b64encode(hasher.digest()[:length]).decode("ascii")
 
 
 @typechecked
 def thash(
-    aten: Tensor, length: int = 8, with_ref=False, no_grad_char: str = " "
+    aten: Union[Tensor, np.ndarray], length: int = 8, with_ref=False, no_grad_char: str = " "
 ) -> str:
     g = "∇" if aten.grad_fn is not None else no_grad_char
     save_ref = aten.detach()
@@ -56,6 +56,6 @@ def prettyshape(size):
 
 
 @typechecked
-def show(aten: Tensor) -> str:
+def show(aten: Union[Tensor, np.ndarray]) -> str:
     t = str(aten.dtype).split(".")[-1]
     return f"{t}{prettyshape(aten.size())}{thash(aten)}"

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import torch
 import inspect
+import numpy as np
 from torch import Tensor
 from enum import Enum, auto, unique
 from torch import distributions as D
@@ -17,7 +18,7 @@ from probtorch.stochastic import (
 
 import combinators.tensor.utils as tensor_utils
 
-TraceLike = Union[Trace, Dict[str, Union[Tensor, _RandomVariable]]]
+TraceLike = Union[Trace, Dict[str, Union[Tensor, _RandomVariable, np.ndarray]]]
 
 
 def distprops(dist):
