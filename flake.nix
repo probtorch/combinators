@@ -56,7 +56,10 @@
             rsync
           ];
           # applying patch: https://github.com/microsoft/pyright/issues/565
-          bash.extra = ''export PYTHONPATH="$(git rev-parse --show-toplevel):$PYTHONPATH"'';
+          bash.extra = ''
+            export PYTHONPATH="$(git rev-parse --show-toplevel):$PYTHONPATH"
+            export PYTHONBREAKPOINT='IPython.core.debugger.set_trace'
+          '';
           bash.interactive = ''
             VENV_NAME="$(echo ${packages.combinatorsPy} | sed -E 's/\/nix\/store\/(.*)-env/\1/')-env"
 
