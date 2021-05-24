@@ -1,4 +1,4 @@
-torch>=1.7.1
+torch==1.7.1   # TODO 1.8.x which contains one migration bug
 probtorch
 numpy # don't forget mkl
 tqdm
