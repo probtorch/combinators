@@ -47,7 +47,7 @@ def init_models(
         AT=AT,
         device=device,
         reparameterized=reparameterized,
-        **({} if use_markov_blanket else dict(num_objects=num_objects))
+        num_objects=num_objects
     ).to(device)
 
     models["enc_coor"] = Enc_coor(
@@ -242,8 +242,7 @@ class Enc_digit(Program):
             )
         return None
 
-
-class DecoderFull(Program):
+class _Decoder(Program):
     def __init__(
         self,
         num_pixels,
@@ -282,6 +281,10 @@ class DecoderFull(Program):
         digit_mean = digit_mean.view(S, B, K, DP, DP)
         digit_mean = digit_mean.detach() if detach else digit_mean
         return digit_mean
+
+
+
+class DecoderFull(_Decoder):
 
     def model(self, trace, c, ix, EPS=1e-9):
         frames = c["frames"]
@@ -385,43 +388,7 @@ class DecoderFull(Program):
             },
         }
 
-class DecoderMarkovBlanket(Program):
-    def __init__(
-        self,
-        num_pixels,
-        num_hidden,
-        z_where_dim,
-        z_what_dim,
-        AT,
-        device,
-        reparameterized=False,
-    ):
-        super().__init__()
-        self.dec_digit_mean = nn.Sequential(
-            nn.Linear(z_what_dim, int(0.5 * num_hidden)),
-            nn.ReLU(),
-            nn.Linear(int(0.5 * num_hidden), num_hidden),
-            nn.ReLU(),
-            nn.Linear(num_hidden, num_pixels),
-            nn.Sigmoid(),
-        )
-
-        self.prior_where0_mu = torch.zeros(z_where_dim, device=device)
-        self.prior_where0_Sigma = torch.ones(z_where_dim, device=device) * 1.0
-        self.prior_wheret_Sigma = torch.ones(z_where_dim, device=device) * 0.2
-        self.prior_what_mu = torch.zeros(z_what_dim, device=device)
-        self.prior_what_std = torch.ones(z_what_dim, device=device)
-        self.AT = AT
-        self.reparameterized = reparameterized
-
-    # In q_\phi case
-    def get_conv_kernel(self, z_what_value, detach=True):
-        digit_mean = self.dec_digit_mean(z_what_value)  # S * B * K * (28*28)
-        S, B, K, DP2 = digit_mean.shape
-        DP = int(math.sqrt(DP2))
-        digit_mean = digit_mean.view(S, B, K, DP, DP)
-        digit_mean = digit_mean.detach() if detach else digit_mean
-        return digit_mean
+class DecoderMarkovBlanket(_Decoder):
 
     def model(self, trace, c, ix, EPS=1e-9):
         frames = c["frames"]
