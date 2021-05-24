@@ -3,7 +3,7 @@
 from probtorch.stochastic import ImproperRandomVariable, RandomVariable, Trace, Provenance
 from combinators.program import Program, dispatch
 from combinators.inference import Extend, Compose, Propose, Resample
-from combinators.out import GlobalStore
+from combinators.out import global_store
 
 # Optional
 import combinators.trace.utils as trace_utils
@@ -27,6 +27,6 @@ __all__ = [cls.__name__ for cls in _exports] + [
     "autodevice", "kw_autodevice",
     "effective_sample_size", "log_Z_hat",
     "Systematic",
-    "GlobalStore",
+    "global_store",
     "Tensor"
 ]

@@ -24,8 +24,6 @@ class PropertyDict(dict):
     def __repr__(self):
         return "<PropertyDict>:\n" + show_nest(self, pd_header="<PropertyDict>")
 
-# without model combinators, this makes things less painful
-GlobalStore = PropertyDict()
 
 def show_nest(p:PropertyDict, nest_level=0, indent_len:Optional[int]=None, pd_header="<PropertyDict>"):
     """ show the nesting level of a PropertyDict with indentation """
@@ -53,6 +51,45 @@ def show_nest(p:PropertyDict, nest_level=0, indent_len:Optional[int]=None, pd_he
     ])
 
     return unnested_str + delimiter + nested_str
+
+class GlobalStore(dict):
+    # with no model combinators, a global store makes things less painful
+    def __init__(self):
+        super().__init__()
+
+        def noop(*args):
+            return None
+
+        self._hooks = dict(
+            pre_get=noop,
+            pre_set=noop,
+            post_get=noop,
+            post_set=noop,
+        )
+
+    def __getitem__(self, k):
+        self._hooks['pre_get'](k)
+        v = super().__getitem__(k)
+        self._hooks['post_get'](k, v)
+        return v
+
+    def set_hook(self, ty, f):
+        ty_ = ty.split("_")
+        assert len(ty_) == 2 and ty_[0] in {'pre', 'post'} and ty_[1] in {'get', 'set'}
+        self._hooks[ty] = f
+
+    def __setitem__(self, k, v):
+        self._hooks['pre_set'](k, v)
+        super().__setitem__(k, v)
+        self._hooks['post_set'](k, v)
+        return None
+
+    def __repr__(self):
+        return '%s(%s)' % (type(self).__name__, super().__repr__())
+
+
+global_store = GlobalStore()
+
 
 class Out(PropertyDict):
     '''
