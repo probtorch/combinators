@@ -282,13 +282,7 @@ class _Decoder(Program):
         digit_mean = digit_mean.detach() if detach else digit_mean
         return digit_mean
 
-
-
-class DecoderFull(_Decoder):
-
-    def model(self, trace, c, ix, EPS=1e-9):
-        frames = c["frames"]
-        _, _, T, FP, _ = frames.shape
+    def get_z_where(self, trace, T, ix, sample_shape):
         ##################################################################
         # Remove the optimization by always computing the log joint.
         # Compute the log prior of z_where_{1:T} and construct a sample
@@ -296,10 +290,8 @@ class DecoderFull(_Decoder):
         # 1. from sweep for preceding and current timesteps i.e. t <= ix.t
         # 2. from sweep-1 for future timesteps, i.e. t > ix.t
         ##################################################################
-
-        sample_shape = frames.shape[:3]
         data_shape = (self.K, *self.prior_where0_mu.shape)
-        z_where_vals = torch.zeros(*sample_shape, *data_shape, device=frames.device)
+        z_where_vals = torch.zeros(*sample_shape, *data_shape, device=self.prior_where0_mu.device)
         for t in range(T):
             if t <= ix.t:
                 if t == 0:
@@ -344,6 +336,22 @@ class DecoderFull(_Decoder):
                 z_where_vals[:, :, t, :, :] = trace[
                     "z_where_%d_%d" % (t, ix.sweep - 1)
                 ].value
+        return z_where_vals
+
+
+class DecoderFull(_Decoder):
+
+    def model(self, trace, c, ix, EPS=1e-9):
+        frames = c["frames"]
+        _, _, T, FP, _ = frames.shape
+        ##################################################################
+        # Remove the optimization by always computing the log joint.
+        # Compute the log prior of z_where_{1:T} and construct a sample
+        # trajectory using sample values
+        # 1. from sweep for preceding and current timesteps i.e. t <= ix.t
+        # 2. from sweep-1 for future timesteps, i.e. t > ix.t
+        ##################################################################
+        z_where_vals = self.get_z_where(trace, T, ix, sample_shape=frames.shape[:3])
 
         # index for z_what given ix
         if ix.t == T:
@@ -400,54 +408,7 @@ class DecoderMarkovBlanket(_Decoder):
         # 1. from sweep for preceding and current timesteps i.e. t <= ix.t
         # 2. from sweep-1 for future timesteps, i.e. t > ix.t
         ##################################################################
-        z_where_vals = []
-        for t in range(T):
-            if t <= ix.t:
-                if t == 0:
-                    trace.normal(
-                        loc=self.prior_where0_mu,
-                        scale=self.prior_where0_Sigma,
-                        reparameterized=self.reparameterized,
-                        name="z_where_%d_%d" % (0, ix.sweep),
-                    )
-                else:
-                    trace.normal(
-                        loc=trace._cond_trace[
-                            "z_where_%d_%d" % (t - 1, ix.sweep)
-                        ].value,
-                        scale=self.prior_wheret_Sigma,
-                        reparameterized=self.reparameterized,
-                        name="z_where_%d_%d" % (t, ix.sweep),
-                    )
-                z_where_vals.append(
-                    trace["z_where_%d_%d" % (t, ix.sweep)].value.unsqueeze(2)
-                )
-
-            elif t == (ix.t + 1):
-                trace.normal(
-                    loc=trace._cond_trace["z_where_%d_%d" % (ix.t, ix.sweep)].value,
-                    scale=self.prior_wheret_Sigma,
-                    reparameterized=self.reparameterized,
-                    name="z_where_%d_%d" % (t, ix.sweep - 1),
-                )
-                z_where_vals.append(
-                    trace["z_where_%d_%d" % (t, ix.sweep - 1)].value.unsqueeze(2)
-                )
-            else:
-                trace.normal(
-                    loc=trace._cond_trace[
-                        "z_where_%d_%d" % (t - 1, ix.sweep - 1)
-                    ].value,
-                    scale=self.prior_wheret_Sigma,
-                    reparameterized=self.reparameterized,
-                    name="z_where_%d_%d" % (t, ix.sweep - 1),
-                )
-                z_where_vals.append(
-                    trace["z_where_%d_%d" % (t, ix.sweep - 1)].value.unsqueeze(2)
-                )
-
-        # NOTE: this is only used in the z_what case
-        z_where_vals = torch.cat(z_where_vals, 2)
+        z_where_vals = self.get_z_where(trace, T, ix, sample_shape=frames.shape[:3])
 
         # index for z_what given ix
         if ix.t == T:
