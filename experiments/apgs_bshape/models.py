@@ -324,6 +324,7 @@ class _Decoder(Program):
                 z_where_vals[:, :, t, :, :] = trace[
                     "z_where_%d_%d" % (t, ix.sweep - 1)
                 ].value
+
             else:
                 trace.normal(
                     loc=trace._cond_trace[
@@ -337,6 +338,26 @@ class _Decoder(Program):
                     "z_where_%d_%d" % (t, ix.sweep - 1)
                 ].value
         return z_where_vals
+
+    def get_z_what_val(self, trace, T, ix):
+        # index for z_what given ix
+        if ix.t == T:
+            z_what_index = ix.sweep
+        elif ix.t < T and ix.sweep > 0:
+            z_what_index = ix.sweep - 1
+        else:
+            raise ValueError(
+                "You should not call the decoder when t=%d and sweep=%d"
+                % (ix.t, ix.sweep)
+            )
+
+        z_what_val = trace.normal(
+            loc=self.prior_what_mu,
+            scale=self.prior_what_std,
+            name="z_what_%d" % (z_what_index),
+            reparameterized=self.reparameterized,
+        )
+        return z_what_index, z_what_val
 
 
 class DecoderFull(_Decoder):
@@ -352,25 +373,7 @@ class DecoderFull(_Decoder):
         # 2. from sweep-1 for future timesteps, i.e. t > ix.t
         ##################################################################
         z_where_vals = self.get_z_where(trace, T, ix, sample_shape=frames.shape[:3])
-
-        # index for z_what given ix
-        if ix.t == T:
-            z_what_index = ix.sweep
-        elif ix.t < T and ix.sweep > 0:
-            z_what_index = ix.sweep - 1
-        else:
-            raise ValueError(
-                "You should not call the decoder when t=%d and sweep=%d"
-                % (ix.t, ix.sweep)
-            )
-
-        trace.normal(
-            loc=self.prior_what_mu,
-            scale=self.prior_what_std,
-            name="z_what_%d" % (z_what_index),
-            reparameterized=self.reparameterized,
-        )
-        z_what_val = trace._cond_trace["z_what_%d" % (z_what_index)].value
+        z_what_index, z_what_val = self.get_z_what_val(trace, T, ix)
 
         digit_mean = self.get_conv_kernel(z_what_val, detach=False)
         recon_frames = torch.clamp(
@@ -409,25 +412,7 @@ class DecoderMarkovBlanket(_Decoder):
         # 2. from sweep-1 for future timesteps, i.e. t > ix.t
         ##################################################################
         z_where_vals = self.get_z_where(trace, T, ix, sample_shape=frames.shape[:3])
-
-        # index for z_what given ix
-        if ix.t == T:
-            z_what_index = ix.sweep
-        elif ix.t < T and ix.sweep > 0:
-            z_what_index = ix.sweep - 1
-        else:
-            raise ValueError(
-                "You should not call the decoder when t=%d and sweep=%d"
-                % (ix.t, ix.sweep)
-            )
-
-        trace.normal(
-            loc=self.prior_what_mu,
-            scale=self.prior_what_std,
-            reparameterized=self.reparameterized,
-            name="z_what_%d" % (z_what_index),
-        )
-        z_what_val = trace._cond_trace["z_what_%d" % (z_what_index)].value
+        z_what_index, z_what_val = self.get_z_what_val(trace, T, ix)
 
         if ix.sweep != 0:
             if ix.t == 0:
