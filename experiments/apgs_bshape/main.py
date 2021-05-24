@@ -78,7 +78,6 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
             if not smoketest[0]:
                 ebar.set_postfix_str(metrics_print)
                 print("(%ds) Epoch=%d, Group=%d, " % (end - start, epoch+1, group+1) + metrics_print, file=log_file, flush=True)
-                print("(%ds) Epoch=%d, Group=%d, " % (end - start, epoch+1, group+1) + metrics_print)
     if not smoketest[0]:
         log_file.close()
         # return out, frames
