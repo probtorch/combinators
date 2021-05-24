@@ -4,7 +4,7 @@ import argparse
 import torch
 from tqdm import tqdm, trange
 from random import shuffle
-from combinators import save_models, adam
+from combinators import save_models, adam, debug
 from combinators.metrics import effective_sample_size
 
 from experiments.apgs_bshape.gibbs import gibbs_sweeps
@@ -122,8 +122,10 @@ if __name__ == '__main__':
     # CI config
     parser.add_argument('--smoketest', default=False, type=bool)
     parser.add_argument('--iterations', default=10, type=int)
+    parser.add_argument('--seed', default=1, type=int)
 
     args = parser.parse_args()
+    debug.seed(args.seed)
 
     if args.test:
         out, frames = test_gibbs_sweep(
