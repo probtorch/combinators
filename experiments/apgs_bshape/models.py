@@ -118,10 +118,7 @@ class Enc_coor(Program):
             # FIXME: Figure out if we can use cheaper expand here
             conv_kernel = self.mean_shape.repeat(S, B, self.K, 1, 1)
         else:
-            if is_forward(ix):
-                z_what_val = c["z_what_%d" % (ix.sweep - 1)]
-            else:
-                z_what_val = trace._cond_trace["z_what_%d" % (ix.sweep - 1)].value
+            z_what_val = c["z_what_%d" % (ix.sweep - 1)]
             conv_kernel = self.get_dec().get_conv_kernel(z_what_val)
 
         _, _, K, DP, _ = conv_kernel.shape
