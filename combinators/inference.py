@@ -37,7 +37,6 @@ class Inf(ABC):
         self.loss0 = 0.0 if loss0 is None else loss0
         self.foldr_loss = loss_fn
         self.ix = ix
-        self._out = Out(None, None, None)
         self._debug = _debug
         self.batch_dim = batch_dim
         self.sample_dims = sample_dims
