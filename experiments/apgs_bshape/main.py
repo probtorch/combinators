@@ -35,25 +35,34 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
     if not os.path.exists('./results/'):
         os.makedirs('./results/')
 
-    if smoketest[0]:
-        counter = 0
-    else:
-        log_file = open('./results/log-' + model_version + '.txt', 'a+')
+    counter = 0 if smoketest[0] else None
+    log_file = None if smoketest[0] else open('./results/log-' + model_version + '.txt', 'a+')
 
     sample_dims, batch_dim = 0, 1
     detached_mean = lambda t: t.detach().mean().cpu().item()
     ebar = trange(num_epochs)
+
+    def cleanup(start, epoch, group, bars, log_file, metrics, num_batches):
+        [bar.close() for bar in bars]
+        metrics_print = ",  ".join(['%s: %.4f' % (k, v/num_batches) for k, v in metrics.items()])
+        end = time.time()
+        print("(%ds) Epoch=%d, Group=%d, " % (end - start, epoch+1, group+1) + metrics_print, flush=True,
+              **({} if log_file is None else dict(file=log_file)))
+        return metrics_print
+
     for epoch in ebar:
         shuffle(data_paths)
         start = time.time()
-        for group, data_path in tqdm(enumerate(data_paths), total=len(data_paths)):
+        bbar = tqdm(enumerate(data_paths), total=len(data_paths))
+        for group, data_path in bbar:
             metrics = {'ess' : 0.0, 'log_p' : 0.0, 'loss' : 0.0}
             data = torch.load(data_path)
             N, T, _, _ = data.shape
             assert T == timesteps, 'Data contain %d timesteps while the corresponding arugment in APG is %d.' % (T, timesteps)
             num_batches = 1 if N <= batch_size else data.shape[0] // batch_size
             seq_indices = torch.randperm(N)
-            for b in trange(num_batches):
+            tbar = trange(num_batches)
+            for b in tbar:
                 optimizer.zero_grad()
                 frames = data[seq_indices[b*batch_size : (b+1)*batch_size]]
                 frames_expand = frames.to(device).repeat(sample_size, 1, 1, 1, 1)
@@ -71,13 +80,13 @@ def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_di
                 if smoketest[0]:
                     counter+=1
                     if counter >= smoketest[1]:
+                        cleanup(start, epoch, group, [ebar, bbar, tbar], log_file, metrics, num_batches)
                         return
             save_models(models, 'cp-' + model_version)
-            metrics_print = ",  ".join(['%s: %.4f' % (k, v/num_batches) for k, v in metrics.items()])
-            end = time.time()
             if not smoketest[0]:
+                metrics_print = cleanup(start, epoch, group, [], log_file, metrics, num_batches)
                 ebar.set_postfix_str(metrics_print)
-                print("(%ds) Epoch=%d, Group=%d, " % (end - start, epoch+1, group+1) + metrics_print, file=log_file, flush=True)
+
     if not smoketest[0]:
         log_file.close()
         # return out, frames
