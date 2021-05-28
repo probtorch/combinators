@@ -23,12 +23,10 @@ def loss_apg(out, total_loss):
     assert out.forward_trace is not None
     forward_trace = out.forward_trace
 
-    try:
-        recon = out.target_trace["recon_%d_%d" % (out.ix.t, out.ix.sweep)]
-    except:
-        recon = out.target_trace["recon"]
+    recon_key = "recon" if "recon" in out.target_trace else \
+        "recon_%d_%d" % (out.ix.t, out.ix.sweep)
 
-    log_p = recon.log_prob.sum(-1).sum(-1)
+    log_p = out.target_trace[recon_key].log_prob.sum(-1).sum(-1)
     if len(log_p.shape) == 3:
         log_p = log_p.sum(-1)
 
