@@ -10,86 +10,95 @@ from combinators.metrics import effective_sample_size
 from experiments.apgs_bshape.gibbs import gibbs_sweeps
 from experiments.apgs_bshape.models import init_models
 
-def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_dir, smoketest, **kwargs):
-#     torch.autograd.set_detect_anomaly(True)
+def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_dir, smoketest, num_objects, **kwargs):
+    # static properties
     device = torch.device(kwargs['device'])
-    sample_size = budget // (num_sweeps + 1)
+    sample_size, sample_dims, batch_dim = budget // (num_sweeps + 1), 0, 1
+    model_version = f'apg-timesteps={timesteps}-objects={num_objects}-sweeps={num_sweeps}-samples={sample_size}'
     assert sample_size > 0, 'non-positive sample size =%d' % sample_size
-    try:
-        mean_shape = torch.load(data_dir + 'mean_shape.pt').to(device)
-    except:
-        print("in", os.getcwd())
-        raise
-    data_paths = []
-    for file in os.listdir(data_dir+'/video/'):
-        if file.endswith('.pt') and \
-        'timesteps=%d-objects=%d' % (timesteps, kwargs['num_objects']) in file:
-            data_paths.append(os.path.join(data_dir+'/video/', file))
-    if len(data_paths) == 0:
-        raise ValueError('Empty data path list.')
-    model_version = 'apg-timesteps=%d-objects=%d-sweeps=%d-samples=%d' % (timesteps, kwargs['num_objects'], num_sweeps, sample_size)
-    models = init_models(mean_shape=mean_shape, **kwargs)
+    print('Training for ' + model_version)
+
+    # initialization
+    mean_shape = get_mean_shape(data_dir, device)
+    data_paths = get_data_paths(data_dir, timesteps, num_objects)
+    models = init_models(mean_shape=mean_shape, num_objects=num_objects, **kwargs)
     optimizer = adam(models.values(), lr=lr, betas=(0.9,0.99))
     apg = gibbs_sweeps(models, num_sweeps, timesteps)
-    print('Training for ' + model_version)
+
+    # prep logging and metrics
+    counter = 0 if smoketest[0] else None
+    log_file = None if smoketest[0] else open('./results/log-' + model_version + '.txt', 'a+')
+    detached_mean = lambda t: t.detach().mean().cpu().item()
     if not os.path.exists('./results/'):
         os.makedirs('./results/')
 
-    counter = 0 if smoketest[0] else None
-    log_file = None if smoketest[0] else open('./results/log-' + model_version + '.txt', 'a+')
-
-    sample_dims, batch_dim = 0, 1
-    detached_mean = lambda t: t.detach().mean().cpu().item()
     ebar = trange(num_epochs)
-
-    def cleanup(start, epoch, group, bars, log_file, metrics, num_batches):
-        [bar.close() for bar in bars]
-        metrics_print = ",  ".join(['%s: %.4f' % (k, v/num_batches) for k, v in metrics.items()])
-        end = time.time()
-        print("(%ds) Epoch=%d, Group=%d, " % (end - start, epoch+1, group+1) + metrics_print, flush=True,
-              **({} if log_file is None else dict(file=log_file)))
-        return metrics_print
-
     for epoch in ebar:
         shuffle(data_paths)
         start = time.time()
+
         bbar = tqdm(enumerate(data_paths), total=len(data_paths))
         for group, data_path in bbar:
-            metrics = {'ess' : 0.0, 'log_p' : 0.0, 'loss' : 0.0}
-            data = torch.load(data_path)
+            metrics, data = dict(ess=0.0, log_p=0.0, loss=0.0), torch.load(data_path)
             N, T, _, _ = data.shape
             assert T == timesteps, 'Data contain %d timesteps while the corresponding arugment in APG is %d.' % (T, timesteps)
             num_batches = 1 if N <= batch_size else data.shape[0] // batch_size
             seq_indices = torch.randperm(N)
+
             tbar = trange(num_batches)
             for b in tbar:
                 optimizer.zero_grad()
                 frames = data[seq_indices[b*batch_size : (b+1)*batch_size]]
                 frames_expand = frames.to(device).repeat(sample_size, 1, 1, 1, 1)
-                out = apg(c={"frames": frames_expand}, sample_dims=sample_dims, batch_dim=1, reparameterized=False)
+                out = apg(c={"frames": frames_expand}, sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=False)
                 out.loss.backward()
                 optimizer.step()
 
-                metrics['ess'] += detached_mean(effective_sample_size(
-                        out.lw.detach(), sample_dims=sample_dims
-                    )) if num_sweeps > 0 else 0
-
+                metrics['ess'] += detached_mean(effective_sample_size(out.lw.detach(), sample_dims=sample_dims)) if num_sweeps > 0 else 0
                 metrics['log_p'] += detached_mean(out.trace.log_joint(sample_dims=sample_dims, batch_dim=batch_dim, reparameterized=False))
                 metrics['loss'] += out.loss.detach().cpu().item()
 
                 if smoketest[0]:
-                    counter+=1
+                    assert counter is not None
+                    counter += 1
                     if counter >= smoketest[1]:
                         cleanup(start, epoch, group, [ebar, bbar, tbar], log_file, metrics, num_batches)
                         return
+
             save_models(models, 'cp-' + model_version)
             if not smoketest[0]:
                 metrics_print = cleanup(start, epoch, group, [], log_file, metrics, num_batches)
                 ebar.set_postfix_str(metrics_print)
 
-    if not smoketest[0]:
+    if log_file is not None:
         log_file.close()
         # return out, frames
+
+def get_mean_shape(data_dir, device):
+    try:
+        return torch.load(data_dir + 'mean_shape.pt').to(device)
+    except:
+        print("in", os.getcwd())
+        raise
+
+def get_data_paths(data_dir, timesteps, num_objects):
+    data_paths = []
+    for file in os.listdir(data_dir+'/video/'):
+        if file.endswith('.pt') and \
+        'timesteps=%d-objects=%d' % (timesteps, num_objects) in file:
+            data_paths.append(os.path.join(data_dir+'/video/', file))
+    if len(data_paths) == 0:
+        raise ValueError('Empty data path list.')
+    return data_paths
+
+def cleanup(start, epoch, group, bars, log_file, metrics, num_batches):
+    [bar.close() for bar in bars]
+    metrics_print = ",  ".join(['%s: %.4f' % (k, v/num_batches) for k, v in metrics.items()])
+    end = time.time()
+    print("(%ds) Epoch=%d, Group=%d, " % (end - start, epoch+1, group+1) + metrics_print, flush=True,
+          **({} if log_file is None else dict(file=log_file)))
+    return metrics_print
+
 
 def test_gibbs_sweep(budget, num_sweeps, timesteps, data_dir, **kwargs):
     device = torch.device(kwargs['device'])
