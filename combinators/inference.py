@@ -6,7 +6,7 @@ from torch import Tensor
 from typing import Any, Tuple, Union, Callable, NamedTuple
 from probtorch.stochastic import Provenance, _RandomVariable
 
-from combinators.out import Out
+from combinators.out import Out, global_store
 from combinators.trace.utils import copytraces, WriteMode, rerun_with_detached_values
 from combinators.program import Conditionable, Program, dispatch, check_passable_kwarg, EvalSubCtx
 
@@ -115,6 +115,9 @@ class Resample(Inf):
         for rs_out_addr in rs_out_addrs:
             assert isinstance(c2[rs_out_addr], torch.Tensor)
             c2[rs_out_addr] = tr_2[rs_out_addr].value
+
+        # additionally, we need to perform an update in the global store (initialized as a noop).
+        global_store.resample_update(q_out.trace, tr_2)
 
         out = Out(
             extras=dict(

@@ -52,7 +52,13 @@ def show_nest(p:PropertyDict, nest_level=0, indent_len:Optional[int]=None, pd_he
 
     return unnested_str + delimiter + nested_str
 
+
 class GlobalStore(dict):
+    # keys, just a smidge more user-friendly than enums
+    PreGet, PostGet = "pre_get", "post_get"
+    PreSet, PostSet = "pre_set", "post_set"
+    ResampleUpdate = "resample_update"
+
     # with no model combinators, a global store makes things less painful
     def __init__(self):
         super().__init__()
@@ -65,23 +71,28 @@ class GlobalStore(dict):
             pre_set=noop,
             post_get=noop,
             post_set=noop,
+            resample_update=noop,
         )
 
     def __getitem__(self, k):
-        self._hooks['pre_get'](k)
+        self._hooks['pre_get'](self, k)
         v = super().__getitem__(k)
-        self._hooks['post_get'](k, v)
-        return v
+        o = self._hooks['post_get'](self, k, v)
+        return v if o is None else o
 
     def set_hook(self, ty, f):
         ty_ = ty.split("_")
-        assert len(ty_) == 2 and ty_[0] in {'pre', 'post'} and ty_[1] in {'get', 'set'}
+        assert ty in self._hooks.keys()
         self._hooks[ty] = f
 
     def __setitem__(self, k, v):
-        self._hooks['pre_set'](k, v)
+        self._hooks['pre_set'](self, k, v)
         super().__setitem__(k, v)
-        self._hooks['post_set'](k, v)
+        self._hooks['post_set'](self, k, v)
+        return None
+
+    def resample_update(self, trace, resampled):
+        self._hooks['resample_update'](self, trace, resampled)
         return None
 
     def __repr__(self):
