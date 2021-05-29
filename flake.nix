@@ -10,7 +10,7 @@
     mach-nix.inputs.flake-utils.follows = "flake-utils";
     mach-nix.inputs.nixpkgs.follows = "nixpkgs";
 
-    probtorch.url = "github:stites/probtorch/combinators-dev";
+    probtorch.url = "github:probtorch/probtorch/combinators-dev";
     probtorch.flake = false;
   };
 

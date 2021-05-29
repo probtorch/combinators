@@ -73,15 +73,15 @@
     "probtorch": {
       "flake": false,
       "locked": {
-        "lastModified": 1621444347,
-        "narHash": "sha256-fsmoTOm7O0p5pmLv8hPZsYtYw8old3IPm3+5mr0Dkvg=",
-        "owner": "stites",
+        "lastModified": 1621889065,
+        "narHash": "sha256-LHjs/TC3DASgVibQPpxLZ3i/wowmqpYl9B792UFrp8w=",
+        "owner": "probtorch",
         "repo": "probtorch",
-        "rev": "671332656cedc3a0bc9f19d4c12d4805d83243bc",
+        "rev": "632dc382ef45cb6de1009d268d87da3c940bbc79",
         "type": "github"
       },
       "original": {
-        "owner": "stites",
+        "owner": "probtorch",
         "ref": "combinators-dev",
         "repo": "probtorch",
         "type": "github"
