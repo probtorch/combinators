@@ -1,7 +1,6 @@
 import torch.nn.functional as F
 from combinators import Program, Compose, Propose, Resample, Extend
-from experiments.apgs_bshape.models import apg_ix
-
+from .utils import apg_ix
 
 def loss_is(out, total_loss):
     jkwargs = dict(sample_dims=0, batch_dim=1, reparameterized=False)

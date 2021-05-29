@@ -3,22 +3,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from probtorch.stochastic import Provenance, RandomVariable
-from combinators.program import Program
 from torch.distributions.normal import Normal
 from torch.distributions.bernoulli import Bernoulli
-from collections import namedtuple
 from experiments.apgs_bshape.affine_transformer import Affine_Transformer
+from combinators import Program
 
-apg_ix = namedtuple("apg_ix", ["t", "sweep", "dir"])
-
-def check_dir(ix):
-    if ix.dir not in ["forward", "reverse"]:
-        raise ValueError("Kernel must be run either forward or reverse")
-
-def is_forward(ix):
-    check_dir(ix)
-    return ix.dir == "forward"
-
+from .utils import global_store, key, is_forward
 
 def init_models(
     frame_pixels,
