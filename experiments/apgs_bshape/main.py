@@ -9,12 +9,18 @@ from combinators.metrics import effective_sample_size
 
 from experiments.apgs_bshape.gibbs import gibbs_sweeps
 from experiments.apgs_bshape.models import init_models
+def get_model_version(timesteps, num_objects, num_sweeps, sample_size, use_markov_blanket):
+    model_version = f'apg-timesteps={timesteps}-objects={num_objects}-sweeps={num_sweeps}-samples={sample_size}'
+    if use_markov_blanket:
+        return model_version + '-with_opt'
+    else:
+        return model_version
 
-def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_dir, smoketest, num_objects, **kwargs):
+def train_apg(num_epochs, lr, batch_size, budget, num_sweeps, timesteps, data_dir, smoketest, num_objects, use_markov_blanket, **kwargs):
     # static properties
     device = torch.device(kwargs['device'])
     sample_size, sample_dims, batch_dim = budget // (num_sweeps + 1), 0, 1
-    model_version = f'apg-timesteps={timesteps}-objects={num_objects}-sweeps={num_sweeps}-samples={sample_size}'
+    model_version = get_model_version(timesteps, num_objects, num_sweeps, sample_size, use_markov_blanket)
     assert sample_size > 0, 'non-positive sample size =%d' % sample_size
     print('Training for ' + model_version)
 
@@ -130,6 +136,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', default=10, type=int)
     parser.add_argument('--budget', default=120, type=int)
     parser.add_argument('--num_sweeps', default=5, type=int)
+    parser.add_argument('--use_markov_blanket', default=False, type=bool)
     # network config
     parser.add_argument('--num_hidden_digit', default=400, type=int)
     parser.add_argument('--num_hidden_coor', default=400, type=int)
@@ -144,7 +151,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     debug.seed(args.seed)
-
     if args.test:
         out, frames = test_gibbs_sweep(
             budget=args.budget,
@@ -175,6 +181,7 @@ if __name__ == '__main__':
                   z_what_dim=args.z_what_dim,
                   num_objects=args.num_objects,
                   device=args.device,
+                  use_markov_blanket=args.use_markov_blanket,
                   smoketest=(args.smoketest, args.iterations),
                   )
     print("done!")
