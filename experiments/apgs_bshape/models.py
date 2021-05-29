@@ -1,4 +1,5 @@
 import math
+import weakref
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -37,7 +38,7 @@ def init_models(
         AT=AT,
         device=device,
         reparameterized=reparameterized,
-        num_objects=num_objects
+        num_objects=num_objects,
     ).to(device)
 
     models["enc_coor"] = Enc_coor(
@@ -108,13 +109,16 @@ class Enc_coor(Program):
             # FIXME: Figure out if we can use cheaper expand here
             conv_kernel = self.mean_shape.repeat(S, B, self.K, 1, 1)
         else:
-            z_what_val = c["z_what_%d" % (ix.sweep - 1)]
+            z_what_val = c[key.z_what(ix.sweep - 1)]
             conv_kernel = self.get_dec().get_conv_kernel(z_what_val)
 
         _, _, K, DP, _ = conv_kernel.shape
         frame_left = frames[:, :, ix.t, :, :]
 
-        q_mean, q_std = torch.zeros(S, B, self.K, 2).to(frames.device), torch.zeros(S, B, self.K, 2).to(frames.device)
+        q_mean, q_std = (
+            torch.zeros(S, B, self.K, 2).to(frames.device),
+            torch.zeros(S, B, self.K, 2).to(frames.device),
+        )
         z_where_t = torch.zeros(S, B, self.K, 2).to(frames.device)
 
         # K objects in frame
@@ -141,7 +145,7 @@ class Enc_coor(Program):
             else:
                 # retreive z_where
                 z_where_val_k = trace._cond_trace[
-                    "z_where_%d_%d" % (ix.t, ix.sweep - 1)
+                    key.z_where(ix.t, ix.sweep - 1)
                 ].value[:, :, k, :]
 
             recon_k = (
@@ -160,24 +164,26 @@ class Enc_coor(Program):
             # For performace reasons we want to add all K objects as one RV, hence we need to cheat here:
             # We sampled all K RVs manually in for-loop above, and "simulate" a combinators sampling operation here.
             # if ix.t <= 1 and ix.sweep > 0:
-            trace._inject(
-                RandomVariable(
-                    Normal(loc=q_mean, scale=q_std),
-                    value=z_where_t,
-                    provenance=Provenance.SAMPLED,
-                    reparameterized=self.reparameterized,
-                ),
-                name="z_where_%d_%d" % (ix.t, ix.sweep),
+            trace.normal(
+                loc=q_mean,
+                scale=q_std,
+                value=z_where_t,
+                provenance=Provenance.SAMPLED,
+                reparameterized=self.reparameterized,
+                name=key.z_where(ix.t, ix.sweep),
             )
+
+            global_store[key.z_where(ix.t, ix.sweep)] = weakref.ref(z_where_t)
+
             # We need this because in initial IS step this is not run as a "kernel"
             if ix.sweep == 0:
-                return {**c, "z_where_%d_%d" % (ix.t, ix.sweep): z_where_t}
+                return {**c, key.z_where(ix.t, ix.sweep): z_where_t}
             return c
         else:
             trace.normal(
                 loc=q_mean,
                 scale=q_std,
-                name="z_where_%d_%d" % (ix.t, ix.sweep - 1),
+                name=key.z_where(ix.t, ix.sweep - 1),
                 reparameterized=self.reparameterized,
             )
             return None
@@ -210,11 +216,11 @@ class Enc_digit(Program):
         # z_where are fetched from the input in the for loop below
 
         sample_shape = frames.shape[:3]
-        data_shape = c["z_where_%d_%d" % (0, ix.sweep)].shape[-2:]
+        data_shape = c[key.z_where(0, ix.sweep)].shape[-2:]
         z_where = torch.zeros(*sample_shape, *data_shape, device=frames.device)
 
         for t in range(frames.shape[2]):
-            z_where[:, :, t, :, :] = c["z_where_%d_%d" % (t, ix.sweep)]
+            z_where[:, :, t, :, :] = c[key.z_where(t, ix.sweep)]
 
         cropped = self.AT.frame_to_digit(frames=frames, z_where=z_where)
         cropped = torch.flatten(cropped, -2, -1)
@@ -222,15 +228,18 @@ class Enc_digit(Program):
         q_mu = self.enc_digit_mean(hidden)
         q_std = self.enc_digit_log_std(hidden).exp()
 
-
         sweep_ix = ix.sweep if is_forward(ix) else (ix.sweep - 1)
-        trace.normal(
-                loc=q_mu,
-                scale=q_std,
-                name=f"z_what_{sweep_ix}",
-                reparameterized=self.reparameterized,
-            )
+        z_what = trace.normal(
+            loc=q_mu,
+            scale=q_std,
+            name=key.z_what(sweep_ix),
+            reparameterized=self.reparameterized,
+        )
+        if is_forward(ix):
+            global_store[key.z_what(sweep_ix)] = weakref.ref(z_what)
+
         return None
+
 
 class _Decoder(Program):
     def __init__(
@@ -281,51 +290,50 @@ class _Decoder(Program):
         # 2. from sweep-1 for future timesteps, i.e. t > ix.t
         ##################################################################
         data_shape = (self.K, *self.prior_where0_mu.shape)
-        z_where_vals = torch.zeros(*sample_shape, *data_shape, device=self.prior_where0_mu.device)
+        z_where_vals = torch.zeros(
+            *sample_shape, *data_shape, device=self.prior_where0_mu.device
+        )
+
         for t in range(T):
             if t <= ix.t:
                 if t == 0:
                     trace.normal(
                         loc=self.prior_where0_mu,
                         scale=self.prior_where0_Sigma,
-                        name="z_where_%d_%d" % (0, ix.sweep),
+                        name=key.z_where(0, ix.sweep),
                         reparameterized=self.reparameterized,
                     )
                 else:
                     trace.normal(
-                        loc=trace._cond_trace[
-                            "z_where_%d_%d" % (t - 1, ix.sweep)
-                        ].value,
+                        loc=global_store[key.z_where(t - 1, ix.sweep)](),
                         scale=self.prior_wheret_Sigma,
-                        name="z_where_%d_%d" % (t, ix.sweep),
+                        name=key.z_where(t, ix.sweep),
                         reparameterized=self.reparameterized,
                     )
                 z_where_vals[:, :, t, :, :] = trace[
-                    "z_where_%d_%d" % (t, ix.sweep)
+                    key.z_where(t, ix.sweep)
                 ].value
 
             elif t == (ix.t + 1):
                 trace.normal(
-                    loc=trace._cond_trace["z_where_%d_%d" % (ix.t, ix.sweep)].value,
+                    loc=global_store[key.z_where(ix.t, ix.sweep)](),
                     scale=self.prior_wheret_Sigma,
-                    name="z_where_%d_%d" % (t, ix.sweep - 1),
+                    name=key.z_where(t, ix.sweep - 1),
                     reparameterized=self.reparameterized,
                 )
                 z_where_vals[:, :, t, :, :] = trace[
-                    "z_where_%d_%d" % (t, ix.sweep - 1)
+                    key.z_where(t, ix.sweep - 1)
                 ].value
 
             else:
                 trace.normal(
-                    loc=trace._cond_trace[
-                        "z_where_%d_%d" % (t - 1, ix.sweep - 1)
-                    ].value,
+                    loc=global_store[key.z_where(ix.t, ix.sweep)](),
                     scale=self.prior_wheret_Sigma,
-                    name="z_where_%d_%d" % (t, ix.sweep - 1),
+                    name=key.z_where(t, ix.sweep - 1),
                     reparameterized=self.reparameterized,
                 )
                 z_where_vals[:, :, t, :, :] = trace[
-                    "z_where_%d_%d" % (t, ix.sweep - 1)
+                    key.z_where(t, ix.sweep - 1)
                 ].value
         return z_where_vals
 
@@ -337,21 +345,19 @@ class _Decoder(Program):
             z_what_index = ix.sweep - 1
         else:
             raise ValueError(
-                "You should not call the decoder when t=%d and sweep=%d"
-                % (ix.t, ix.sweep)
+                f"You should not call the decoder when t={ix.t} and sweep={ix.sweep}"
             )
 
         z_what_val = trace.normal(
             loc=self.prior_what_mu,
             scale=self.prior_what_std,
-            name="z_what_%d" % (z_what_index),
+            name=key.z_what(z_what_index),
             reparameterized=self.reparameterized,
         )
         return z_what_index, z_what_val
 
 
 class DecoderFull(_Decoder):
-
     def model(self, trace, c, ix, EPS=1e-9):
         frames = c["frames"]
         _, _, T, FP, _ = frames.shape
@@ -378,20 +384,17 @@ class DecoderFull(_Decoder):
             reparameterized=self.reparameterized,
         )
 
-        return {
-            **{"z_what_%d" % (z_what_index): z_what_val, "frames": c["frames"]},
-            **{
-                "z_where_%d_%d"
-                % (t, ix.sweep): trace._cond_trace[
-                    "z_where_%d_%d" % (t, ix.sweep)
-                ].value
-                for t in range(min(ix.t + 1, T))
-            },
+        z_wheres = {
+            key.z_where(t, ix.sweep): global_store[key.z_where(t, ix.sweep)]()
+            for t in range(min(ix.t + 1, T))
         }
+        z_what = {key.z_what(z_what_index): z_what_val}
+        frame = {"frames": c["frames"]}
+        return {**z_wheres, **z_what, **frame}
+
 
 class DecoderMarkovBlanket(_Decoder):
-
-    def model(self, trace, c, ix, EPS=1e-9):
+   def model(self, trace, c, ix, EPS=1e-9):
         frames = c["frames"]
         _, _, T, FP, _ = frames.shape
         ##################################################################
@@ -426,7 +429,7 @@ class DecoderMarkovBlanket(_Decoder):
         # optimization for z_wheres
         if ix.t == 0:
             z_where_vals = trace._cond_trace[
-                "z_where_%d_%d" % (0, ix.sweep)
+                key.z_where(0, ix.sweep)
             ].value.unsqueeze(2)
             digit_mean = self.get_conv_kernel(z_what_val, detach=False)
             recon_frames = torch.clamp(
