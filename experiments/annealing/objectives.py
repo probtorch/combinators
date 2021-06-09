@@ -112,6 +112,76 @@ def nvo_rkl(
     loss = kl_term + _eval0(grad_log_Z2_term) + baseline
     return loss
 
+def nvo_rkl_mod() -> Metric:
+    return ("nvo_rkl_mod", _nvo_rkl_mod)
+
+def _nvo_rkl_mod(
+    lw: Tensor,  # Log cumulative weight, this is not detached yet - see if it bites Babak and Hao
+    lv: Tensor,
+    proposal_trace: Trace,
+    target_trace: Trace,
+    scheduled_outs: ScheduledOuts,
+    batch_dim=1,
+    sample_dim=0,
+    reducedims=None,
+    **kwargs,
+) -> Tensor:
+    """
+    Metric: KL(g_k-1(z_k-1)/Z_k-1 q_k(z_k | z_k-1) || g_k(z_k)/Z_k-1 r_k(z_k-1 | z_k)) = Exp[-(dlZ + lv)]
+    """
+    if reducedims is None:
+        reducedims = (sample_dim,)
+
+    rv_proposal = _unpack(proposal_trace, 0)
+    rv_target = _unpack(target_trace, 0)
+
+    lw = lw.detach()
+    # ldZ = Z_{k} / Z_{k-1}
+    # Chat with Hao --> estimating dZ might be instable when resampling
+    ldZ = lv.detach().logsumexp(dim=sample_dim) - math.log(lv.shape[sample_dim])
+    # TODO: set ldZ to 0 if RandomVariable similar to grad  terms
+    f = -(lv - ldZ)
+
+    grad_log_Z1_term = _estimate_mc(rv_proposal._log_prob,
+                                    lw,
+                                    sample_dim=sample_dim,
+                                    reducedims=reducedims,
+                                    keepdims=False,
+                                    ) if not isinstance(rv_proposal, probtorch.RandomVariable) else torch.tensor(0.)
+    grad_log_Z2_term = _estimate_mc(_eval_nrep(rv_target)._log_prob,
+                                    lw+lv.detach(),
+                                    sample_dim=sample_dim,
+                                    reducedims=reducedims,
+                                    keepdims=False,
+                                    ) if not isinstance(rv_target, probtorch.RandomVariable) else torch.tensor(0.)
+
+    if rv_proposal.generator.reparameterized:
+        # Compute reparameterized gradient
+        kl_term = _estimate_mc(f,
+                               lw,
+                               sample_dim=sample_dim,
+                               reducedims=reducedims,
+                               keepdims=False,
+                               )
+        return kl_term - _eval0(grad_log_Z1_term) + _eval0(grad_log_Z2_term)
+
+    baseline = _estimate_mc(f.detach(),
+                            lw,
+                            sample_dim=sample_dim,
+                            reducedims=reducedims,
+                            keepdims=False,
+                            )
+
+    kl_term = _estimate_mc((f - baseline) * _eval1(rv_proposal._log_prob - grad_log_Z1_term) - _eval0(rv_proposal._log_prob),
+                           lw,
+                           sample_dim=sample_dim,
+                           reducedims=reducedims,
+                           keepdims=False,
+                           )
+
+    loss = kl_term + _eval0(grad_log_Z2_term) + baseline
+    return loss
+
 
 def _eval0(e):
     return e - e.detach()
