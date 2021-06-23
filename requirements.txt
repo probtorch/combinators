@@ -2,6 +2,7 @@ torch==1.7.1
 probtorch
 numpy # don't forget mkl
 tqdm
+scipy
 
 # testing
 pytest

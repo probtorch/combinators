@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 import torch
-from torch import Tensor
+import math
+from torch import nn, Tensor, optim
 from tqdm import trange
 from typing import List
 from matplotlib import pyplot as plt
 from logging import getLogger
 
-from combinators import adam, autodevice
+from functools import partial
+plt.rcParams['figure.dpi'] = 300
+plt.rcParams['savefig.dpi'] = 300
+
+from combinators import adam, ppr
+from combinators import autodevice, kw_autodevice
 from combinators import Propose, Extend, Compose, Resample
 from combinators import effective_sample_size, log_Z_hat
 from combinators.utils import save_models, load_models, models_as_dict
 
 from experiments.annealing.models import paper_model
-from experiments.annealing.objectives import nvo_rkl, nvo_avo, stl_trace
+from experiments.annealing.objectives import nvo_rkl, nvo_rkl_mod, nvo_avo, stl_trace
 
 logger = getLogger(__file__)
 
@@ -78,6 +84,7 @@ def plot_sample_hist(ax, samples, sort=True, bins=50, range=None, weight_cm=Fals
     if weight_cm:
         raise NotImplemented()
     else:
+        ax.grid(False)
         ax.imshow(mz, **kwargs)
 
 def plot(losses, ess, lZ_hat, samples, filename=None):
@@ -228,11 +235,13 @@ if __name__ == '__main__':
         objective = nvo_avo
     elif args.objective == "nvo_rkl":
         objective = nvo_rkl
+    elif args.objective == "nvo_rkl_mod":
+        objective = nvo_rkl_mod
     else:
         raise TypeError("objective is one of: {}".format(", ".join(["nvo_avo", "nvo_rkl"])))
 
-    tt = True
-    save_plots = False
+    tt = False
+    save_plots = resample and optimize_path and K == 8
     filename="nvi{}{}_{}_S{}_K{}_I{}_seed{}".format(
         "r" if resample else "",
         "s" if optimize_path else "",
@@ -283,3 +292,4 @@ if __name__ == '__main__':
             plot(losses, ess, lZ_hat, samples_test, filename=filename)
 
     print("done!")
+

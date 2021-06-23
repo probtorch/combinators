@@ -9,7 +9,6 @@
     mach-nix.url = "github:DavHau/mach-nix";
     mach-nix.inputs.flake-utils.follows = "flake-utils";
     mach-nix.inputs.nixpkgs.follows = "nixpkgs";
-
     probtorch.url = "github:probtorch/probtorch/combinators-dev";
     probtorch.flake = false;
   };
@@ -32,13 +31,12 @@
           #src = ./.;
           requirements = (builtins.readFile ./requirements.txt) + lib.strings.concatStringsSep "\n" ([
           ] ++ (lib.optionals with-simulator ["imageio" "scikit-image"])
-            ++ (lib.optionals with-jupyter ["jupyterlab"])
+            ++ (lib.optionals with-jupyter ["jupyterlab" "ipywidgets" "seaborn"])
             ++ (lib.optionals dev-profile ["filprofiler"]))
             ;
           packagesExtra = [
             probtorch
           ];
-
           providers = {
             _default = "nixpkgs,wheel";
             torch = "wheel";
