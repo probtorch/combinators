@@ -88,10 +88,7 @@ def nvo_rkl(
     loss = kl_term + _eval0(grad_log_Z2_term) + baseline
     return loss
 
-def nvo_rkl_mod() -> Metric:
-    return ("nvo_rkl_mod", _nvo_rkl_mod)
-
-def _nvo_rkl_mod(
+def nvo_rkl_mod(
     lw: Tensor,  # Log cumulative weight, this is not detached yet - see if it bites Babak and Hao
     lv: Tensor,
     proposal_trace: Trace,

@@ -21,98 +21,20 @@ in
 mach-nix.mkPython {
   requirements = lib.strings.concatStringsSep "\n" [
     (builtins.readFile ./requirements.txt)
-    "hydra-core"
-    "hydra_colorlog"
-    "jupyterlab"
-    "jedi==0.17.2"
   ];
 
   packagesExtra = [
     ./probtorch # local branch starting from nvi-dev on probtorch
     # "https://github.com/probtorch/probtorch/tarball/1a9af26"
-    hydra-core
-    mach-nix.nixpkgs.qt512.full
   ];
-  providers = let fast = false; in {
-    # disallow wheels by default
-    _default = "wheel,nixpkgs,sdist";
-  } // {
-    torch = "wheel"; # allow wheels only for torch
-    torchvision = "wheel";
-    Sphinx = "wheel";
-    protobuf = "wheel"; # otherwise infinite recursion..
-    jupyterlab = "wheel";
-    anyio = "wheel";
-    mypy = "wheel"; # must be up-to-date
-    jedi = "wheel";
-  } // {
-    antlr4-python3-runtime = "nixpkgs";
-    tornado = "nixpkgs";
-    tensorboard = "nixpkgs";
-    jinja2 = "nixpkgs";
-    six = "nixpkgs";
-    requests = "nixpkgs";
-    urllib3 = "nixpkgs";
-    pyzmq = "nixpkgs";
-    prometheus-client = "nixpkgs";
-    packaging = "nixpkgs";
-    pygments = "nixpkgs";
-    traitlets = "nixpkgs";
-    python-dateutil = "nixpkgs";
-    typing-extensions ="nixpkgs";
-    mypy-extensions ="nixpkgs";
-    typed-ast ="nixpkgs";
-    pillow = "nixpkgs";
-    tqdm = "nixpkgs";
-    typeguard = "nixpkgs";
 
-    joblib = "nixpkgs";
-    threadpoolctl = "nixpkgs";
-
-    matplotlib = "wheel";
-      kiwisolver = "nixpkgs";
-      certifi = "nixpkgs";
-      cycler = "nixpkgs";
-      pyparsing = "nixpkgs";
-
-    pytz = "nixpkgs";
-    pytest-mock = "nixpkgs";
-    pytest = "nixpkgs";
-      iniconfig = "nixpkgs";
-      pluggy = "nixpkgs";
-      py = "nixpkgs";
-      attrs = "nixpkgs";
-      toml = "nixpkgs";
-
-  } // (lib.optionalAttrs (use-nix-science) {
-    numpy = "nixpkgs";
-    scipy = "nixpkgs";
-    scikit-learn = "nixpkgs";
-    scikit-image = "nixpkgs";
-    seaborn = "nixpkgs";
-    pandas = "nixpkgs";
-    matplotlib = "nixpkgs";
-
-#     tensorboard = "nixpkgs";
-#       pywavelets = "nixpkgs";
-#       tifffile = "nixpkgs";
-#       imageio = "nixpkgs";
-#       networkx = "nixpkgs";
-#       decorator = "nixpkgs";
-#       werkzeug = "nixpkgs";
-       six = "nixpkgs";
-#       requests = "nixpkgs";
-#       abs-py = "nixpkgs";
-#       markdown = "nixpkgs";
-#       google-auth = "nixpkgs";
-#       cachetools = "nixpkgs";
-#       rsa = "nixpkgs";
-#       pyasn1 = "nixpkgs";
-#       pyasn1-modules = "nixpkgs";
-#       setuptools = "nixpkgs";
-#       google-auth-oauthlib = "nixpkgs";
-#       requests-oauthlib = "nixpkgs";
-#       oauthlib = "nixpkgs";
-#       grpcio = "nixpkgs";
-  });
+          providers = {
+            _default = "wheel";
+            torch = "wheel";
+            tqdm = "wheel";
+            numpy = "wheel";
+            scipy = "wheel";
+            torchvision = "wheel";
+            protobuf = "wheel"; # ...otherwise infinite recursion.
+          };
 }

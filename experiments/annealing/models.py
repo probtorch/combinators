@@ -16,7 +16,6 @@ from combinators.stochastic import (ImproperRandomVariable, Provenance,
 from combinators.tensor.utils import autodevice, kw_autodevice
 from matplotlib import pyplot as plt
 from torch import Tensor, distributions, nn
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import trange
 
 
