@@ -16,7 +16,7 @@ class Conditionable(ABC):
         self._cond_trace: Optional[Trace] = None
 
 
-class EvalSubCtx(object):
+class WithSubstitution(object):
     def __init__(self, program: Conditionable, subtitution_trace: Optional[Trace]=None) -> None:
         self.program = program
         # FIXME: do we actually need a copy of the trace? Might cause a dangling ref.

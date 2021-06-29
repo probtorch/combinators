@@ -8,7 +8,7 @@ from probtorch.stochastic import Provenance, _RandomVariable
 
 from combinators.out import Out, global_store
 from combinators.trace.utils import copytraces, WriteMode, rerun_with_detached_values
-from combinators.program import Conditionable, Program, dispatch, check_passable_kwarg, EvalSubCtx
+from combinators.program import Conditionable, Program, dispatch, check_passable_kwarg, WithSubstitution
 
 class Inf(ABC):
     """
@@ -175,7 +175,7 @@ class Extend(Inf, Conditionable):
         )
         inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
-        with EvalSubCtx(self.p, self._cond_trace), EvalSubCtx(self.f, self._cond_trace):
+        with WithSubstitution(self.p, self._cond_trace), WithSubstitution(self.f, self._cond_trace):
             p_out = dispatch(self.p, c, **inf_kwargs, **shared_kwargs)
             f_out = dispatch(self.f, p_out.output, **inf_kwargs, **shared_kwargs)
 
@@ -343,7 +343,7 @@ class Propose(Inf):
 
         q_out = dispatch(self.q, c, **inf_kwargs, **shared_kwargs)
 
-        with EvalSubCtx(self.p, q_out.trace):
+        with WithSubstitution(self.p, q_out.trace):
             p_out = dispatch(self.p, c, **inf_kwargs, **shared_kwargs)
 
         rho_1 = set(q_out.trace.keys())
