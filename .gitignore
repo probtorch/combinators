@@ -148,3 +148,6 @@ icml/
 pyrightconfig.json
 fil-result
 /.direnv/
+shatest.py
+tags.lock
+tags.temp
