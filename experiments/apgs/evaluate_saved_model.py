@@ -5,8 +5,8 @@ import torch
 import numpy as np
 from combinators.utils import load_models
 
-from experiments.apgs_bshape.gibbs import gibbs_sweeps
-from experiments.apgs_bshape.models import init_models
+from experiments.apgs.gibbs import gibbs_sweeps
+from experiments.apgs.models import init_models
 
 data_dir = './dataset/'
 timesteps = 10
@@ -30,7 +30,7 @@ use_markov_blanket = False
 device = torch.device(device)
 sample_size = budget // (num_sweeps + 1)
 assert sample_size > 0, 'non-positive sample size =%d' % sample_size
-mean_shape = torch.load(data_dir + 'mean_shape.pt').to(device)    
+mean_shape = torch.load(data_dir + 'mean_shape.pt').to(device)
 data_paths = []
 for file in os.listdir(data_dir+'/video/'):
     if file.endswith('.pt') and \
@@ -69,7 +69,7 @@ def get_samples(out, sweeps, T):
 rs, ws = get_samples(out, num_sweeps, timesteps)
 
 # Visualize samples
- 
+
 from experiments.apgs_bshape.utils import viz_samples
 viz_samples(frames, rs, ws, num_sweeps, num_objects, shape_pixels, fs=1, save=True)
 
@@ -77,11 +77,11 @@ viz_samples(frames, rs, ws, num_sweeps, num_objects, shape_pixels, fs=1, save=Tr
 # # Compute joint across all methods
 # from apgs.bshape.evaluation import density_all_instances
 # from random import shuffle
-# 
+#
 # sample_size, num_sweeps = 20, 5
 # lf_step_size, lf_num_steps, bpg_factor = 5e-5, [100], 1
 # density_all_instances(models, AT, data_paths, sample_size, num_objects, z_where_dim, z_what_dim, num_sweeps, lf_step_size, lf_num_steps, bpg_factor, CUDA, device)
-# 
+#
 # from apgs.bshape.evaluation import budget_analysis, plot_budget_analyais_results
 # data = torch.from_numpy(np.load(data_dir + '%dobjects/test/ob-1.npy' % num_objects)).float()
 # budget = 1000

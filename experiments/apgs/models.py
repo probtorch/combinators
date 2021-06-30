@@ -6,9 +6,9 @@ import torch.nn.functional as F
 from probtorch.stochastic import Provenance, RandomVariable
 from torch.distributions.normal import Normal
 from torch.distributions.bernoulli import Bernoulli
-from experiments.apgs_bshape.affine_transformer import Affine_Transformer
 from combinators import Program
 
+from experiments.apgs.affine_transformer import Affine_Transformer
 from .utils import global_store, key, is_forward
 
 def init_models(

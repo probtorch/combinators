@@ -7,8 +7,9 @@ from random import shuffle
 from combinators import save_models, adam, debug
 from combinators.metrics import effective_sample_size
 
-from experiments.apgs_bshape.gibbs import gibbs_sweeps
-from experiments.apgs_bshape.models import init_models
+from experiments.apgs.gibbs import gibbs_sweeps
+from experiments.apgs.models import init_models
+
 def get_model_version(timesteps, num_objects, num_sweeps, sample_size, use_markov_blanket):
     model_version = f'apg-timesteps={timesteps}-objects={num_objects}-sweeps={num_sweeps}-samples={sample_size}'
     if use_markov_blanket:
