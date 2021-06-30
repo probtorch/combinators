@@ -1,32 +1,17 @@
-torch==1.7.1   # TODO 1.8.x which contains one migration bug
+torch==1.7.1
 probtorch
 numpy # don't forget mkl
 tqdm
 
 # testing
 pytest
-pytest-mock
 pytest-cov
 hypothesis
 typeguard
-# mypy # : ( mypy, why do you fail me so often?
-
-# docs
-# Sphinx
-
-# # maybe optional
-# pandas
-# scipy
-
-# # dataset dependencies
-# torchvision
-# scikit-image
-# scikit-learn
 
 # debugging
 ipdb
 tensorboard
 
-# visualization / notebooks
+# visualization
 matplotlib
-#ipywidgets

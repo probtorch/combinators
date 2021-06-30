@@ -1,3 +1,0 @@
-[submodule "probtorch"]
-	path = probtorch
-	url = git@github.com:stites/probtorch.git

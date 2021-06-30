@@ -1,5 +1,5 @@
 ##
-# Combinators makefile
+# Makefile, largely used for running experiments and kicking off fil memory profiling
 #
 # @file
 # @version 0.1
@@ -10,12 +10,9 @@ PYTEST := pytest
 GIT := git
 ITERATIONS :=
 
-all: experiments test
+all: experiments
 
-test:
-	$(PYTEST) ./tests
-
-experiments: ex/annealing ex/apgs_bshape
+experiments: ex/annealing ex/apgs
 
 .ONESHELL:
 ex/%:
@@ -32,7 +29,7 @@ endif
 		echo "./experiments/$(@F) is not an experiment!"
 		echo
 		echo "please choose from one of:"
-		echo "    " annealing apgs_bshape
+		echo "    " annealing apgs
 	fi
 
 profile/%:

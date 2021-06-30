@@ -1,0 +1,19 @@
+* Combinators
+
+Code for /Learning Proposals for Probabilistic Programs with Inference
+Combinators/ in ~combinators/inference.py~ and ~combinators/program.py~
+
+To cite, please use:
+
+#+begin_src bibtex
+@inproceedings{stites-zimmerman2021LearningProposals,
+  author       ={Sam Stites and Heiko Zimmerman and Hao Wu and Eli Sennesh and Jan-Willem van de Meent  },
+  shortauthor  ={Stites and Zimmermann},
+  title        ={Learning Proposals for Probabilistic Programs with Inference Combinators},
+  year         ={2021},
+  eprint       ={2103.00668},
+  archivePrefix={arXiv},
+  primaryClass ={stat.ML}
+  note         ={Accepted to UAI 2021}
+}
+#+end_src

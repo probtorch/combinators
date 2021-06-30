@@ -1,0 +1,8 @@
+#+TITLE: Development
+
+* Nix and python
+To get access to the binary cache, use: `cachix use combinators`.
+
+To access the development shell, a flake is provided which can be accessed via
+`nix develop`. You can, experimentally access this without nix via pip (see
+[https://github.com/numtide/devshell](`devshell`)), but this is not tested.
