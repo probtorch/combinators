@@ -1,6 +1,6 @@
 import torch
 from combinators.inference import Program, Compose, Extend, Propose
-import combinators.debug as debug
+import combinators.utils as debug
 from pytest import mark
 
 class Simple1(Program):
@@ -76,7 +76,7 @@ def test_propose():
     assert set(out.q_out.trace.keys()) == {"z_1", "z_2", "x_1", "x_2"}
     assert set(out.p_out.trace.keys()) == {"z_2", "z_3", "x_2", "x_3"}
 
-    # Compute stuff the same way as in the propose combinator to ensure numeric reproduceability 
+    # Compute stuff the same way as in the propose combinator to ensure numeric reproduceability
     lu_1 = out.q_out.trace.log_joint(nodes=nodes)
     lu_star = torch.zeros(1)
     lw_1 = out.q_out.log_weight

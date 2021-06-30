@@ -1,5 +1,5 @@
 from pytest import fixture
-import combinators.debug as debug
+import combinators.utils as debug
 
 @fixture
 def is_smoketest():
