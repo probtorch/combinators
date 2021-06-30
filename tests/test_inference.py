@@ -65,6 +65,7 @@ def test_cond_eval():
     assert (lw_out == s2_out.log_weight).all(), "lw_out"
     assert len(set({'z_1', 'x_1'}).intersection(set(s2_out.trace.keys()))) == 0, "tr_out"
 
+@mark.skip()
 def test_propose():
     out = Propose(p=Simple2(), q=Simple1())(None, _debug=True)
 
@@ -92,6 +93,7 @@ def test_compose():
     assert torch.equal(out.q2_out.log_weight, out.q2_out.trace.log_joint(nodes={'x_3'}))
     assert torch.equal(out.log_weight, out.q1_out.log_weight + out.q2_out.log_weight)
 
+@mark.skip()
 def test_extend_unconditioned():
     out = Extend(p=Simple2(), f=Simple4())(None, _debug=True)
     assert set(out.trace.keys()) == {'x_2', 'x_3', 'z_2', 'z_3'}
@@ -126,6 +128,7 @@ def test_extend_conditioned():
     lw_out = lw_1 + lu_2
     assert lw_out == p_out.log_weight, "lw_out"
 
+@mark.skip()
 def test_extend_propose():
     debug.seed(7)
     Q = Compose(q1=Simple1(), q2=Simple3())

@@ -1,10 +1,12 @@
-#!/usr/bin/env python3
-
 ''' TODO: encode these into more general tests '''
+#!/usr/bin/env python3
+from pytest import mark
+
 from experiments.annealing.models import *
 from experiments.annealing.main import *
 from experiments.annealing.objectives import *
 
+@mark.skip()
 def test_K_step_nvi(K, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=False, num_seeds=10):
     out = paper_model(K)
     targets, forwards, reverses = [[m.to(autodevice()) for m in out[n]] for n in ['targets', 'forwards', 'reverses']]
@@ -54,11 +56,13 @@ def test_K_step_nvi(K, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resampl
             assert (valeq(target_trace_manual, stats_nvi_run["target_trace"][-(k+1)])), "proposal_traces not equal {}".format(k)
             assert (lw_ == stats_nvi_run["lw"][-(k+1)]).all(), "log weights not equal {}".format(k)
 
+@mark.skip()
 def test_nvi_sampling_scheme(num_seeds=100):
     print(f"Testing NVI sampling scheme without resampling (num_seeds: {num_seeds})")
     test_K_step_nvi(8, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=True, num_seeds=num_seeds)
     print(f"Testing NVI sampling scheme with resampling (num_seeds: {num_seeds})")
     test_K_step_nvi(8, sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=False, num_seeds=num_seeds)
+
 def compute_nvi_weight(proposal, target, forward, reverse, lw_in=0., sample_shape=(10, 5), batch_dim=1, sample_dims=0, resample=False):
     g0_out = proposal(None, sample_dims=sample_dims, sample_shape=sample_shape, batch_dim=batch_dim)
     g0_rv = g0_out.trace[proposal.name]
@@ -85,6 +89,7 @@ def compute_nvi_weight(proposal, target, forward, reverse, lw_in=0., sample_shap
         trace_out, lw_out = Systematic()(trace_out, lw_out, sample_dims=sample_dims, batch_dim=batch_dim)
     return lw_out, lw_out_, trace_out, g1_out, g0_out, f12_out, r21_out
 
+@mark.skip()
 def test_1_step_nvi(sample_shape=(10, 5), batch_dim=1, sample_dims=0):
     out = paper_model(2)
     targets, forwards, reverses = [[m.to(autodevice()) for m in out[n]] for n in ['targets', 'forwards', 'reverses']]
