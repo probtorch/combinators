@@ -299,6 +299,7 @@ class Propose(Inf):
         loss_fn=(lambda x, fin: fin),
         loss0=None,
         ix=None,
+        transf_q_trace=None,
         _debug=False,
         _no_reruns: bool = True,
     ):
@@ -308,6 +309,7 @@ class Propose(Inf):
         self.q = q
         # APG, needs documentation
         self._no_reruns = _no_reruns
+        self.transf_q_trace=(lambda q_out: q_out) if transf_q_trace is None else transf_q_trace
 
     @classmethod
     def marginalize(cls, p, p_out):
@@ -355,7 +357,9 @@ class Propose(Inf):
         tau_2 = set({k for k, v in p_out.trace.items() if tau_filter(v)})
 
         nodes = rho_1 - (tau_1 - tau_2)
-        lu_1 = q_out.trace.log_joint(nodes=nodes, **shape_kwargs)
+
+        q_trace = dispatch(self.transf_q_trace, q_out.trace, **inf_kwargs)
+        lu_1 = q_trace.log_joint(nodes=nodes, **shape_kwargs)
         lw_1 = q_out.log_weight
         # We call that lv because its the incremental weight in the IS sense
         lv = p_out.log_weight - lu_1

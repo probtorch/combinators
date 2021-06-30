@@ -12,7 +12,7 @@ from combinators import effective_sample_size, log_Z_hat
 from combinators.utils import save_models, load_models, models_as_dict
 
 from experiments.annealing.models import paper_model
-from experiments.annealing.objectives import nvo_rkl, nvo_avo
+from experiments.annealing.objectives import nvo_rkl, nvo_avo, stl_trace
 
 logger = getLogger(__file__)
 
@@ -62,6 +62,7 @@ def nvi_declarative(targets, forwards, reverses, loss_fn, resample=False):
                     ix=k,
                     _no_reruns=False,
                     _debug=True,
+                    transf_q_trace=None if loss_fn.__name__ == "nvo_avo" else stl_trace,
                     )
         if resample and k < len(forwards) - 1:
             q = Resample(q)

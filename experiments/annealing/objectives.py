@@ -25,13 +25,12 @@ def _eval_detached(rv):
     return rv_detached
 
 
-def stl_lv(out):
+def stl_trace(q_out_trace, ix):
     """ TODO """
-    ix = out.ix
     # Need do this to compute sticking (stl) the landing gradient
-    q_stl_trace = copytraces(out.q_out.trace, exclude_nodes='g{}'.format(ix+1))
-    q_stl_trace._inject(_eval_detached(out.q_out.trace['g{}'.format(ix+1)]), name='g{}'.format(ix+1))
-    lu_1 = q_stl_trace.log_joint(nodes=out.nodes, **shape_kwargs)
+    q_stl_trace = copytraces(q_out_trace, exclude_nodes='g{}'.format(ix+1))
+    q_stl_trace._inject(_eval_detached(q_out_trace['g{}'.format(ix+1)]), name='g{}'.format(ix+1))
+    return q_stl_trace
 
 
 def nvo_avo(out, sample_dims=0) -> Tensor:

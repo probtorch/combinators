@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -ex
 export CUDA_VISIBLE_DEVICES=
+SHA="$(git rev-parse --short HEAD)"
 
 DATETIME=$(date "+%Y%m%d-%H%M%S")
 LOG_DIR=log/${DATETIME}
