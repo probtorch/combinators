@@ -19,7 +19,7 @@
         inherit (mach-nix.lib.${system}) mkPython;
         with-jupyter = false;
         dev-profile = false;
-        with-simulator = false;
+        with-simulator = true;
         pkgs = import nixpkgs {
           inherit system;
           overlays = [ devshell.overlay ];
@@ -112,6 +112,10 @@
               name = "watch-short";
               command = ''${watchexec} -e py "make RUN_FLAGS='--iterations 10' ex/$1"'';
             })
+            (watcher {
+              name = "watch-rsync";
+              command = ''${watchexec} -e py "rsync-dev $1"'';
+            })
             {
               category = "deployment";
               name = "rsync-dev";
@@ -119,10 +123,15 @@
                 ${pkgs.rsync}/bin/rsync -Paurzvh . $1""
               '';
             }
-            (watcher {
-              name = "watch-rsync";
-              command = ''${watchexec} -e py "rsync-dev $1"'';
-            })
+            {
+              category = "deployment";
+              name = "upload-to-cachix";
+              command = ''
+                nix flake archive --json \
+                | ${pkgs.jq}/bin/jq -r '.path,(.inputs|to_entries[].value.path)' \
+                | cachix push combinators
+              '';
+            }
           ];
         };
       });
