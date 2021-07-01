@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+"""
+This file is intended to be a verbose "bootstrap" script used in conjunction with a jupyter notebook.
+From <git root>/experiments/annealing/notebooks/my-notebook.ipynb, invoke:
+
+    %run ../../startup.py
+
+And the following commands will run (verbosely).
+"""
 
 import sys
 import subprocess

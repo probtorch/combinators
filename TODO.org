@@ -1,7 +1,15 @@
 #+TITLE: Issues to file / tackle
 
-* TODO tutorial
-** TODO Standard VI: inclusive / exclusive
-** TODO simple regression
-* TODO RV.resamplable should be handled at a higher level
-* TODO documentation
+* Before a big announcement (but it's fine if it's public)
+** TODO remove unused markov blanket optimization
+** TODO move combinators.util and combinators.{tensor,trace}.util into separate code base
+** TODO model experiments as: main, model, objectives, <alg>.
+** TODO review old tests
+** TODO discovery rerun
+* Long-term
+** TODO tutorial
+*** TODO Standard VI: inclusive / exclusive
+*** TODO simple regression
+** TODO RV.resamplable should be handled at a higher level
+** TODO objectives api
+** TODO documentation
