@@ -76,25 +76,6 @@ def nvo_rkl(
     rv_fwd = proposal_trace["g{}".format(out.ix + 1)]
     rv_rev = target_trace["g{}".format(out.ix)]
 
-    # Tests
-    # lv = rv_target.log_prob + rv_rev.log_prob - (rv_proposal.log_prob + rv_fwd.log_prob)
-    try:
-        assert len(proposal_trace) == 2
-        assert len(target_trace) == 2
-        assert valeq(proposal_trace, target_trace)
-
-        assert torch.equal(
-            target_trace.log_joint(sample_dims=sample_dims, batch_dim=1)
-            - proposal_trace.log_joint(sample_dims=sample_dims, batch_dim=1),
-            lv,
-        )
-        assert rv_fwd.log_prob.grad_fn is not None
-        assert rv_proposal.value.grad_fn is None
-        assert rv_target.log_prob.grad_fn is not None
-        assert rv_rev.log_prob.grad_fn is not None
-    except:
-        breakpoint()
-
     ldZ = lv.detach().logsumexp(dim=sample_dims) - math.log(lv.shape[sample_dims])
     f = -(lv - ldZ)
 
@@ -142,26 +123,25 @@ def nvo_rkl(
 
 
 def nvo_rkl_mod(
-    lw: Tensor,  # Log cumulative weight, this is not detached yet - see if it bites Babak and Hao
-    lv: Tensor,
-    proposal_trace: Trace,
-    target_trace: Trace,
-    scheduled_outs: ScheduledOuts,
-    batch_dim=1,
-    sample_dim=0,
-    reducedims=None,
+    out,
+    sample_dims=0,
     **kwargs,
 ) -> Tensor:
     """
     Metric: KL(g_k-1(z_k-1)/Z_k-1 q_k(z_k | z_k-1) || g_k(z_k)/Z_k-1 r_k(z_k-1 | z_k)) = Exp[-(dlZ + lv)]
     """
-    if reducedims is None:
-        reducedims = (sample_dim,)
 
-    rv_proposal = _unpack(proposal_trace, 0)
-    rv_target = _unpack(target_trace, 0)
+    reducedims = (sample_dims,)
 
-    lw = lw.detach()
+    lw = out.lw.detach()
+    lv = out.lv
+    proposal_trace = out.proposal_trace
+    target_trace = out.target_trace
+    rv_proposal = proposal_trace["g{}".format(out.ix)]
+    rv_target = target_trace["g{}".format(out.ix + 1)]
+    rv_fwd = proposal_trace["g{}".format(out.ix + 1)]
+    rv_rev = target_trace["g{}".format(out.ix)]
+
     # ldZ = Z_{k} / Z_{k-1}
     # Chat with Hao --> estimating dZ might be instable when resampling
     ldZ = lv.detach().logsumexp(dim=sample_dim) - math.log(lv.shape[sample_dim])
@@ -172,7 +152,7 @@ def nvo_rkl_mod(
         _estimate_mc(
             rv_proposal._log_prob,
             lw,
-            sample_dim=sample_dim,
+            sample_dims=sample_dims,
             reducedims=reducedims,
             keepdims=False,
         )
@@ -183,7 +163,7 @@ def nvo_rkl_mod(
         _estimate_mc(
             _eval_nrep(rv_target)._log_prob,
             lw + lv.detach(),
-            sample_dim=sample_dim,
+            sample_dims=sample_dims,
             reducedims=reducedims,
             keepdims=False,
         )
@@ -191,12 +171,12 @@ def nvo_rkl_mod(
         else torch.tensor(0.0)
     )
 
-    if rv_proposal.generator.reparameterized:
+    if rv_proposal.reparameterized:
         # Compute reparameterized gradient
         kl_term = _estimate_mc(
             f,
             lw,
-            sample_dim=sample_dim,
+            sample_dims=sample_dims,
             reducedims=reducedims,
             keepdims=False,
         )
@@ -205,7 +185,7 @@ def nvo_rkl_mod(
     baseline = _estimate_mc(
         f.detach(),
         lw,
-        sample_dim=sample_dim,
+        sample_dims=sample_dims,
         reducedims=reducedims,
         keepdims=False,
     )
@@ -214,7 +194,7 @@ def nvo_rkl_mod(
         (f - baseline) * _eval1(rv_proposal._log_prob - grad_log_Z1_term)
         - _eval0(rv_proposal._log_prob),
         lw,
-        sample_dim=sample_dim,
+        sample_dims=sample_dims,
         reducedims=reducedims,
         keepdims=False,
     )
