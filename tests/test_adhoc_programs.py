@@ -8,7 +8,7 @@ import hypothesis.strategies as st
 from hypothesis import given
 
 # TODO: annotation to convert pure functions to Programs is sugar for later
-_ = '''
+_ = """
 from combinators import model
 
 
@@ -58,4 +58,4 @@ def test_slightly_more_complex_program_creation():
 
     for k in program.variables:
        assert torch.equal(log_probs[k], eval_log_probs[k])
-'''
+"""

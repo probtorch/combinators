@@ -16,29 +16,34 @@ from setuptools.command.test import test as TestCommand
 
 
 # Package meta-data.
-NAME = 'combinators'
-DESCRIPTION = 'Compositional operators for the design and training of deep probabilistic programs'
-URL = 'https://github.com/probtorch/combinators'
-EMAIL = 'fnz@fgvgrf.vb (cipher:rot13)'
-AUTHOR = 'Sam Stites'
-REQUIRES_PYTHON = '>=3.7.0'
+NAME = "combinators"
+DESCRIPTION = (
+    "Compositional operators for the design and training of deep probabilistic programs"
+)
+URL = "https://github.com/probtorch/combinators"
+EMAIL = "fnz@fgvgrf.vb (cipher:rot13)"
+AUTHOR = "Sam Stites"
+REQUIRES_PYTHON = ">=3.7.0"
+
 
 def get_version():
     try:
         import subprocess
+
         CWD = os.path.dirname(os.path.abspath(__file__))
         rev = subprocess.check_output("git rev-parse --short HEAD".split(), cwd=CWD)
-        version = "0.1.0+" + str(rev.strip().decode('utf-8'))
+        version = "0.1.0+" + str(rev.strip().decode("utf-8"))
         return version
     except Exception:
         return "0.1.0"
+
 
 VERSION = get_version()
 
 # What packages are required for this module to be executed?
 REQUIRED = [
-    'probtorch',
-    'flatdict',
+    "probtorch",
+    "flatdict",
 ]
 
 # What packages are optional?
@@ -56,8 +61,8 @@ here = os.path.abspath(os.path.dirname(__file__))
 # Import the README and use it as the long-description.
 # Note: this will only work if 'README.md' is present in your MANIFEST.in file!
 try:
-    with io.open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
-        long_description = '\n' + f.read()
+    with io.open(os.path.join(here, "README.md"), encoding="utf-8") as f:
+        long_description = "\n" + f.read()
 except FileNotFoundError:
     long_description = DESCRIPTION
 
@@ -66,10 +71,10 @@ except FileNotFoundError:
 about = {}
 if not VERSION:
     project_slug = NAME.lower().replace("-", "_").replace(" ", "_")
-    with open(os.path.join(here, project_slug, '__version__.py')) as f:
+    with open(os.path.join(here, project_slug, "__version__.py")) as f:
         exec(f.read(), about)
 else:
-    about['__version__'] = VERSION
+    about["__version__"] = VERSION
 
 
 def long_description():
@@ -79,21 +84,20 @@ def long_description():
     """
     here = os.path.abspath(os.path.dirname(__file__))
 
-
-    with io.open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
-        return '\n' + f.read()
+    with io.open(os.path.join(here, "README.md"), encoding="utf-8") as f:
+        return "\n" + f.read()
 
 
 class UploadCommand(Command):
     """Support setup.py upload."""
 
-    description = 'Build and publish the package.'
+    description = "Build and publish the package."
     user_options = []
 
     @staticmethod
     def status(s):
         """Prints things in bold."""
-        print('\033[1m{0}\033[0m'.format(s))
+        print("\033[1m{0}\033[0m".format(s))
 
     def initialize_options(self):
         pass
@@ -103,26 +107,26 @@ class UploadCommand(Command):
 
     def run(self):
         try:
-            self.status('Removing previous builds…')
-            rmtree(os.path.join(here, 'dist'))
+            self.status("Removing previous builds…")
+            rmtree(os.path.join(here, "dist"))
         except OSError:
             pass
 
-        self.status('Building Source and Wheel (universal) distribution…')
-        os.system('{0} setup.py sdist bdist_wheel --universal'.format(sys.executable))
+        self.status("Building Source and Wheel (universal) distribution…")
+        os.system("{0} setup.py sdist bdist_wheel --universal".format(sys.executable))
 
-        self.status('Uploading the package to PyPI via Twine…')
-        os.system('twine upload dist/*')
+        self.status("Uploading the package to PyPI via Twine…")
+        os.system("twine upload dist/*")
 
-        self.status('Pushing git tags…')
-        os.system('git tag v{0}'.format(about['__version__']))
-        os.system('git push --tags')
+        self.status("Pushing git tags…")
+        os.system("git tag v{0}".format(about["__version__"]))
+        os.system("git push --tags")
 
         sys.exit()
 
 
 class PyTest(TestCommand):
-    user_options = [('pytest-args=', 'a', "Arguments to pass to py.test")]
+    user_options = [("pytest-args=", "a", "Arguments to pass to py.test")]
 
     def initialize_options(self):
         TestCommand.initialize_options(self)
@@ -134,8 +138,9 @@ class PyTest(TestCommand):
         self.test_suite = True
 
     def run_tests(self):
-        #import here, cause outside the eggs aren't loaded
+        # import here, cause outside the eggs aren't loaded
         import pytest
+
         # import sys, os
         # myPath = os.path.dirname(os.path.abspath(__file__))
         # sys.path.insert(0, myPath)
@@ -146,10 +151,10 @@ class PyTest(TestCommand):
 # Where the magic happens:
 setup(
     name=NAME,
-    version=about['__version__'],
+    version=about["__version__"],
     description=DESCRIPTION,
     long_description=long_description(),
-    long_description_content_type='text/markdown; charset=UTF-8; variant=GFM',
+    long_description_content_type="text/markdown; charset=UTF-8; variant=GFM",
     author=AUTHOR,
     author_email=EMAIL,
     python_requires=REQUIRES_PYTHON,
@@ -157,9 +162,9 @@ setup(
     packages=find_packages(exclude=["tests", "*.tests", "*.tests.*", "tests.*"]),
     # If your package is a single module, use this instead of 'packages':
     # py_modules=['mypackage'],
-    tests_require=['pytest'],
+    tests_require=["pytest"],
     include_package_data=True,
-    license='MIT',
+    license="MIT",
     # entry_points={
     #     'console_scripts': ['mycli=mymodule:cli'],
     # },
@@ -168,17 +173,16 @@ setup(
     classifiers=[
         # Trove classifiers
         # Full list: https://pypi.python.org/pypi?%3Aaction=list_classifiers
-        'License :: OSI Approved :: MIT License',
-        'Programming Language :: Python',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: Implementation :: CPython',
-        'Programming Language :: Python :: Implementation :: PyPy'
+        "License :: OSI Approved :: MIT License",
+        "Programming Language :: Python",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: Implementation :: CPython",
+        "Programming Language :: Python :: Implementation :: PyPy",
     ],
     # $ setup.py publish support.
     cmdclass={
-        'test': PyTest,
-        'upload': UploadCommand,
+        "test": PyTest,
+        "upload": UploadCommand,
     },
-
 )

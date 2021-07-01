@@ -6,7 +6,7 @@ from torch import Tensor
 
 def effective_sample_size(lw: Tensor, sample_dims=-1) -> Tensor:
     lnw = F.softmax(lw, dim=sample_dims).log()
-    ess = torch.exp(-torch.logsumexp(2*lnw, dim=sample_dims))
+    ess = torch.exp(-torch.logsumexp(2 * lnw, dim=sample_dims))
     return ess
 
 

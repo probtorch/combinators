@@ -3,6 +3,7 @@
 import torch
 from torch import nn
 
+
 class LinearMap(nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -18,11 +19,11 @@ class LinearMap(nn.Module):
     def bias(self):
         return self.net.bias
 
+
 class ResMLPJ(nn.Module):
     def __init__(self, dim_in, dim_hidden, dim_out):
         super().__init__()
-        self.map_joint = nn.Sequential(nn.Linear(dim_in, dim_hidden),
-                                             nn.ReLU())
+        self.map_joint = nn.Sequential(nn.Linear(dim_in, dim_hidden), nn.ReLU())
         self.map_mu = nn.Sequential(nn.Linear(dim_hidden, dim_out))
         self.map_cov = nn.Sequential(nn.Linear(dim_hidden, dim_out))
 

@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 
-from probtorch.stochastic import ImproperRandomVariable, RandomVariable, Trace, Provenance
+from probtorch.stochastic import (
+    ImproperRandomVariable,
+    RandomVariable,
+    Trace,
+    Provenance,
+)
 from combinators.program import Program, dispatch
 from combinators.inference import Extend, Compose, Propose, Resample
 from combinators.out import global_store
@@ -15,18 +20,22 @@ from combinators.resamplers import Systematic
 # Reexports
 from torch import Tensor
 
-_exports = \
-  [Extend, Compose, Propose, Resample] + \
-  [Program] + \
-  [Trace, RandomVariable, ImproperRandomVariable, Provenance]
+_exports = (
+    [Extend, Compose, Propose, Resample]
+    + [Program]
+    + [Trace, RandomVariable, ImproperRandomVariable, Provenance]
+)
 
 __all__ = [cls.__name__ for cls in _exports] + [
     "dispatch",
     "trace_utils",
-    "adam", "ppr",
-    "autodevice", "kw_autodevice",
-    "effective_sample_size", "log_Z_hat",
+    "adam",
+    "ppr",
+    "autodevice",
+    "kw_autodevice",
+    "effective_sample_size",
+    "log_Z_hat",
     "Systematic",
     "global_store",
-    "Tensor"
+    "Tensor",
 ]

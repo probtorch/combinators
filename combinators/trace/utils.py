@@ -22,7 +22,7 @@ TraceLike = Union[Trace, Dict[str, Union[Tensor, _RandomVariable, np.ndarray]]]
 
 
 def distprops(dist):
-    """ return a list of a distribution's properties """
+    """return a list of a distribution's properties"""
     return [
         p
         for p in (set(inspect.getfullargspec(dist.__init__).args) - {"self"})
@@ -121,21 +121,21 @@ def valeq(
 
 @typechecked
 def show(tr: TraceLike, fix_width=False):
-    """ show a trace """
+    """show a trace"""
     get_value = lambda v: v if isinstance(v, Tensor) else v.value
     ten_show = lambda v: tensor_utils.show(get_value(v), fix_width=fix_width)
     return "{" + "; ".join([f"'{k}'-➢{ten_show(v)}" for k, v in tr.items()]) + "}"
 
 
 def showDist(dist):
-    """ prettier show instance for distributions more information when debugging """
+    """prettier show instance for distributions more information when debugging"""
     props = distprops(dist)
     sattrs = [f"{p}:{tensor_utils.show(getattr(dist, p))}" for p in props]
     return type(dist).__name__ + "(" + ", ".join(sattrs) + ")"
 
 
 def showRV(v, args=[], dists=False):
-    """ prettier show instance for RandomVariables with more information when debugging """
+    """prettier show instance for RandomVariables with more information when debugging"""
     if len(args) == 0 and not dists:
         print("[WARNING] asked to show a RV, but no arguments passed")
     name = ""
@@ -152,7 +152,7 @@ def showRV(v, args=[], dists=False):
 def showall(
     tr: Trace, delim="; ", pretty=True, mlen=0, sort=True, args=[], dists=False
 ):
-    """ show instance for a trace, using showRV """
+    """show instance for a trace, using showRV"""
     items = list(tr.items())
     if len(items) == 0:
         return "Trace{}"

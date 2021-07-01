@@ -4,11 +4,18 @@ from torch import Tensor
 from typing import Optional, Tuple
 import math
 import torch.distributions as D
-from probtorch.stochastic import Trace, RandomVariable, ImproperRandomVariable, Provenance
+from probtorch.stochastic import (
+    Trace,
+    RandomVariable,
+    ImproperRandomVariable,
+    Provenance,
+)
 
 
 class Resampler:
-    def __call__(self, trace:Trace, log_weight:Tensor, sample_dims:int, batch_dim:int)->Tuple[Trace, Tensor]:
+    def __call__(
+        self, trace: Trace, log_weight: Tensor, sample_dims: int, batch_dim: int
+    ) -> Tuple[Trace, Tensor]:
         raise NotImplementedError()
 
     def ancestor_indices_systematic(self, lw, sample_dims, batch_dim):
@@ -16,7 +23,9 @@ class Resampler:
 
     def pick(self, z, aidx, sample_dims):
         ddim = z.dim() - aidx.dim()
-        assert z.shape[:z.dim()-ddim] == aidx.shape, "data dims must be at the end of arg:z"
+        assert (
+            z.shape[: z.dim() - ddim] == aidx.shape
+        ), "data dims must be at the end of arg:z"
 
         mask = aidx
         for _ in range(ddim):
@@ -31,7 +40,13 @@ class Systematic(Resampler):
         super().__init__()
         self.normalize_weights = normalize_weights
 
-    def __call__(self, trace:Trace, log_weight:Tensor, sample_dims:int, batch_dim:Optional[int])->Tuple[Trace, Tensor]:
+    def __call__(
+        self,
+        trace: Trace,
+        log_weight: Tensor,
+        sample_dims: int,
+        batch_dim: Optional[int],
+    ) -> Tuple[Trace, Tensor]:
         assert sample_dims == 0, "FIXME: take this assert out"
 
         _batch_dim = None
@@ -40,7 +55,11 @@ class Systematic(Resampler):
             _batch_dim = 1
             log_weight = log_weight.unsqueeze(_batch_dim)
 
-        aidx = self.ancestor_indices_systematic(log_weight, sample_dims=sample_dims, batch_dim=_batch_dim if batch_dim is None else batch_dim)
+        aidx = self.ancestor_indices_systematic(
+            log_weight,
+            sample_dims=sample_dims,
+            batch_dim=_batch_dim if batch_dim is None else batch_dim,
+        )
 
         if batch_dim is None:
             aidx = aidx.squeeze(_batch_dim)
@@ -57,17 +76,30 @@ class Systematic(Resampler):
             log_prob = self.pick(rv.log_prob, aidx, sample_dims=sample_dims)
 
             if isinstance(rv, RandomVariable):
-                var = RandomVariable(dist=rv._dist, value=value, log_prob=log_prob,
-                                     provenance=rv.provenance, reparameterized=rv.reparameterized)
+                var = RandomVariable(
+                    dist=rv._dist,
+                    value=value,
+                    log_prob=log_prob,
+                    provenance=rv.provenance,
+                    reparameterized=rv.reparameterized,
+                )
             elif isinstance(rv, ImproperRandomVariable):
-                var = ImproperRandomVariable(log_density_fn=rv.log_density_fn, value=value, log_prob=log_prob,
-                                             provenance=rv.provenance)
+                var = ImproperRandomVariable(
+                    log_density_fn=rv.log_density_fn,
+                    value=value,
+                    log_prob=log_prob,
+                    provenance=rv.provenance,
+                )
             else:
                 raise NotImplementedError()
 
             new_trace._inject(var, name=key, silent=True)
 
-        log_weight = torch.logsumexp(log_weight - math.log(log_weight.shape[sample_dims]), dim=sample_dims, keepdim=True).expand_as(log_weight)
+        log_weight = torch.logsumexp(
+            log_weight - math.log(log_weight.shape[sample_dims]),
+            dim=sample_dims,
+            keepdim=True,
+        ).expand_as(log_weight)
         if self.normalize_weights:
             log_weight = torch.nn.functional.softmax(log_weight, dim=sample_dims).log()
         return new_trace, log_weight
@@ -78,7 +110,7 @@ class Systematic(Resampler):
         n, b = lw.shape[sample_dims], lw.shape[batch_dim]
 
         u = torch.rand(b, device=lw.device)
-        usteps = torch.stack([(k + u) for k in range(n)], dim=_sample_dims)/n
+        usteps = torch.stack([(k + u) for k in range(n)], dim=_sample_dims) / n
         nws = F.softmax(lw.detach(), dim=sample_dims)
 
         csum = nws.transpose(sample_dims, _sample_dims).cumsum(dim=_sample_dims)
@@ -88,4 +120,3 @@ class Systematic(Resampler):
         aidx = torch.searchsorted(ncsum, usteps, right=False)
         aidx = aidx.transpose(_sample_dims, sample_dims)
         return aidx
-

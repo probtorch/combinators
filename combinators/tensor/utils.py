@@ -8,6 +8,7 @@ import hashlib
 import os
 import numpy as np
 
+
 @typechecked
 def autodevice(preference: Union[int, str, None, torch.device] = None) -> torch.device:
     if isinstance(preference, torch.device):
@@ -38,7 +39,10 @@ def _hash(t: Union[Tensor, np.ndarray], length: int) -> str:
 
 @typechecked
 def thash(
-    aten: Union[Tensor, np.ndarray], length: int = 8, with_ref=False, no_grad_char: str = " "
+    aten: Union[Tensor, np.ndarray],
+    length: int = 8,
+    with_ref=False,
+    no_grad_char: str = " ",
 ) -> str:
     g = "∇" if aten.grad_fn is not None else no_grad_char
     save_ref = aten.detach()

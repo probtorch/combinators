@@ -2,6 +2,7 @@ import torch.nn.functional as F
 from combinators import Program, Compose, Propose, Resample, Extend
 from .utils import apg_ix
 
+
 def loss_is(out, total_loss):
     jkwargs = dict(sample_dims=0, batch_dim=1, reparameterized=False)
     log_w = out.log_weight.detach()
@@ -22,8 +23,11 @@ def loss_apg(out, total_loss):
     assert out.forward_trace is not None
     forward_trace = out.forward_trace
 
-    recon_key = "recon" if "recon" in out.target_trace else \
-        "recon_%d_%d" % (out.ix.t, out.ix.sweep)
+    recon_key = (
+        "recon"
+        if "recon" in out.target_trace
+        else "recon_%d_%d" % (out.ix.t, out.ix.sweep)
+    )
 
     log_p = out.target_trace[recon_key].log_prob.sum(-1).sum(-1)
     if len(log_p.shape) == 3:

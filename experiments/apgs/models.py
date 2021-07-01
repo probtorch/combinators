@@ -11,6 +11,7 @@ from combinators import Program
 from experiments.apgs.affine_transformer import Affine_Transformer
 from .utils import global_store, key, is_forward
 
+
 def init_models(
     frame_pixels,
     shape_pixels,
@@ -310,9 +311,7 @@ class _Decoder(Program):
                         name=key.z_where(t, ix.sweep),
                         reparameterized=self.reparameterized,
                     )
-                z_where_vals[:, :, t, :, :] = trace[
-                    key.z_where(t, ix.sweep)
-                ].value
+                z_where_vals[:, :, t, :, :] = trace[key.z_where(t, ix.sweep)].value
 
             elif t == (ix.t + 1):
                 trace.normal(
@@ -321,9 +320,7 @@ class _Decoder(Program):
                     name=key.z_where(t, ix.sweep - 1),
                     reparameterized=self.reparameterized,
                 )
-                z_where_vals[:, :, t, :, :] = trace[
-                    key.z_where(t, ix.sweep - 1)
-                ].value
+                z_where_vals[:, :, t, :, :] = trace[key.z_where(t, ix.sweep - 1)].value
 
             else:
                 trace.normal(
@@ -332,9 +329,7 @@ class _Decoder(Program):
                     name=key.z_where(t, ix.sweep - 1),
                     reparameterized=self.reparameterized,
                 )
-                z_where_vals[:, :, t, :, :] = trace[
-                    key.z_where(t, ix.sweep - 1)
-                ].value
+                z_where_vals[:, :, t, :, :] = trace[key.z_where(t, ix.sweep - 1)].value
         return z_where_vals
 
     def get_z_what_val(self, trace, T, ix):
@@ -394,7 +389,7 @@ class DecoderFull(_Decoder):
 
 
 class DecoderMarkovBlanket(_Decoder):
-   def model(self, trace, c, ix, EPS=1e-9):
+    def model(self, trace, c, ix, EPS=1e-9):
         frames = c["frames"]
         _, _, T, FP, _ = frames.shape
         ##################################################################
@@ -428,9 +423,9 @@ class DecoderMarkovBlanket(_Decoder):
 
         # optimization for z_wheres
         if ix.t == 0:
-            z_where_vals = trace._cond_trace[
-                key.z_where(0, ix.sweep)
-            ].value.unsqueeze(2)
+            z_where_vals = trace._cond_trace[key.z_where(0, ix.sweep)].value.unsqueeze(
+                2
+            )
             digit_mean = self.get_conv_kernel(z_what_val, detach=False)
             recon_frames = torch.clamp(
                 self.AT.digit_to_frame(digit_mean, z_where_vals).sum(-3),

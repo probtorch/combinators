@@ -14,17 +14,17 @@ import combinators.tensor.utils as tensor_utils
 import combinators.trace.utils as trace_utils
 
 
-def save_models(models, filename, weights_dir="./weights")->None:
+def save_models(models, filename, weights_dir="./weights") -> None:
     checkpoint = {k: v.state_dict() for k, v in models.items()}
 
     if not os.path.exists(weights_dir):
         os.makedirs(weights_dir)
 
-    torch.save(checkpoint, f'{weights_dir}/{filename}')
+    torch.save(checkpoint, f"{weights_dir}/{filename}")
 
 
-def load_models(model, filename, weights_dir="./weights", **kwargs)->None:
-    path = os.path.normpath(f'{weights_dir}/{filename}')
+def load_models(model, filename, weights_dir="./weights", **kwargs) -> None:
+    path = os.path.normpath(f"{weights_dir}/{filename}")
 
     checkpoint = torch.load(path, **kwargs)
 
@@ -32,30 +32,40 @@ def load_models(model, filename, weights_dir="./weights", **kwargs)->None:
 
 
 def models_as_dict(model_iter, names):
-    """ (for annealing) given a list of list of targets and kernels -- flatten for save_models and load_models, above """
-    assert isinstance(model_iter, (tuple, list)) or all(map(lambda ms: isinstance(ms, (tuple,list)), model_iter.values())), "takes a list or dict of lists"
-    assert len(names) == len(model_iter), 'names must exactly align with model lists'
+    """(for annealing) given a list of list of targets and kernels -- flatten for save_models and load_models, above"""
+    assert isinstance(model_iter, (tuple, list)) or all(
+        map(lambda ms: isinstance(ms, (tuple, list)), model_iter.values())
+    ), "takes a list or dict of lists"
+    assert len(names) == len(model_iter), "names must exactly align with model lists"
 
     model_dict = dict()
-    for i, (name, models) in enumerate(zip(names, model_iter) if isinstance(model_iter, (tuple, list)) else model_iter.items()):
+    for i, (name, models) in enumerate(
+        zip(names, model_iter)
+        if isinstance(model_iter, (tuple, list))
+        else model_iter.items()
+    ):
         for j, m in enumerate(models):
-            model_dict[f'{str(i)}_{name}_{str(j)}'] = m
+            model_dict[f"{str(i)}_{name}_{str(j)}"] = m
     return model_dict
 
 
 def adam(models, **kwargs):
-    """ Adam for dicts or iterables of models """
+    """Adam for dicts or iterables of models"""
     iterable = models.values() if isinstance(models, dict) else models
     return optim.Adam([dict(params=x.parameters()) for x in iterable], **kwargs)
 
 
-def git_root()->str:
-    """ print the root of the project """
-    return subprocess.check_output('git rev-parse --show-toplevel', shell=True).decode("utf-8").rstrip()
+def git_root() -> str:
+    """print the root of the project"""
+    return (
+        subprocess.check_output("git rev-parse --show-toplevel", shell=True)
+        .decode("utf-8")
+        .rstrip()
+    )
 
 
-def ppr_show(a:Any, m:str='dv', debug:bool=False, **kkwargs:Any):
-    """ show instance of a prettified object """
+def ppr_show(a: Any, m: str = "dv", debug: bool = False, **kkwargs: Any):
+    """show instance of a prettified object"""
     if debug:
         print(type(a))
     if isinstance(a, Tensor):
@@ -68,13 +78,15 @@ def ppr_show(a:Any, m:str='dv', debug:bool=False, **kkwargs:Any):
         args = []
         kwargs = dict()
         if m is not None:
-            if 'v' in m or m == 'a':
-                args.append('value')
-            if 'p' in m or m == 'a':
-                args.append('log_prob')
-            if 'd' in m or m == 'a':
-                kwargs['dists'] = True
-        showinstance = trace_utils.showall if isinstance(a, Trace) else trace_utils.showRV
+            if "v" in m or m == "a":
+                args.append("value")
+            if "p" in m or m == "a":
+                args.append("log_prob")
+            if "d" in m or m == "a":
+                kwargs["dists"] = True
+        showinstance = (
+            trace_utils.showall if isinstance(a, Trace) else trace_utils.showRV
+        )
         if debug:
             print("showinstance", showinstance)
             print("args", args)
@@ -89,8 +101,8 @@ def ppr_show(a:Any, m:str='dv', debug:bool=False, **kkwargs:Any):
         return repr(a)
 
 
-def ppr(a:Any, m='dv', debug=False, desc='', **kkwargs):
-    """ a pretty printer that relies ppr_show """
+def ppr(a: Any, m="dv", debug=False, desc="", **kkwargs):
+    """a pretty printer that relies ppr_show"""
     print(desc, ppr_show(a, m=m, debug=debug, **kkwargs))
 
 
@@ -99,44 +111,58 @@ def runtime() -> str:
     try:
         # magic global function in ipython shells
         ipy_str = str(type(get_ipython()))
-        if 'zmqshell' in ipy_str:
-            return 'jupyter'
-        if 'terminal' in ipy_str:
-            return 'ipython'
+        if "zmqshell" in ipy_str:
+            return "jupyter"
+        if "terminal" in ipy_str:
+            return "ipython"
         else:
             raise Exception()
     except:
-        return 'terminal'
+        return "terminal"
+
 
 @typechecked
 def seed(s=42):
     torch.manual_seed(s)
     np.random.seed(s)
     random.seed(s)
-    torch.backends.cudnn.benchmark = True # just incase something goes wrong with set_deterministic
+    torch.backends.cudnn.benchmark = (
+        True  # just incase something goes wrong with set_deterministic
+    )
     if torch.__version__[:3] == "1.8":
         pass
-        #torch.use_deterministic_algorithms(True)
+        # torch.use_deterministic_algorithms(True)
+
 
 def exit0():
     try:
         import pytest
+
         xit = pytest.exit
     except:
         import sys
+
         xit = sys.exit
     xit(0)
 
-def is_smoketest()->bool:
-    env_var = os.getenv('SMOKE')
-    return env_var is not None and env_var == 'true'
+
+def is_smoketest() -> bool:
+    env_var = os.getenv("SMOKE")
+    return env_var is not None and env_var == "true"
 
 
-def propagate(N:D.MultivariateNormal, F:Tensor, t:Tensor, B:Tensor, marginalize:bool=False, reverse_order:bool=False)-> D.MultivariateNormal:
+def propagate(
+    N: D.MultivariateNormal,
+    F: Tensor,
+    t: Tensor,
+    B: Tensor,
+    marginalize: bool = False,
+    reverse_order: bool = False,
+) -> D.MultivariateNormal:
     # N is normal starting from
-    F = F.cpu() # F is NN weights on linear network of forward kernel
-    t = t.cpu() # t is bias
-    B = B.cpu() # b is cov of kernel
+    F = F.cpu()  # F is NN weights on linear network of forward kernel
+    t = t.cpu()  # t is bias
+    B = B.cpu()  # b is cov of kernel
     with torch.no_grad():
         a = N.loc.cpu()
         A = N.covariance_matrix.cpu()
@@ -157,4 +183,3 @@ def propagate(N:D.MultivariateNormal, F:Tensor, t:Tensor, B:Tensor, marginalize:
             C = torch.cat((C1, C2), dim=0)
             m = torch.cat((b, a))
         return D.MultivariateNormal(loc=m, covariance_matrix=C)
-

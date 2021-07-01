@@ -8,7 +8,14 @@ from probtorch.stochastic import Provenance, _RandomVariable
 
 from combinators.out import Out, global_store
 from combinators.trace.utils import copytraces, WriteMode, rerun_with_detached_values
-from combinators.program import Conditionable, Program, dispatch, check_passable_kwarg, WithSubstitution
+from combinators.program import (
+    Conditionable,
+    Program,
+    dispatch,
+    check_passable_kwarg,
+    WithSubstitution,
+)
+
 
 class Inf(ABC):
     """
@@ -46,6 +53,7 @@ class Inf(ABC):
             "@abstractproperty but python's type system doesn't maintain the Callable signature."
         )
 
+
 class Resample(Inf):
     """
     Compute importance weight of the proposal program's trace under the target
@@ -81,7 +89,7 @@ class Resample(Inf):
         ix=None,
         **shared_kwargs,
     ) -> Out:
-        """ Resample Combinator """
+        """Resample Combinator"""
         debugging = _debug or self._debug
         ix = self.ix if self.ix is not None else ix
 
@@ -164,7 +172,7 @@ class Extend(Inf, Conditionable):
         ix=None,
         **shared_kwargs: Any,
     ) -> Out:
-        """ Extend Combinator """
+        """Extend Combinator"""
         debugging = _debug or self._debug
         ix = self.ix if self.ix is not None else ix
 
@@ -175,7 +183,9 @@ class Extend(Inf, Conditionable):
         )
         inf_kwargs = dict(_debug=_debug, ix=ix, **shape_kwargs)
 
-        with WithSubstitution(self.p, self._cond_trace), WithSubstitution(self.f, self._cond_trace):
+        with WithSubstitution(self.p, self._cond_trace), WithSubstitution(
+            self.f, self._cond_trace
+        ):
             p_out = dispatch(self.p, c, **inf_kwargs, **shared_kwargs)
             f_out = dispatch(self.f, p_out.output, **inf_kwargs, **shared_kwargs)
 
@@ -248,7 +258,7 @@ class Compose(Inf):
         ix=None,
         **shared_kwargs,
     ) -> Out:
-        """ Compose """
+        """Compose"""
         debugging = _debug or self._debug
         ix = self.ix if self.ix is not None else ix
 
@@ -309,7 +319,9 @@ class Propose(Inf):
         self.q = q
         # APG, needs documentation
         self._no_reruns = _no_reruns
-        self.transf_q_trace=(lambda q_out: q_out) if transf_q_trace is None else transf_q_trace
+        self.transf_q_trace = (
+            (lambda q_out: q_out) if transf_q_trace is None else transf_q_trace
+        )
 
     @classmethod
     def marginalize(cls, p, p_out):
@@ -332,7 +344,7 @@ class Propose(Inf):
         ix=None,
         **shared_kwargs,
     ) -> Out:
-        """ Propose """
+        """Propose"""
         debugging = _debug or self._debug
         ix = self.ix if self.ix is not None else ix
 
