@@ -4,7 +4,7 @@ import argparse
 import torch
 from tqdm import tqdm, trange
 from random import shuffle
-from combinators import save_models, adam, debug
+from combinators import save_models, adam, utils
 from combinators.metrics import effective_sample_size
 
 from experiments.apgs.gibbs import gibbs_sweeps
@@ -213,7 +213,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", default=1, type=int)
 
     args = parser.parse_args()
-    debug.seed(args.seed)
+    utils.seed(args.seed)
     if args.test:
         out, frames = test_gibbs_sweep(
             budget=args.budget,

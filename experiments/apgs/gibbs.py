@@ -1,46 +1,12 @@
 import torch.nn.functional as F
 from combinators import Program, Compose, Propose, Resample, Extend
 from .utils import apg_ix
-
-
-def loss_is(out, total_loss):
-    jkwargs = dict(sample_dims=0, batch_dim=1, reparameterized=False)
-    log_w = out.log_weight.detach()
-    w = F.softmax(log_w, 0)
-    log_q = out.proposal_trace.log_joint(**jkwargs)
-    log_p = out.target_trace.log_joint(**jkwargs)
-    loss_phi = (w * (-log_q)).sum(0).mean()
-    loss_theta = (w * (-log_p)).sum(0).mean()
-    return loss_phi + loss_theta + total_loss
-
-
-def loss_apg(out, total_loss):
-    jkwargs = dict(sample_dims=0, batch_dim=1, reparameterized=False)
-    log_w = out.log_weight.detach()
-    w = F.softmax(log_w, 0)
-
-    # This is a hack to find the marginal of the forward kernel.
-    assert out.forward_trace is not None
-    forward_trace = out.forward_trace
-
-    recon_key = (
-        "recon"
-        if "recon" in out.target_trace
-        else "recon_%d_%d" % (out.ix.t, out.ix.sweep)
-    )
-
-    log_p = out.target_trace[recon_key].log_prob.sum(-1).sum(-1)
-    if len(log_p.shape) == 3:
-        log_p = log_p.sum(-1)
-
-    log_q = forward_trace.log_joint(**jkwargs)
-    loss_phi = (w * (-log_q)).sum(0).mean()
-    loss_theta = (w * (-log_p)).sum(0).mean()
-
-    return loss_phi + loss_theta + total_loss
+from .objectives import loss_is, loss_apg
 
 
 class Noop(Program):
+    """We need this because Enc_coor is a kernel"""
+
     def __init__(self):
         super().__init__()
 
@@ -59,7 +25,6 @@ def gibbs_sweeps(models, num_sweeps, T):
     prp_ix = lambda t, s: apg_ix(t, s, "propose")
     _no_reruns = True
 
-    # We need this because Enc_coor to swallow first index
     q_os = Noop()
     for t in range(0, T):
         q_os = Compose(q1=q_os, q2=q_enc_coor, ix=fwd_ix(t, 0))
