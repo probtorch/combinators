@@ -22,7 +22,6 @@ class WithSubstitution(object):
         self, program: Conditionable, subtitution_trace: Optional[Trace] = None
     ) -> None:
         self.program = program
-        # FIXME: do we actually need a copy of the trace? Might cause a dangling ref.
         self.subtitution_trace = (
             None if subtitution_trace is None else copytraces(subtitution_trace)
         )

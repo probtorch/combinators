@@ -36,8 +36,9 @@ def _eval_detached(rv):
 
 
 def stl_trace(q_out_trace, ix):
-    """TODO"""
-    # Need do this to compute sticking (stl) the landing gradient
+    """
+    adjust trace to compute a "sticking the landing" (stl) gradient.
+    """
     q_stl_trace = copytraces(q_out_trace, exclude_nodes="g{}".format(ix + 1))
     q_stl_trace._inject(
         _eval_detached(q_out_trace["g{}".format(ix + 1)]), name="g{}".format(ix + 1)

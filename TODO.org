@@ -6,10 +6,11 @@
 ** TODO model experiments as: main, model, objectives, <alg>.
 ** TODO review old tests
 ** TODO discovery rerun
-* Long-term
+* Long-term (maybe worth filing as issues)
 ** TODO tutorial
 *** TODO Standard VI: inclusive / exclusive
 *** TODO simple regression
 ** TODO RV.resamplable should be handled at a higher level
 ** TODO objectives api
 ** TODO documentation
+** TODO do we actually need a copy of the trace in our substitution context? Might cause a dangling ref.
