@@ -11,9 +11,7 @@ from experiments.apgs.gibbs import gibbs_sweeps
 from experiments.apgs.models import init_models
 
 
-def get_model_version(
-    timesteps, num_objects, num_sweeps, sample_size
-):
+def get_model_version(timesteps, num_objects, num_sweeps, sample_size):
     model_version = f"apg-timesteps={timesteps}-objects={num_objects}-sweeps={num_sweeps}-samples={sample_size}"
     return model_version
 
@@ -33,9 +31,7 @@ def train_apg(
     # static properties
     device = torch.device(kwargs["device"])
     sample_size, sample_dims, batch_dim = budget // (num_sweeps + 1), 0, 1
-    model_version = get_model_version(
-        timesteps, num_objects, num_sweeps, sample_size
-    )
+    model_version = get_model_version(timesteps, num_objects, num_sweeps, sample_size)
     assert sample_size > 0, "non-positive sample size =%d" % sample_size
     print("Training for " + model_version)
 

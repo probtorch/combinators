@@ -383,6 +383,3 @@ class DecoderFull(_Decoder):
         z_what = {key.z_what(z_what_index): z_what_val}
         frame = {"frames": c["frames"]}
         return {**z_wheres, **z_what, **frame}
-
-
-
