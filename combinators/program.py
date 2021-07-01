@@ -61,7 +61,7 @@ class Program(nn.Module, Conditionable):
         all_kwargs = {**shape_kwargs, **kwargs}
 
         # when we thread the inference state through all of the combinators, we should have
-        # the evalsubctx handle this.
+        # the SubstitutionCtx handle this.
         trace = Trace(cond_trace=self._cond_trace)
         out = self.model(
             trace,
@@ -73,21 +73,14 @@ class Program(nn.Module, Conditionable):
             }
         )
 
-        # if self._cond_trace is not None:
-        # TODO: move this to inference.Condition
         rho_addrs = {k for k in trace.keys()}
-        tau_addrs = {
-            k
-            for k, rv in trace.items()
-            if isinstance(rv, _RandomVariable) and rv.provenance != Provenance.OBSERVED
-        }
+        tau_filter = (
+            lambda rv: isinstance(rv, _RandomVariable)
+            and rv.provenance != Provenance.OBSERVED
+        )
+        tau_addrs = {k for k, rv in trace.items() if tau_filter(rv)}
         tau_prime_addrs = (
-            {
-                k
-                for k, rv in self._cond_trace.items()
-                if isinstance(rv, _RandomVariable)
-                and rv.provenance != Provenance.OBSERVED
-            }
+            {k for k, rv in self._cond_trace.items() if tau_filter(rv)}
             if self._cond_trace is not None
             else set()
         )
@@ -96,10 +89,8 @@ class Program(nn.Module, Conditionable):
             nodes=rho_addrs - (tau_addrs - tau_prime_addrs), **shape_kwargs
         )
 
+        # clean up any substitution context
         trace._cond_trace = None
-        # self._cond_trace = None   # required if a user does not use the Condition combinator
-        # else:
-        #    log_weight = trace.log_joint(nodes={k for k, rv in trace.items() if rv.provenance == Provenance.OBSERVED}, **shape_kwargs)
 
         return Out(
             trace=trace,
@@ -122,25 +113,30 @@ def check_passable_kwarg(name, fn):
 def dispatch(fn, *args: Any, **kwargs: Any):
     """given a function, pass all *args and any **kwargs that type-check"""
 
-    # TODO: We can reduce this to only one branch
-    _dispatch_kwargs = {k: v for k, v in kwargs.items() if check_passable_kwarg(k, fn)}
+    def kwargs_for(_f, _nxt, _prev=None):
+        _prev = (
+            dict() if _prev is None else _prev
+        )  # always hedge against sneaky globals
+        return {
+            k: v
+            for k, v in _nxt.items()
+            if check_passable_kwarg(k, _f) and k not in _prev
+        }
+
+    _dispatch_kwargs = kwargs_for(fn, kwargs)
 
     if isinstance(fn, nn.Module):
         """additionally, if the function is an nn.Module, we need to check forward"""
-        _extra_kwargs = {
-            k: v
-            for k, v in kwargs.items()
-            if check_passable_kwarg(k, fn.forward) and k not in _dispatch_kwargs
+        _dispatch_kwargs = {
+            **kwargs_for(fn.forward, kwargs, _dispatch_kwargs),
+            **_dispatch_kwargs,
         }
-        _dispatch_kwargs = {**_extra_kwargs, **_dispatch_kwargs}
 
     if isinstance(fn, Program):
         """additionally, if the function is a Program, we need to check model"""
-        _extra_kwargs = {
-            k: v
-            for k, v in kwargs.items()
-            if check_passable_kwarg(k, fn.model) and k not in _dispatch_kwargs
+        _dispatch_kwargs = {
+            **kwargs_for(fn.model, kwargs, _dispatch_kwargs),
+            **_dispatch_kwargs,
         }
-        _dispatch_kwargs = {**_extra_kwargs, **_dispatch_kwargs}
 
     return fn(*args, **_dispatch_kwargs)
