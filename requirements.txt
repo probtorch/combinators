@@ -1,4 +1,4 @@
-torch==1.7.1
+torch==2.2.0
 probtorch
 numpy # don't forget mkl
 tqdm
